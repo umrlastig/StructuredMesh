@@ -13,6 +13,22 @@ typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
 typedef K::Point_2                                          Point;
 typedef CGAL::Polygon_2<K>                                  Polygon;
 
+GDALRasterBand* get_band_from_TIFF(char* path) {
+	GDALAllRegister();
+
+	GDALDataset* dataset;
+
+	dataset = (GDALDataset *) GDALOpen( path, GA_ReadOnly );
+	if( dataset == NULL ) {
+		std::cerr << "Unable to open " << path << "." << std::endl;
+		return NULL;
+	}
+
+	GDALRasterBand *band = dataset->GetRasterBand(1);
+
+	return band;
+}
+
 std::list<Polygon> get_LOD0_from_shapefile(char* path) {
 	GDALAllRegister();
 
@@ -59,9 +75,20 @@ std::list<Polygon> get_LOD0_from_shapefile(char* path) {
 }
 
 int compute_LOD2(char* DSM, char* DTM, char* land_use_map, char* LOD0, char* orthophoto) {
-	std::list<Polygon> polygons = get_LOD0_from_shapefile(LOD0);
-	std::cout << polygons.size() << std::endl;
-	std::cout << polygons.front() << std::endl;
+	GDALRasterBand* dsm = get_band_from_TIFF(DSM);
+	std::cout << dsm->GetXSize() << "x" << dsm->GetYSize() << " DSM load." << std::endl;
+
+	GDALRasterBand* dtm = get_band_from_TIFF(DTM);
+	std::cout << dtm->GetXSize() << "x" << dtm->GetYSize() << " DTM load." << std::endl;
+
+	GDALRasterBand* land_use = get_band_from_TIFF(land_use_map);
+	std::cout << land_use->GetXSize() << "x" << land_use->GetYSize() << " land use map load." << std::endl;
+	
+	if (LOD0 != NULL) {
+		std::list<Polygon> buildings = get_LOD0_from_shapefile(LOD0);
+		std::cout << buildings.size() << " buildings load from " << LOD0 << "." << std::endl;
+	}
+
 	return EXIT_SUCCESS;
 }
 
