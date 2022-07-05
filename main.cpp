@@ -1,8 +1,67 @@
 #include <iostream>
+#include <sstream>
 #include <stdlib.h>
 #include <getopt.h>
+#include <list>
+
+#include "ogrsf_frmts.h"
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+#include <CGAL/IO/WKT.h>
+#include <CGAL/Polygon_with_holes_2.h>
+
+typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
+typedef K::Point_2                                          Point;
+typedef CGAL::Polygon_2<K>                                  Polygon;
+
+std::list<Polygon> get_LOD0_from_shapefile(char* path) {
+	GDALAllRegister();
+
+	GDALDataset* dataset;
+
+	std::list<Polygon> polygons;
+
+	dataset = (GDALDataset*) GDALOpenEx(path, GDAL_OF_VECTOR, NULL, NULL, NULL );
+	if( dataset == NULL ) {
+		std::cerr << "Unable to open " << path << "." << std::endl;
+		return polygons;
+	}
+
+	for( OGRLayer* layer: dataset->GetLayers() ) {
+        for( const auto& feature: *layer ) {
+			if ((*feature)["num_class"].GetInteger() == 4) {
+				// Get only the buildings
+				OGRGeometry* geometry = feature->GetGeometryRef();
+				
+				if (wkbFlatten(geometry->getGeometryType()) == wkbPolygon) {
+
+					OGRPolygon * shp_polygon = geometry->toPolygon();
+					Polygon cgal_polygon;
+					std::istringstream wkt(shp_polygon->exportToWkt());
+					CGAL::IO::read_polygon_WKT (wkt, cgal_polygon);
+					polygons.push_back(cgal_polygon);
+
+				} else if (wkbFlatten(geometry->getGeometryType()) == wkbMultiPolygon) {
+
+					OGRMultiPolygon * shp_multi_polygon = geometry->toMultiPolygon();
+					for (OGRPolygon* shp_polygon: *shp_multi_polygon) {
+						Polygon cgal_polygon;
+						std::istringstream wkt(shp_polygon->exportToWkt());
+						CGAL::IO::read_polygon_WKT (wkt, cgal_polygon);
+						polygons.push_back(cgal_polygon);
+					}
+
+				}
+			}
+        }
+    }
+
+	return polygons;
+}
 
 int compute_LOD2(char* DSM, char* DTM, char* land_use_map, char* LOD0, char* orthophoto) {
+	std::list<Polygon> polygons = get_LOD0_from_shapefile(LOD0);
+	std::cout << polygons.size() << std::endl;
+	std::cout << polygons.front() << std::endl;
 	return EXIT_SUCCESS;
 }
 
