@@ -13,7 +13,7 @@ typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
 typedef K::Point_2                                          Point;
 typedef CGAL::Polygon_2<K>                                  Polygon;
 
-GDALRasterBand* get_band_from_TIFF(char* path) {
+GDALRasterBand* get_band_from_TIFF(char* path, int i = 1) {
 	GDALAllRegister();
 
 	GDALDataset* dataset;
@@ -24,7 +24,7 @@ GDALRasterBand* get_band_from_TIFF(char* path) {
 		return NULL;
 	}
 
-	GDALRasterBand *band = dataset->GetRasterBand(1);
+	GDALRasterBand *band = dataset->GetRasterBand(i);
 
 	return band;
 }
@@ -75,6 +75,7 @@ std::list<Polygon> get_LOD0_from_shapefile(char* path) {
 }
 
 int compute_LOD2(char* DSM, char* DTM, char* land_use_map, char* LOD0, char* orthophoto) {
+	// Get raset info as GDALRasterBand and LOD0 as polygons
 	GDALRasterBand* dsm = get_band_from_TIFF(DSM);
 	std::cout << dsm->GetXSize() << "x" << dsm->GetYSize() << " DSM load." << std::endl;
 
@@ -87,6 +88,13 @@ int compute_LOD2(char* DSM, char* DTM, char* land_use_map, char* LOD0, char* ort
 	if (LOD0 != NULL) {
 		std::list<Polygon> buildings = get_LOD0_from_shapefile(LOD0);
 		std::cout << buildings.size() << " buildings load from " << LOD0 << "." << std::endl;
+	}
+
+	if (orthophoto != NULL) {
+		GDALRasterBand* red = get_band_from_TIFF(orthophoto, 1);
+		GDALRasterBand* green = get_band_from_TIFF(orthophoto, 2);
+		GDALRasterBand* blue = get_band_from_TIFF(orthophoto, 3);
+		std::cout << red->GetXSize() << "x" << red->GetYSize() << " orthophoto load." << std::endl;
 	}
 
 	return EXIT_SUCCESS;
