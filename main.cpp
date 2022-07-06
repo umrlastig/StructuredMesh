@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <getopt.h>
 #include <list>
+#include <vector>
 
 #include "ogrsf_frmts.h"
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
@@ -74,6 +75,31 @@ std::list<Polygon> get_LOD0_from_shapefile(char* path) {
 	return polygons;
 }
 
+void compute_object(GDALRasterBand* land_use, std::vector<std::vector<int>>& object_id, std::vector<std::pair<std::list<std::pair<int,int>>, int>>& objects, int x, int y, int id) {
+	if (x >= 0 && x < land_use->GetXSize() && y >= 0 && y < land_use->GetYSize()) { // Valid pixel
+		if (object_id[x][y] == -1) { // Note labeld pixel
+			// Get label
+			int label;
+			if (land_use->RasterIO(GF_Read, x, y, 1, 1, &label, 1, 1, GDT_Int64, 0, 0) == CE_None) {
+				if (objects[id].second == -1) {
+					objects[id].second = label;
+				}
+				if (objects[id].second == label) { // Same object th id
+					object_id[x][y] = id;
+					objects[id].first.push_back({x, y});
+					// Check neighbors
+					compute_object(land_use, object_id, objects, x-1, y, id);
+					compute_object(land_use, object_id, objects, x+1, y, id);
+					compute_object(land_use, object_id, objects, x, y-1, id);
+					compute_object(land_use, object_id, objects, x, y+1, id);
+				}
+			} else {
+				std::cerr << "Error while reading (" << x << ", " << y << ") value of land use map." << std::endl;
+			}
+		}
+	}
+}
+
 int compute_LOD2(char* DSM, char* DTM, char* land_use_map, char* LOD0, char* orthophoto) {
 	// Get raset info as GDALRasterBand and LOD0 as polygons
 	GDALRasterBand* dsm = get_band_from_TIFF(DSM);
@@ -95,6 +121,24 @@ int compute_LOD2(char* DSM, char* DTM, char* land_use_map, char* LOD0, char* ort
 		GDALRasterBand* green = get_band_from_TIFF(orthophoto, 2);
 		GDALRasterBand* blue = get_band_from_TIFF(orthophoto, 3);
 		std::cout << red->GetXSize() << "x" << red->GetYSize() << " orthophoto load." << std::endl;
+	}
+
+	// Get objetcs (connected components) from land use map
+	std::vector<std::vector<int>> object_id(land_use->GetXSize(), std::vector<int>(land_use->GetYSize(), -1));
+	std::vector<std::pair<std::list<std::pair<int,int>>, int>> objects;
+
+	for (int x = 0; x < land_use->GetXSize(); x++) {
+		for (int y = 0; y < land_use->GetYSize(); y++) {
+			if (object_id[x][y] == -1) {
+				int id = objects.size();
+				objects.push_back({{}, -1});
+				compute_object(land_use, object_id, objects, x, y, id);
+			}
+		}
+	}
+
+	for (auto object: objects) {
+		std::cout << object.second << ": " << object.first.size() << std::endl;
 	}
 
 	return EXIT_SUCCESS;
