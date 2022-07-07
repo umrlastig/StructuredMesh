@@ -1,18 +1,33 @@
 #include <iostream>
+#include <stdexcept>
 #include <sstream>
 #include <stdlib.h>
 #include <getopt.h>
+#include <string>
 #include <list>
 #include <vector>
 
 #include "ogrsf_frmts.h"
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+#include <CGAL/Point_set_3.h>
+#include <CGAL/Projection_traits_xy_3.h>
+#include <CGAL/Delaunay_triangulation_2.h>
+#include <CGAL/Surface_mesh.h>
 #include <CGAL/IO/WKT.h>
 #include <CGAL/Polygon_with_holes_2.h>
+#include <CGAL/boost/graph/graph_traits_Delaunay_triangulation_2.h>
+#include <CGAL/boost/graph/copy_face_graph.h>
+
+#include <CGAL/draw_triangulation_2.h>
 
 typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
-typedef K::Point_2                                          Point;
+typedef K::Point_2                                          Point_2;
+typedef K::Point_3                                          Point_3;
+typedef CGAL::Point_set_3<Point_3>                          Point_set_3;
+typedef CGAL::Surface_mesh<Point_3>                         Surface_mesh;
 typedef CGAL::Polygon_2<K>                                  Polygon;
+typedef CGAL::Projection_traits_xy_3<K>                     Projection_traits;
+typedef CGAL::Delaunay_triangulation_2<Projection_traits>   TIN;
 
 GDALRasterBand* get_band_from_TIFF(char* path, int i = 1) {
 	GDALAllRegister();
@@ -123,7 +138,7 @@ int compute_LOD2(char* DSM, char* DTM, char* land_use_map, char* LOD0, char* ort
 		std::cout << red->GetXSize() << "x" << red->GetYSize() << " orthophoto load." << std::endl;
 	}
 
-	// Get objetcs (connected components) from land use map
+	// Get objects (connected components) from land use map
 	std::vector<std::vector<int>> object_id(land_use->GetXSize(), std::vector<int>(land_use->GetYSize(), -1));
 	std::vector<std::pair<std::list<std::pair<int,int>>, int>> objects;
 
@@ -133,12 +148,35 @@ int compute_LOD2(char* DSM, char* DTM, char* land_use_map, char* LOD0, char* ort
 				int id = objects.size();
 				objects.push_back({{}, -1});
 				compute_object(land_use, object_id, objects, x, y, id);
+				//std::cout << "id: " << id << "\nnum_points: " << objects[0].first.size();
 			}
 		}
 	}
 
+	int id = 0;
 	for (auto object: objects) {
-		std::cout << object.second << ": " << object.first.size() << std::endl;
+		if (object.first.size() >= 3) {
+			Point_set_3 points;
+			points.reserve(object.first.size());
+			for (auto p : object.first) {
+				double z;
+				if (dsm->RasterIO(GF_Read, p.first, p.second, 1, 1, &z, 1, 1, GDT_Float64, 0, 0) == CE_None) {
+					points.insert(Point_3(p.first, p.second, z));
+				}
+			}
+
+			TIN tin (points.points().begin(), points.points().end());
+			
+			if (tin.number_of_faces() > 0) {
+				Surface_mesh mesh;
+				CGAL::copy_face_graph (tin, mesh);
+
+				std::ofstream mesh_ofile ("mesh_" + std::to_string(id++) + ".ply", std::ios_base::binary);
+				CGAL::IO::set_binary_mode (mesh_ofile);
+				CGAL::IO::write_PLY (mesh_ofile, mesh);
+				mesh_ofile.close();
+			}
+		}
 	}
 
 	return EXIT_SUCCESS;
