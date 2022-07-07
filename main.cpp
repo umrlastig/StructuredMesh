@@ -45,6 +45,152 @@ GDALRasterBand* get_band_from_TIFF(char* path, int i = 1) {
 	return band;
 }
 
+class Raster {
+	private:
+		GDALDataset* dataset;
+		OGRCoordinateTransformation* from_EPSG2154_to_CSR;
+		double padfTransform[6];
+		OGRSpatialReference csr = OGRSpatialReference("EPSG:2154");
+
+	public:
+		Raster(char* path) {
+			GDALAllRegister();
+
+			dataset = (GDALDataset *) GDALOpen( path, GA_ReadOnly );
+			if( dataset == NULL ) {
+				std::cerr << "Unable to open " << path << "." << std::endl;
+				throw std::invalid_argument(std::string(path) + " is not a raster.");
+			}
+
+			from_EPSG2154_to_CSR = OGRCreateCoordinateTransformation(
+				&csr,
+				dataset->GetSpatialRef());
+			if (from_EPSG2154_to_CSR == NULL) {
+				throw std::invalid_argument(std::string(path) + " do not contain a CSR.");
+			}
+
+			if (dataset->GetGeoTransform(padfTransform) != CE_None) {
+				throw std::invalid_argument(std::string(path) + " do not contain an affine transform.");
+			}
+		}
+
+		// Get unsigned char value from EPSG:2154 coordinates
+		bool get_value(double x, double y, unsigned char * ret) {
+			if (from_EPSG2154_to_CSR->Transform(1, &x, &y)) {
+				double fact = padfTransform[1]*padfTransform[5] - padfTransform[2]*padfTransform[4];
+				x -= padfTransform[0];
+				y -= padfTransform[3];
+				double P = (padfTransform[5]*x - padfTransform[2]*y) / fact;
+				double L = (-padfTransform[4]*x + padfTransform[1]*y) / fact;
+				if (0 <= P && P <= dataset->GetRasterXSize() && 0 <= L && L <= dataset->GetRasterYSize()) {
+					if (((int) P) == dataset->GetRasterXSize()) {P -= 0.5;}
+					if (((int) L) == dataset->GetRasterYSize()) {L -= 0.5;}
+					if (dataset->GetRasterCount() == 3) {
+						if (dataset->GetRasterBand(1)->RasterIO(GF_Read, (int) P, (int) L, 1, 1, ret, 1, 1, GDT_Byte, 0, 0) != CE_None) {
+							if (dataset->GetRasterBand(1)->RasterIO(GF_Read, (int) P, (int) L, 1, 1, ret+1, 1, 1, GDT_Byte, 0, 0) != CE_None) {
+								if (dataset->GetRasterBand(1)->RasterIO(GF_Read, (int) P, (int) L, 1, 1, ret+2, 1, 1, GDT_Byte, 0, 0) != CE_None) {
+									return true;
+								} else {
+									throw std::invalid_argument("No value for (" + std::to_string((int) P) + ", " + std::to_string((int) L) + ", 3).");
+								}
+							} else {
+								throw std::invalid_argument("No value for (" + std::to_string((int) P) + ", " + std::to_string((int) L) + ", 2).");
+							}
+						} else {
+							throw std::invalid_argument("No value for (" + std::to_string((int) P) + ", " + std::to_string((int) L) + ", 1).");
+						}
+					} else if (dataset->GetRasterCount() == 1) {
+						if (dataset->GetRasterBand(1)->RasterIO(GF_Read, (int) P, (int) L, 1, 1, ret, 1, 1, GDT_Byte, 0, 0) != CE_None) {
+							return true;
+						} else {
+							throw std::invalid_argument("No value for (" + std::to_string((int) P) + ", " + std::to_string((int) L) + ").");
+						}
+					} else {
+						throw std::invalid_argument("This raster does not contain one or 3 bands.");
+					}
+				}
+			} else {
+				throw std::invalid_argument("(" + std::to_string(x) + ", " + std::to_string(y) + ") could not bet transform to CSR.");
+			}
+			return false;
+		}
+
+		// Get double value from EPSG:2154 coordinates
+		bool get_value(double x, double y, double* ret) {
+			if (from_EPSG2154_to_CSR->Transform(1, &x, &y)) {
+				double fact = padfTransform[1]*padfTransform[5] - padfTransform[2]*padfTransform[4];
+				x -= padfTransform[0];
+				y -= padfTransform[3];
+				double P = (padfTransform[5]*x - padfTransform[2]*y) / fact;
+				double L = (-padfTransform[4]*x + padfTransform[1]*y) / fact;
+				if (0 <= P && P <= dataset->GetRasterXSize() && 0 <= L && L <= dataset->GetRasterYSize()) {
+					if (((int) P) == dataset->GetRasterXSize()) {P -= 0.5;}
+					if (((int) L) == dataset->GetRasterYSize()) {L -= 0.5;}
+					if (dataset->GetRasterBand(1)->RasterIO(GF_Read, (int) P, (int) L, 1, 1, ret, 1, 1, GDT_Float64, 0, 0) != CE_None) {
+						return true;
+					} else {
+						throw std::invalid_argument("No value for (" + std::to_string((int) P) + ", " + std::to_string((int) L) + ").");
+					}
+				}
+			} else {
+				throw std::invalid_argument("(" + std::to_string(x) + ", " + std::to_string(y) + ") could not bet transform to CSR.");
+			}
+			return false;
+		}
+
+		// Get unsigned char value from raster coordinates (P and L)
+		bool get_value(int P, int L, unsigned char * ret) {
+			if (0 <= P && P < dataset->GetRasterXSize() && 0 <= L && L < dataset->GetRasterYSize()) {
+				if (dataset->GetRasterCount() == 3) {
+					if (dataset->GetRasterBand(1)->RasterIO(GF_Read, P, L, 1, 1, ret, 1, 1, GDT_Byte, 0, 0) != CE_None) {
+						if (dataset->GetRasterBand(1)->RasterIO(GF_Read, P, L, 1, 1, ret+1, 1, 1, GDT_Byte, 0, 0) != CE_None) {
+							if (dataset->GetRasterBand(1)->RasterIO(GF_Read, P, L, 1, 1, ret+2, 1, 1, GDT_Byte, 0, 0) != CE_None) {
+								return true;
+							} else {
+								throw std::invalid_argument("No value for (" + std::to_string(P) + ", " + std::to_string(L) + ", 3).");
+							}
+						} else {
+							throw std::invalid_argument("No value for (" + std::to_string(P) + ", " + std::to_string(L) + ", 2).");
+						}
+					} else {
+						throw std::invalid_argument("No value for (" + std::to_string(P) + ", " + std::to_string(L) + ", 1).");
+					}
+				} else if (dataset->GetRasterCount() == 1) {
+					if (dataset->GetRasterBand(1)->RasterIO(GF_Read, P, L, 1, 1, ret, 1, 1, GDT_Byte, 0, 0) != CE_None) {
+						return true;
+					} else {
+						throw std::invalid_argument("No value for (" + std::to_string(P) + ", " + std::to_string(L) + ").");
+					}
+				} else {
+					throw std::invalid_argument("This raster does not contain one or 3 bands.");
+				}
+			}
+			return false;
+		}
+
+		// Get double value from raster coordinates (P and L)
+		bool get_value(int P, int L, double* ret) {
+			if (0 <= P && P < dataset->GetRasterXSize() && 0 <= L && L < dataset->GetRasterYSize()) {
+				if (dataset->GetRasterBand(1)->RasterIO(GF_Read, P, L, 1, 1, ret, 1, 1, GDT_Float64, 0, 0) != CE_None) {
+					return true;
+				} else {
+					throw std::invalid_argument("No value for (" + std::to_string(P) + ", " + std::to_string(L) + ").");
+				}
+			}
+			return false;
+		}
+
+		std::pair<double, double> get_coord(int P, int L) {
+			double x = padfTransform[0] + (0.5 + P)*padfTransform[1] + (0.5 + L)*padfTransform[2];
+			double y = padfTransform[3] + (0.5 + P)*padfTransform[4] + (0.5 + L)*padfTransform[5];
+			if (from_EPSG2154_to_CSR->GetInverse()->Transform(1, &x, &y)) {
+				return {x,y};
+			} else {
+				throw std::invalid_argument("(" + std::to_string(x) + ", " + std::to_string(y) + ") could not bet transform to EPSG2154.");
+			}
+		}
+};
+
 std::list<Polygon> get_LOD0_from_shapefile(char* path) {
 	GDALAllRegister();
 
