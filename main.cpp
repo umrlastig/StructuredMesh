@@ -8,193 +8,146 @@
 #include <vector>
 
 #include "ogrsf_frmts.h"
-#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
-#include <CGAL/Point_set_3.h>
-#include <CGAL/Projection_traits_xy_3.h>
-#include <CGAL/Delaunay_triangulation_2.h>
+#include <CGAL/Simple_cartesian.h>
 #include <CGAL/Surface_mesh.h>
+#include <CGAL/Triangle_3.h>
 #include <CGAL/IO/WKT.h>
 #include <CGAL/Polygon_with_holes_2.h>
-#include <CGAL/boost/graph/graph_traits_Delaunay_triangulation_2.h>
-#include <CGAL/boost/graph/copy_face_graph.h>
+#include <CGAL/Surface_mesh_simplification/edge_collapse.h>
+#include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Count_ratio_stop_predicate.h>
 
-#include <CGAL/draw_triangulation_2.h>
-
-typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
+typedef CGAL::Simple_cartesian<float>                       K;
 typedef K::Point_2                                          Point_2;
 typedef K::Point_3                                          Point_3;
-typedef CGAL::Point_set_3<Point_3>                          Point_set_3;
 typedef CGAL::Surface_mesh<Point_3>                         Surface_mesh;
 typedef CGAL::Polygon_2<K>                                  Polygon;
-typedef CGAL::Projection_traits_xy_3<K>                     Projection_traits;
-typedef CGAL::Delaunay_triangulation_2<Projection_traits>   TIN;
 
-GDALRasterBand* get_band_from_TIFF(char* path, int i = 1) {
-	GDALAllRegister();
-
-	GDALDataset* dataset;
-
-	dataset = (GDALDataset *) GDALOpen( path, GA_ReadOnly );
-	if( dataset == NULL ) {
-		std::cerr << "Unable to open " << path << "." << std::endl;
-		return NULL;
-	}
-
-	GDALRasterBand *band = dataset->GetRasterBand(i);
-
-	return band;
-}
+namespace SMS = CGAL::Surface_mesh_simplification;
 
 class Raster {
+	public:
+		std::vector<std::vector<float>> dsm;
+		std::vector<std::vector<float>> dtm;
+		std::vector<std::vector<char>> land_cover;
+		int xSize;
+		int ySize;
+
 	private:
-		GDALDataset* dataset;
-		OGRCoordinateTransformation* from_EPSG2154_to_CSR;
-		double padfTransform[6];
-		OGRSpatialReference csr = OGRSpatialReference("EPSG:2154");
+		OGRSpatialReference crs;
+		double grid_to_crs[6] = {0,1,0,0,0,1};
+
+		void coord_to_grid(double x, double y, float& P, float& L) {
+			double fact = grid_to_crs[1]*grid_to_crs[5] - grid_to_crs[2]*grid_to_crs[4];
+			x -= grid_to_crs[0];
+			y -= grid_to_crs[3];
+			P = (grid_to_crs[5]*x - grid_to_crs[2]*y) / fact;
+			L = (-grid_to_crs[4]*x + grid_to_crs[1]*y) / fact;
+		}
+
+		void grid_to_coord(int P, int L, double& x, double& y) {
+			x = grid_to_crs[0] + (0.5 + P)*grid_to_crs[1] + (0.5 + L)*grid_to_crs[2];
+			y = grid_to_crs[3] + (0.5 + P)*grid_to_crs[4] + (0.5 + L)*grid_to_crs[5];
+		}
+
+		void grid_to_coord(float P, float L, double& x, double& y) {
+			x = grid_to_crs[0] + P*grid_to_crs[1] + L*grid_to_crs[2];
+			y = grid_to_crs[3] + P*grid_to_crs[4] + L*grid_to_crs[5];
+		}
+
+		std::pair<int,int> grid_conversion(int &P, int &L, double grid_to_crs[6], OGRCoordinateTransformation *crs_to_other_crs, double other_grid_to_other_crs[6]) {
+			double x = grid_to_crs[0] + (0.5 + P)*grid_to_crs[1] + (0.5 + L)*grid_to_crs[2];
+			double y = grid_to_crs[3] + (0.5 + P)*grid_to_crs[4] + (0.5 + L)*grid_to_crs[5];
+			crs_to_other_crs->Transform(1,&x,&y);
+			double fact = other_grid_to_other_crs[1]*other_grid_to_other_crs[5] - other_grid_to_other_crs[2]*other_grid_to_other_crs[4];
+			x -= other_grid_to_other_crs[0];
+			y -= other_grid_to_other_crs[3];
+			int newP = ((int) ((other_grid_to_other_crs[5]*x - other_grid_to_other_crs[2]*y) / fact));
+			int newL = ((int) ((-other_grid_to_other_crs[4]*x + other_grid_to_other_crs[1]*y) / fact));
+			return std::pair<int,int>(newP, newL);
+		}
 
 	public:
-		Raster(char* path) {
+		Raster(char *dsm_path, char *dtm_path, char *land_cover_path) {
 			GDALAllRegister();
 
-			dataset = (GDALDataset *) GDALOpen( path, GA_ReadOnly );
-			if( dataset == NULL ) {
-				std::cerr << "Unable to open " << path << "." << std::endl;
-				throw std::invalid_argument(std::string(path) + " is not a raster.");
+			// Get DSM informations and CRS
+			GDALDataset *dsm_dataset = (GDALDataset *) GDALOpen(dsm_path, GA_ReadOnly );
+			if( dsm_dataset == NULL ) {
+				throw std::invalid_argument(std::string("Unable to open ") + dsm_path + ".");
 			}
-
-			from_EPSG2154_to_CSR = OGRCreateCoordinateTransformation(
-				&csr,
-				dataset->GetSpatialRef());
-			if (from_EPSG2154_to_CSR == NULL) {
-				throw std::invalid_argument(std::string(path) + " do not contain a CSR.");
+			xSize = dsm_dataset->GetRasterBand(1)->GetXSize();
+			ySize = dsm_dataset->GetRasterBand(1)->GetYSize();
+			crs = *dsm_dataset->GetSpatialRef();
+			if (dsm_dataset->GetGeoTransform(grid_to_crs) != CE_None) {
+				throw std::invalid_argument(std::string(dsm_path) + " do not contain an affine transform.");
 			}
-
-			if (dataset->GetGeoTransform(padfTransform) != CE_None) {
-				throw std::invalid_argument(std::string(path) + " do not contain an affine transform.");
+			dsm = std::vector<std::vector<float>>(ySize, std::vector<float>(xSize, 0));
+			for (int L = 0; L < ySize; L++) {
+				dsm_dataset->GetRasterBand(1)->RasterIO(GF_Read, 0, L, xSize, 1, &dsm[L][0], xSize, 1, GDT_Float32, 0, 0);
 			}
-		}
+			std::cout << "DSM load" << std::endl;
 
-		// Get unsigned char value from EPSG:2154 coordinates
-		bool get_value(double x, double y, unsigned char * ret) {
-			if (from_EPSG2154_to_CSR->Transform(1, &x, &y)) {
-				double fact = padfTransform[1]*padfTransform[5] - padfTransform[2]*padfTransform[4];
-				x -= padfTransform[0];
-				y -= padfTransform[3];
-				double P = (padfTransform[5]*x - padfTransform[2]*y) / fact;
-				double L = (-padfTransform[4]*x + padfTransform[1]*y) / fact;
-				if (0 <= P && P <= dataset->GetRasterXSize() && 0 <= L && L <= dataset->GetRasterYSize()) {
-					if (((int) P) == dataset->GetRasterXSize()) {P -= 0.5;}
-					if (((int) L) == dataset->GetRasterYSize()) {L -= 0.5;}
-					if (dataset->GetRasterCount() == 3) {
-						if (dataset->GetRasterBand(1)->RasterIO(GF_Read, (int) P, (int) L, 1, 1, ret, 1, 1, GDT_Byte, 0, 0) != CE_None) {
-							if (dataset->GetRasterBand(1)->RasterIO(GF_Read, (int) P, (int) L, 1, 1, ret+1, 1, 1, GDT_Byte, 0, 0) != CE_None) {
-								if (dataset->GetRasterBand(1)->RasterIO(GF_Read, (int) P, (int) L, 1, 1, ret+2, 1, 1, GDT_Byte, 0, 0) != CE_None) {
-									return true;
-								} else {
-									throw std::invalid_argument("No value for (" + std::to_string((int) P) + ", " + std::to_string((int) L) + ", 3).");
-								}
-							} else {
-								throw std::invalid_argument("No value for (" + std::to_string((int) P) + ", " + std::to_string((int) L) + ", 2).");
-							}
-						} else {
-							throw std::invalid_argument("No value for (" + std::to_string((int) P) + ", " + std::to_string((int) L) + ", 1).");
-						}
-					} else if (dataset->GetRasterCount() == 1) {
-						if (dataset->GetRasterBand(1)->RasterIO(GF_Read, (int) P, (int) L, 1, 1, ret, 1, 1, GDT_Byte, 0, 0) != CE_None) {
-							return true;
-						} else {
-							throw std::invalid_argument("No value for (" + std::to_string((int) P) + ", " + std::to_string((int) L) + ").");
-						}
-					} else {
-						throw std::invalid_argument("This raster does not contain one or 3 bands.");
+			// Get DTM informations and CRS transform
+			dtm = std::vector<std::vector<float>>(ySize, std::vector<float>(xSize, 0));
+			GDALDataset *dtm_dataset = (GDALDataset *) GDALOpen( dtm_path, GA_ReadOnly );
+			if( dtm_dataset == NULL ) {
+				throw std::invalid_argument(std::string("Unable to open ") + dtm_path + ".");
+			}
+			double dtm_grid_to_dtm_crs[6];
+			if (dtm_dataset->GetGeoTransform(dtm_grid_to_dtm_crs) != CE_None) {
+				throw std::invalid_argument("Can't transform DTM grid to DTM CRS.");
+			}
+			OGRCoordinateTransformation *CRS_to_dtm_crs = OGRCreateCoordinateTransformation(
+				&crs,
+				dtm_dataset->GetSpatialRef());
+			if (CRS_to_dtm_crs == NULL) {
+				throw std::runtime_error("Can't transform DSM CRS to DTM CRS.");
+			}
+			for (int L = 0; L < ySize; L++) {
+				for (int P = 0; P < xSize; P++) {
+					std::pair<int,int> new_coord = grid_conversion(P, L, grid_to_crs, CRS_to_dtm_crs, dtm_grid_to_dtm_crs);
+					if (new_coord.first >= 0 && new_coord.first < dtm_dataset->GetRasterBand(1)->GetXSize() && new_coord.second >= 0 && new_coord.second < dtm_dataset->GetRasterBand(1)->GetYSize()) {
+						dtm_dataset->GetRasterBand(1)->RasterIO(GF_Read, new_coord.first, new_coord.second, 1, 1, &dtm[L][P], 1, 1, GDT_Float32, 0, 0);
 					}
 				}
-			} else {
-				throw std::invalid_argument("(" + std::to_string(x) + ", " + std::to_string(y) + ") could not bet transform to CSR.");
 			}
-			return false;
-		}
+			std::cout << "DTM load" << std::endl;
 
-		// Get double value from EPSG:2154 coordinates
-		bool get_value(double x, double y, double* ret) {
-			if (from_EPSG2154_to_CSR->Transform(1, &x, &y)) {
-				double fact = padfTransform[1]*padfTransform[5] - padfTransform[2]*padfTransform[4];
-				x -= padfTransform[0];
-				y -= padfTransform[3];
-				double P = (padfTransform[5]*x - padfTransform[2]*y) / fact;
-				double L = (-padfTransform[4]*x + padfTransform[1]*y) / fact;
-				if (0 <= P && P <= dataset->GetRasterXSize() && 0 <= L && L <= dataset->GetRasterYSize()) {
-					if (((int) P) == dataset->GetRasterXSize()) {P -= 0.5;}
-					if (((int) L) == dataset->GetRasterYSize()) {L -= 0.5;}
-					if (dataset->GetRasterBand(1)->RasterIO(GF_Read, (int) P, (int) L, 1, 1, ret, 1, 1, GDT_Float64, 0, 0) != CE_None) {
-						return true;
-					} else {
-						throw std::invalid_argument("No value for (" + std::to_string((int) P) + ", " + std::to_string((int) L) + ").");
+			// Get land cover informations and CRS transform
+			land_cover = std::vector<std::vector<char>>(ySize, std::vector<char>(xSize, -1));
+			GDALDataset *land_cover_dataset = (GDALDataset *) GDALOpen( land_cover_path, GA_ReadOnly );
+			if( dsm_dataset == NULL ) {
+				throw std::invalid_argument(std::string("Unable to open ") + land_cover_path + ".");
+			}
+
+			double land_cover_grid_to_land_cover_crs[6];
+			if (land_cover_dataset->GetGeoTransform(land_cover_grid_to_land_cover_crs) != CE_None) {
+				throw std::invalid_argument("Can't transform land cover grid to land cover CRS.");
+			}
+			OGRCoordinateTransformation *CRS_to_land_cover_crs = OGRCreateCoordinateTransformation(
+				&crs,
+				land_cover_dataset->GetSpatialRef());
+			if (CRS_to_land_cover_crs == NULL) {
+				throw std::runtime_error("Can't transform DSM CRS to land cover CRS.");
+			}
+			for (int L = 0; L < ySize; L++) {
+				for (int P = 0; P < xSize; P++) {
+					std::pair<int,int> new_coord = grid_conversion(P, L, grid_to_crs, CRS_to_land_cover_crs, land_cover_grid_to_land_cover_crs);
+					if (new_coord.first >= 0 && new_coord.first < land_cover_dataset->GetRasterBand(1)->GetXSize() && new_coord.second >= 0 && new_coord.second < land_cover_dataset->GetRasterBand(1)->GetYSize()) {
+						unsigned char value;
+						land_cover_dataset->GetRasterBand(1)->RasterIO(GF_Read, new_coord.first, new_coord.second, 1, 1, &value, 1, 1, GDT_Byte, 0, 0);
+						land_cover[L][P] = (char) value;
 					}
 				}
-			} else {
-				throw std::invalid_argument("(" + std::to_string(x) + ", " + std::to_string(y) + ") could not bet transform to CSR.");
 			}
-			return false;
-		}
-
-		// Get unsigned char value from raster coordinates (P and L)
-		bool get_value(int P, int L, unsigned char * ret) {
-			if (0 <= P && P < dataset->GetRasterXSize() && 0 <= L && L < dataset->GetRasterYSize()) {
-				if (dataset->GetRasterCount() == 3) {
-					if (dataset->GetRasterBand(1)->RasterIO(GF_Read, P, L, 1, 1, ret, 1, 1, GDT_Byte, 0, 0) != CE_None) {
-						if (dataset->GetRasterBand(1)->RasterIO(GF_Read, P, L, 1, 1, ret+1, 1, 1, GDT_Byte, 0, 0) != CE_None) {
-							if (dataset->GetRasterBand(1)->RasterIO(GF_Read, P, L, 1, 1, ret+2, 1, 1, GDT_Byte, 0, 0) != CE_None) {
-								return true;
-							} else {
-								throw std::invalid_argument("No value for (" + std::to_string(P) + ", " + std::to_string(L) + ", 3).");
-							}
-						} else {
-							throw std::invalid_argument("No value for (" + std::to_string(P) + ", " + std::to_string(L) + ", 2).");
-						}
-					} else {
-						throw std::invalid_argument("No value for (" + std::to_string(P) + ", " + std::to_string(L) + ", 1).");
-					}
-				} else if (dataset->GetRasterCount() == 1) {
-					if (dataset->GetRasterBand(1)->RasterIO(GF_Read, P, L, 1, 1, ret, 1, 1, GDT_Byte, 0, 0) != CE_None) {
-						return true;
-					} else {
-						throw std::invalid_argument("No value for (" + std::to_string(P) + ", " + std::to_string(L) + ").");
-					}
-				} else {
-					throw std::invalid_argument("This raster does not contain one or 3 bands.");
-				}
-			}
-			return false;
-		}
-
-		// Get double value from raster coordinates (P and L)
-		bool get_value(int P, int L, double* ret) {
-			if (0 <= P && P < dataset->GetRasterXSize() && 0 <= L && L < dataset->GetRasterYSize()) {
-				if (dataset->GetRasterBand(1)->RasterIO(GF_Read, P, L, 1, 1, ret, 1, 1, GDT_Float64, 0, 0) != CE_None) {
-					return true;
-				} else {
-					throw std::invalid_argument("No value for (" + std::to_string(P) + ", " + std::to_string(L) + ").");
-				}
-			}
-			return false;
-		}
-
-		std::pair<double, double> get_coord(int P, int L) {
-			double x = padfTransform[0] + (0.5 + P)*padfTransform[1] + (0.5 + L)*padfTransform[2];
-			double y = padfTransform[3] + (0.5 + P)*padfTransform[4] + (0.5 + L)*padfTransform[5];
-			if (from_EPSG2154_to_CSR->GetInverse()->Transform(1, &x, &y)) {
-				return {x,y};
-			} else {
-				throw std::invalid_argument("(" + std::to_string(x) + ", " + std::to_string(y) + ") could not bet transform to EPSG2154.");
-			}
+			std::cout << "Land cover load" << std::endl;
 		}
 };
 
-std::list<Polygon> get_LOD0_from_shapefile(char* path) {
+std::list<Polygon> get_LOD0_from_shapefile(char *path) {
 	GDALAllRegister();
 
-	GDALDataset* dataset;
+	GDALDataset *dataset;
 
 	std::list<Polygon> polygons;
 
@@ -204,15 +157,15 @@ std::list<Polygon> get_LOD0_from_shapefile(char* path) {
 		return polygons;
 	}
 
-	for( OGRLayer* layer: dataset->GetLayers() ) {
+	for( OGRLayer *layer: dataset->GetLayers() ) {
         for( const auto& feature: *layer ) {
 			if ((*feature)["num_class"].GetInteger() == 4) {
 				// Get only the buildings
-				OGRGeometry* geometry = feature->GetGeometryRef();
+				OGRGeometry *geometry = feature->GetGeometryRef();
 				
 				if (wkbFlatten(geometry->getGeometryType()) == wkbPolygon) {
 
-					OGRPolygon * shp_polygon = geometry->toPolygon();
+					OGRPolygon *shp_polygon = geometry->toPolygon();
 					Polygon cgal_polygon;
 					std::istringstream wkt(shp_polygon->exportToWkt());
 					CGAL::IO::read_polygon_WKT (wkt, cgal_polygon);
@@ -220,8 +173,8 @@ std::list<Polygon> get_LOD0_from_shapefile(char* path) {
 
 				} else if (wkbFlatten(geometry->getGeometryType()) == wkbMultiPolygon) {
 
-					OGRMultiPolygon * shp_multi_polygon = geometry->toMultiPolygon();
-					for (OGRPolygon* shp_polygon: *shp_multi_polygon) {
+					OGRMultiPolygon *shp_multi_polygon = geometry->toMultiPolygon();
+					for (OGRPolygon *shp_polygon: *shp_multi_polygon) {
 						Polygon cgal_polygon;
 						std::istringstream wkt(shp_polygon->exportToWkt());
 						CGAL::IO::read_polygon_WKT (wkt, cgal_polygon);
@@ -236,99 +189,45 @@ std::list<Polygon> get_LOD0_from_shapefile(char* path) {
 	return polygons;
 }
 
-void compute_object(GDALRasterBand* land_use, std::vector<std::vector<int>>& object_id, std::vector<std::pair<std::list<std::pair<int,int>>, int>>& objects, int x, int y, int id) {
-	if (x >= 0 && x < land_use->GetXSize() && y >= 0 && y < land_use->GetYSize()) { // Valid pixel
-		if (object_id[x][y] == -1) { // Note labeld pixel
-			// Get label
-			int label;
-			if (land_use->RasterIO(GF_Read, x, y, 1, 1, &label, 1, 1, GDT_Int64, 0, 0) == CE_None) {
-				if (objects[id].second == -1) {
-					objects[id].second = label;
-				}
-				if (objects[id].second == label) { // Same object th id
-					object_id[x][y] = id;
-					objects[id].first.push_back({x, y});
-					// Check neighbors
-					compute_object(land_use, object_id, objects, x-1, y, id);
-					compute_object(land_use, object_id, objects, x+1, y, id);
-					compute_object(land_use, object_id, objects, x, y-1, id);
-					compute_object(land_use, object_id, objects, x, y+1, id);
-				}
+int compute_LOD2(char *DSM, char *DTM, char *land_use_map, char *LOD0, char *orthophoto) {
+	Raster raster(DSM, DTM, land_use_map);
+
+	Surface_mesh mesh;
+	// Add points
+	std::vector<std::vector<Surface_mesh::Vertex_index>> vertex_index(raster.ySize, std::vector<Surface_mesh::Vertex_index>(raster.xSize, Surface_mesh::Vertex_index()));
+	for (int L = 0; L < raster.ySize; L++) {
+		for (int P = 0; P < raster.xSize; P++) {
+			vertex_index[L][P] = mesh.add_vertex(Point_3(0.5 + P, 0.5 + L, raster.dsm[L][P]));
+		}
+	}
+	std::cout << "Point added" << std::endl;
+	// Add faces
+	for (int L = 0; L < raster.ySize-1; L++) {
+		for (int P = 0; P < raster.xSize-1; P++) {
+			if (pow(raster.dsm[L][P]-raster.dsm[L+1][P+1], 2) < pow(raster.dsm[L+1][P]-raster.dsm[L][P+1], 2)) {
+				mesh.add_face(vertex_index[L][P], vertex_index[L+1][P+1], vertex_index[L+1][P]);
+				mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P+1]);
 			} else {
-				std::cerr << "Error while reading (" << x << ", " << y << ") value of land use map." << std::endl;
+				mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P]);
+				mesh.add_face(vertex_index[L][P+1], vertex_index[L+1][P+1], vertex_index[L+1][P]);
 			}
 		}
 	}
-}
+	std::cout << "Faces added" << std::endl;
 
-int compute_LOD2(char* DSM, char* DTM, char* land_use_map, char* LOD0, char* orthophoto) {
-	// Get raset info as GDALRasterBand and LOD0 as polygons
-	GDALRasterBand* dsm = get_band_from_TIFF(DSM);
-	std::cout << dsm->GetXSize() << "x" << dsm->GetYSize() << " DSM load." << std::endl;
+	SMS::Count_ratio_stop_predicate<Surface_mesh> stop(0.01);
+	int r = SMS::edge_collapse(mesh, stop);
+	std::cout << "Mesh simplified" << std::endl;
 
-	GDALRasterBand* dtm = get_band_from_TIFF(DTM);
-	std::cout << dtm->GetXSize() << "x" << dtm->GetYSize() << " DTM load." << std::endl;
-
-	GDALRasterBand* land_use = get_band_from_TIFF(land_use_map);
-	std::cout << land_use->GetXSize() << "x" << land_use->GetYSize() << " land use map load." << std::endl;
-	
-	if (LOD0 != NULL) {
-		std::list<Polygon> buildings = get_LOD0_from_shapefile(LOD0);
-		std::cout << buildings.size() << " buildings load from " << LOD0 << "." << std::endl;
-	}
-
-	if (orthophoto != NULL) {
-		GDALRasterBand* red = get_band_from_TIFF(orthophoto, 1);
-		GDALRasterBand* green = get_band_from_TIFF(orthophoto, 2);
-		GDALRasterBand* blue = get_band_from_TIFF(orthophoto, 3);
-		std::cout << red->GetXSize() << "x" << red->GetYSize() << " orthophoto load." << std::endl;
-	}
-
-	// Get objects (connected components) from land use map
-	std::vector<std::vector<int>> object_id(land_use->GetXSize(), std::vector<int>(land_use->GetYSize(), -1));
-	std::vector<std::pair<std::list<std::pair<int,int>>, int>> objects;
-
-	for (int x = 0; x < land_use->GetXSize(); x++) {
-		for (int y = 0; y < land_use->GetYSize(); y++) {
-			if (object_id[x][y] == -1) {
-				int id = objects.size();
-				objects.push_back({{}, -1});
-				compute_object(land_use, object_id, objects, x, y, id);
-				//std::cout << "id: " << id << "\nnum_points: " << objects[0].first.size();
-			}
-		}
-	}
-
-	int id = 0;
-	for (auto object: objects) {
-		if (object.first.size() >= 3) {
-			Point_set_3 points;
-			points.reserve(object.first.size());
-			for (auto p : object.first) {
-				double z;
-				if (dsm->RasterIO(GF_Read, p.first, p.second, 1, 1, &z, 1, 1, GDT_Float64, 0, 0) == CE_None) {
-					points.insert(Point_3(p.first, p.second, z));
-				}
-			}
-
-			TIN tin (points.points().begin(), points.points().end());
-			
-			if (tin.number_of_faces() > 0) {
-				Surface_mesh mesh;
-				CGAL::copy_face_graph (tin, mesh);
-
-				std::ofstream mesh_ofile ("mesh_" + std::to_string(id++) + ".ply", std::ios_base::binary);
-				CGAL::IO::set_binary_mode (mesh_ofile);
-				CGAL::IO::write_PLY (mesh_ofile, mesh);
-				mesh_ofile.close();
-			}
-		}
-	}
+	std::ofstream mesh_ofile ("mesh.ply", std::ios_base::binary);
+	CGAL::IO::set_binary_mode (mesh_ofile);
+	CGAL::IO::write_PLY (mesh_ofile, mesh);
+	mesh_ofile.close();
 
 	return EXIT_SUCCESS;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
 	int opt;
 	const struct option options[] = {
 		{"help", no_argument, NULL, 'h'},
@@ -340,11 +239,11 @@ int main(int argc, char** argv) {
 		{NULL, 0, 0, '\0'}
 	};
 
-	char* DSM = NULL;
-	char* DTM = NULL;
-	char* land_use_map = NULL;
-	char* LOD0 = NULL;
-	char* orthophoto = NULL;
+	char *DSM = NULL;
+	char *DTM = NULL;
+	char *land_use_map = NULL;
+	char *LOD0 = NULL;
+	char *orthophoto = NULL;
 
 	while ((opt = getopt_long(argc, argv, "hs:t:l:0:i:", options, NULL)) != -1) {
 		switch(opt) {
