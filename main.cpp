@@ -6,20 +6,24 @@
 #include <string>
 #include <list>
 #include <vector>
+#include <algorithm>
 
 #include "ogrsf_frmts.h"
 #include <CGAL/Simple_cartesian.h>
 #include <CGAL/Surface_mesh.h>
-#include <CGAL/Triangle_3.h>
+#include <CGAL/Triangle_2.h>
 #include <CGAL/IO/WKT.h>
 #include <CGAL/Polygon_with_holes_2.h>
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Count_ratio_stop_predicate.h>
 #include <CGAL/boost/graph/copy_face_graph.h>
 
+#include "label.cpp"
+
 typedef CGAL::Simple_cartesian<float>                       K;
 typedef K::Point_2                                          Point_2;
 typedef K::Point_3                                          Point_3;
+typedef K::Triangle_2                                       Triangle_2;
 typedef CGAL::Surface_mesh<Point_3>                         Surface_mesh;
 typedef CGAL::Polygon_2<K>                                  Polygon;
 
@@ -66,6 +70,24 @@ class Raster {
 		void grid_to_coord(float P, float L, double& x, double& y) {
 			x = grid_to_crs[0] + P*grid_to_crs[1] + L*grid_to_crs[2];
 			y = grid_to_crs[3] + P*grid_to_crs[4] + L*grid_to_crs[5];
+		}
+
+		template <typename T>
+		std::list<std::pair<int,int>> triangle_to_pixel(CGAL::Point_3<T> a, CGAL::Point_3<T> b, CGAL::Point_3<T> c) {
+			std::list<std::pair<int,int>> ret;
+			int min_x = std::max((int) std::min({a.x(), b.x(), c.x()}), 0);
+			int max_x = std::min((int) std::max({a.x(), b.x(), c.x()}), xSize-1);
+			int min_y = std::max((int) std::min({a.y(), b.y(), c.y()}), 0);
+			int max_y = std::min((int) std::max({a.y(), b.y(), c.y()}), ySize-1);
+			Triangle_2 triangle (Point_2(a.x(), a.y()), Point_2(b.x(), b.y()), Point_2(c.x(), c.y()));
+			for (int L = min_y; L <= max_y; L++) {
+				for (int P = min_x; P <= max_x; P++) {
+					if (triangle.bounded_side(Point_2(0.5 + P, 0.5 + L)) != CGAL::ON_UNBOUNDED_SIDE) {
+						ret.push_back(std::pair<int,int>(P,L));
+					}
+				}
+			}
+			return ret;
 		}
 
 		Raster(char *dsm_path, char *dtm_path, char *land_cover_path) {
@@ -220,8 +242,44 @@ int compute_LOD2(char *DSM, char *DTM, char *land_use_map, char *LOD0, char *ort
 	int r = SMS::edge_collapse(mesh, stop);
 	std::cout << "Mesh simplified" << std::endl;
 
-	CGAL::Surface_mesh<CGAL::Simple_cartesian<double>::Point_3> output_mesh;
+	typedef CGAL::Surface_mesh<CGAL::Simple_cartesian<double>::Point_3> OutputMesh;
+	OutputMesh output_mesh;
 	CGAL::copy_face_graph (mesh, output_mesh);
+
+	// Label
+	OutputMesh::Property_map<OutputMesh::Face_index, unsigned char> label;
+	bool created;
+	boost::tie(label, created) = output_mesh.add_property_map<OutputMesh::Face_index, unsigned char>("label",0);
+	assert(created);
+
+	// Color
+	OutputMesh::Property_map<OutputMesh::Face_index, unsigned char> red;
+	OutputMesh::Property_map<OutputMesh::Face_index, unsigned char> green;
+	OutputMesh::Property_map<OutputMesh::Face_index, unsigned char> blue;
+	boost::tie(red, created) = output_mesh.add_property_map<OutputMesh::Face_index, unsigned char>("red",0);
+	assert(created);
+	boost::tie(green, created) = output_mesh.add_property_map<OutputMesh::Face_index, unsigned char>("green",0);
+	assert(created);
+	boost::tie(blue, created) = output_mesh.add_property_map<OutputMesh::Face_index, unsigned char>("blue",0);
+	assert(created);
+
+	for (auto face : output_mesh.faces()) {
+		int face_label[LABELS.size()] = {0};
+
+		CGAL::Vertex_around_face_iterator<OutputMesh> vbegin, vend;
+    	boost::tie(vbegin, vend) = vertices_around_face(output_mesh.halfedge(face), output_mesh);
+		for (auto pixel : raster.triangle_to_pixel(output_mesh.point(*vbegin++), output_mesh.point(*(vbegin++)), output_mesh.point(*(vbegin++)))) {
+			if (raster.land_cover[pixel.second][pixel.first] > -1) {
+				face_label[raster.land_cover[pixel.second][pixel.first]]++;
+			}
+		}
+		
+		auto argmax = std::max_element(face_label, face_label+LABELS.size());
+		label[face] = argmax - face_label;
+		red[face] = LABELS[argmax - face_label].red;
+		green[face] = LABELS[argmax - face_label].green;
+		blue[face] = LABELS[argmax - face_label].blue;
+	}
 
 	for(auto vertex : output_mesh.vertices()) {
 		auto point = output_mesh.point(vertex);
