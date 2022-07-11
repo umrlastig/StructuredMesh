@@ -15,6 +15,7 @@
 #include <CGAL/Polygon_with_holes_2.h>
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Count_ratio_stop_predicate.h>
+#include <CGAL/boost/graph/copy_face_graph.h>
 
 typedef CGAL::Simple_cartesian<float>                       K;
 typedef K::Point_2                                          Point_2;
@@ -36,6 +37,19 @@ class Raster {
 		OGRSpatialReference crs;
 		double grid_to_crs[6] = {0,1,0,0,0,1};
 
+		std::pair<int,int> grid_conversion(int &P, int &L, double grid_to_crs[6], OGRCoordinateTransformation *crs_to_other_crs, double other_grid_to_other_crs[6]) {
+			double x = grid_to_crs[0] + (0.5 + P)*grid_to_crs[1] + (0.5 + L)*grid_to_crs[2];
+			double y = grid_to_crs[3] + (0.5 + P)*grid_to_crs[4] + (0.5 + L)*grid_to_crs[5];
+			crs_to_other_crs->Transform(1,&x,&y);
+			double fact = other_grid_to_other_crs[1]*other_grid_to_other_crs[5] - other_grid_to_other_crs[2]*other_grid_to_other_crs[4];
+			x -= other_grid_to_other_crs[0];
+			y -= other_grid_to_other_crs[3];
+			int newP = ((int) ((other_grid_to_other_crs[5]*x - other_grid_to_other_crs[2]*y) / fact));
+			int newL = ((int) ((-other_grid_to_other_crs[4]*x + other_grid_to_other_crs[1]*y) / fact));
+			return std::pair<int,int>(newP, newL);
+		}
+
+	public:
 		void coord_to_grid(double x, double y, float& P, float& L) {
 			double fact = grid_to_crs[1]*grid_to_crs[5] - grid_to_crs[2]*grid_to_crs[4];
 			x -= grid_to_crs[0];
@@ -54,19 +68,6 @@ class Raster {
 			y = grid_to_crs[3] + P*grid_to_crs[4] + L*grid_to_crs[5];
 		}
 
-		std::pair<int,int> grid_conversion(int &P, int &L, double grid_to_crs[6], OGRCoordinateTransformation *crs_to_other_crs, double other_grid_to_other_crs[6]) {
-			double x = grid_to_crs[0] + (0.5 + P)*grid_to_crs[1] + (0.5 + L)*grid_to_crs[2];
-			double y = grid_to_crs[3] + (0.5 + P)*grid_to_crs[4] + (0.5 + L)*grid_to_crs[5];
-			crs_to_other_crs->Transform(1,&x,&y);
-			double fact = other_grid_to_other_crs[1]*other_grid_to_other_crs[5] - other_grid_to_other_crs[2]*other_grid_to_other_crs[4];
-			x -= other_grid_to_other_crs[0];
-			y -= other_grid_to_other_crs[3];
-			int newP = ((int) ((other_grid_to_other_crs[5]*x - other_grid_to_other_crs[2]*y) / fact));
-			int newL = ((int) ((-other_grid_to_other_crs[4]*x + other_grid_to_other_crs[1]*y) / fact));
-			return std::pair<int,int>(newP, newL);
-		}
-
-	public:
 		Raster(char *dsm_path, char *dtm_path, char *land_cover_path) {
 			GDALAllRegister();
 
@@ -215,13 +216,23 @@ int compute_LOD2(char *DSM, char *DTM, char *land_use_map, char *LOD0, char *ort
 	}
 	std::cout << "Faces added" << std::endl;
 
-	SMS::Count_ratio_stop_predicate<Surface_mesh> stop(0.01);
+	SMS::Count_ratio_stop_predicate<Surface_mesh> stop(0.05);
 	int r = SMS::edge_collapse(mesh, stop);
 	std::cout << "Mesh simplified" << std::endl;
 
+	CGAL::Surface_mesh<CGAL::Simple_cartesian<double>::Point_3> output_mesh;
+	CGAL::copy_face_graph (mesh, output_mesh);
+
+	for(auto vertex : output_mesh.vertices()) {
+		auto point = output_mesh.point(vertex);
+		double x, y;
+		raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
+		output_mesh.point(vertex) = CGAL::Simple_cartesian<double>::Point_3(x, y, (double) point.z());
+	}
+
 	std::ofstream mesh_ofile ("mesh.ply", std::ios_base::binary);
 	CGAL::IO::set_binary_mode (mesh_ofile);
-	CGAL::IO::write_PLY (mesh_ofile, mesh);
+	CGAL::IO::write_PLY (mesh_ofile, output_mesh);
 	mesh_ofile.close();
 
 	return EXIT_SUCCESS;
