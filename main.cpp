@@ -101,12 +101,14 @@ class Raster {
 			xSize = dsm_dataset->GetRasterBand(1)->GetXSize();
 			ySize = dsm_dataset->GetRasterBand(1)->GetYSize();
 			crs = *dsm_dataset->GetSpatialRef();
-			if (dsm_dataset->GetGeoTransform(grid_to_crs) != CE_None) {
+			if (dsm_dataset->GetGeoTransform(grid_to_crs) >= CE_Failure) {
 				throw std::invalid_argument(std::string(dsm_path) + " do not contain an affine transform.");
 			}
 			dsm = std::vector<std::vector<float>>(ySize, std::vector<float>(xSize, 0));
 			for (int L = 0; L < ySize; L++) {
-				dsm_dataset->GetRasterBand(1)->RasterIO(GF_Read, 0, L, xSize, 1, &dsm[L][0], xSize, 1, GDT_Float32, 0, 0);
+				if (dsm_dataset->GetRasterBand(1)->RasterIO(GF_Read, 0, L, xSize, 1, &dsm[L][0], xSize, 1, GDT_Float32, 0, 0) >= CE_Failure) {
+					throw std::invalid_argument(std::string(dsm_path) + " can't be read.");
+				}
 			}
 			std::cout << "DSM load" << std::endl;
 
@@ -117,7 +119,7 @@ class Raster {
 				throw std::invalid_argument(std::string("Unable to open ") + dtm_path + ".");
 			}
 			double dtm_grid_to_dtm_crs[6];
-			if (dtm_dataset->GetGeoTransform(dtm_grid_to_dtm_crs) != CE_None) {
+			if (dtm_dataset->GetGeoTransform(dtm_grid_to_dtm_crs) >= CE_Failure) {
 				throw std::invalid_argument("Can't transform DTM grid to DTM CRS.");
 			}
 			OGRCoordinateTransformation *CRS_to_dtm_crs = OGRCreateCoordinateTransformation(
@@ -130,7 +132,9 @@ class Raster {
 				for (int P = 0; P < xSize; P++) {
 					std::pair<int,int> new_coord = grid_conversion(P, L, grid_to_crs, CRS_to_dtm_crs, dtm_grid_to_dtm_crs);
 					if (new_coord.first >= 0 && new_coord.first < dtm_dataset->GetRasterBand(1)->GetXSize() && new_coord.second >= 0 && new_coord.second < dtm_dataset->GetRasterBand(1)->GetYSize()) {
-						dtm_dataset->GetRasterBand(1)->RasterIO(GF_Read, new_coord.first, new_coord.second, 1, 1, &dtm[L][P], 1, 1, GDT_Float32, 0, 0);
+						if (dtm_dataset->GetRasterBand(1)->RasterIO(GF_Read, new_coord.first, new_coord.second, 1, 1, &dtm[L][P], 1, 1, GDT_Float32, 0, 0) >= CE_Failure) {
+							throw std::invalid_argument(std::string(dtm_path) + " can't be read.");
+						}
 					}
 				}
 			}
@@ -144,7 +148,7 @@ class Raster {
 			}
 
 			double land_cover_grid_to_land_cover_crs[6];
-			if (land_cover_dataset->GetGeoTransform(land_cover_grid_to_land_cover_crs) != CE_None) {
+			if (land_cover_dataset->GetGeoTransform(land_cover_grid_to_land_cover_crs) >= CE_Failure) {
 				throw std::invalid_argument("Can't transform land cover grid to land cover CRS.");
 			}
 			OGRCoordinateTransformation *CRS_to_land_cover_crs = OGRCreateCoordinateTransformation(
@@ -158,7 +162,9 @@ class Raster {
 					std::pair<int,int> new_coord = grid_conversion(P, L, grid_to_crs, CRS_to_land_cover_crs, land_cover_grid_to_land_cover_crs);
 					if (new_coord.first >= 0 && new_coord.first < land_cover_dataset->GetRasterBand(1)->GetXSize() && new_coord.second >= 0 && new_coord.second < land_cover_dataset->GetRasterBand(1)->GetYSize()) {
 						unsigned char value;
-						land_cover_dataset->GetRasterBand(1)->RasterIO(GF_Read, new_coord.first, new_coord.second, 1, 1, &value, 1, 1, GDT_Byte, 0, 0);
+						if (land_cover_dataset->GetRasterBand(1)->RasterIO(GF_Read, new_coord.first, new_coord.second, 1, 1, &value, 1, 1, GDT_Byte, 0, 0) >= CE_Failure) {
+							throw std::invalid_argument(std::string(land_cover_path) + " can't be read.");
+						}
 						land_cover[L][P] = (char) value;
 					}
 				}
