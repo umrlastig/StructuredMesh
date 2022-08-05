@@ -41,7 +41,7 @@ class Raster {
 		OGRSpatialReference crs;
 		double grid_to_crs[6] = {0,1,0,0,0,1};
 
-		std::pair<int,int> grid_conversion(int &P, int &L, double grid_to_crs[6], OGRCoordinateTransformation *crs_to_other_crs, double other_grid_to_other_crs[6]) {
+		static std::pair<int,int> grid_conversion(int P, int L, double grid_to_crs[6], OGRCoordinateTransformation *crs_to_other_crs, double other_grid_to_other_crs[6]) {
 			double x = grid_to_crs[0] + (0.5 + P)*grid_to_crs[1] + (0.5 + L)*grid_to_crs[2];
 			double y = grid_to_crs[3] + (0.5 + P)*grid_to_crs[4] + (0.5 + L)*grid_to_crs[5];
 			crs_to_other_crs->Transform(1,&x,&y);
@@ -54,7 +54,7 @@ class Raster {
 		}
 
 	public:
-		void coord_to_grid(double x, double y, float& P, float& L) {
+		void coord_to_grid(double x, double y, float& P, float& L) const {
 			double fact = grid_to_crs[1]*grid_to_crs[5] - grid_to_crs[2]*grid_to_crs[4];
 			x -= grid_to_crs[0];
 			y -= grid_to_crs[3];
@@ -62,18 +62,18 @@ class Raster {
 			L = (-grid_to_crs[4]*x + grid_to_crs[1]*y) / fact;
 		}
 
-		void grid_to_coord(int P, int L, double& x, double& y) {
+		void grid_to_coord(int P, int L, double& x, double& y) const {
 			x = grid_to_crs[0] + (0.5 + P)*grid_to_crs[1] + (0.5 + L)*grid_to_crs[2];
 			y = grid_to_crs[3] + (0.5 + P)*grid_to_crs[4] + (0.5 + L)*grid_to_crs[5];
 		}
 
-		void grid_to_coord(float P, float L, double& x, double& y) {
+		void grid_to_coord(float P, float L, double& x, double& y) const {
 			x = grid_to_crs[0] + P*grid_to_crs[1] + L*grid_to_crs[2];
 			y = grid_to_crs[3] + P*grid_to_crs[4] + L*grid_to_crs[5];
 		}
 
 		template <typename T>
-		std::list<std::pair<int,int>> triangle_to_pixel(CGAL::Point_3<T> a, CGAL::Point_3<T> b, CGAL::Point_3<T> c) {
+		std::list<std::pair<int,int>> triangle_to_pixel(CGAL::Point_3<T> a, CGAL::Point_3<T> b, CGAL::Point_3<T> c) const {
 			std::list<std::pair<int,int>> ret;
 			int min_x = std::max((int) std::min({a.x(), b.x(), c.x()}), 0);
 			int max_x = std::min((int) std::max({a.x(), b.x(), c.x()}), xSize-1);
@@ -213,7 +213,7 @@ std::list<Polygon> get_LOD0_from_shapefile(char *path) {
 }
 
 int compute_LOD2(char *DSM, char *DTM, char *land_use_map, char *LOD0, char *orthophoto) {
-	Raster raster(DSM, DTM, land_use_map);
+	const Raster raster(DSM, DTM, land_use_map);
 
 	Surface_mesh mesh;
 	// Add points
