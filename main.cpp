@@ -7,6 +7,7 @@
 #include <list>
 #include <vector>
 #include <algorithm>
+#include <cmath>
 
 #include "ogrsf_frmts.h"
 #include <CGAL/Simple_cartesian.h>
@@ -23,7 +24,9 @@
 typedef CGAL::Simple_cartesian<float>                       K;
 typedef K::Point_2                                          Point_2;
 typedef K::Point_3                                          Point_3;
+typedef K::Vector_3                                         Vector_3;
 typedef K::Triangle_2                                       Triangle_2;
+typedef K::Plane_3                                          Plane_3;
 typedef CGAL::Surface_mesh<Point_3>                         Surface_mesh;
 typedef CGAL::Polygon_2<K>                                  Polygon;
 
@@ -218,6 +221,236 @@ std::list<Polygon> get_LOD0_from_shapefile(char *path) {
 	return polygons;
 }
 
+float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, const Point_3 &p2, float alpha) {
+
+	Triangle_2 face(Point_2(p0.x(), p0.y()),Point_2(p1.x(), p1.y()),Point_2(p2.x(), p2.y()));
+	if (face.is_degenerate()) {
+		// flat triangle
+		return 0;
+	}
+
+	// Entropy
+	int face_label[LABELS.size()] = {0};
+	int sum_face_label = 0;
+	for (auto pixel : raster.triangle_to_pixel(p0, p1, p2)) {
+		if (raster.land_cover[pixel.second][pixel.first] > -1) {
+			sum_face_label++;
+			face_label[raster.land_cover[pixel.second][pixel.first]]++;
+		}
+	}
+	float entropy = 0;
+	if (sum_face_label > 0) {
+		for (int i = 0; i < LABELS.size(); i++) {
+			if (face_label[i] > 0) {
+				entropy += ((float) face_label[i])*log((float) face_label[i]);
+			}
+		}
+		entropy = log((float) sum_face_label) - entropy/((float) sum_face_label);
+	}
+
+	// Least squares
+	float least_squares = 0;
+	Plane_3 plane(p0, p1, p2);
+	for (auto pixel : raster.triangle_to_pixel(p0, p1, p2)) {
+		float px = 0.5 + pixel.first;
+		float py = 0.5 + pixel.second;
+		float pz = - (plane.a() * px + plane.b() * py + plane.d()) / plane.c();
+		least_squares += pow(raster.dsm[pixel.second][pixel.first] - pz,2);
+	}
+
+	//std::cout << "Least squares cost: " << least_squares << "\nEntropy: " << entropy << "\n";
+
+	return least_squares + alpha * entropy;
+}
+
+template <typename Edge_profile>
+Point_3 best_point(const Raster &raster, K::FT x, K::FT y, const Edge_profile& profile) {
+
+	float z;
+	float d = 0;
+	float D = 0;
+	int count = 0;
+
+	std::vector<typename Edge_profile::vertex_descriptor > vertices = profile.link();
+	for (std::size_t i = 0; i < vertices.size(); i++) { // for each face
+		Point_3 A = get(profile.vertex_point_map(),vertices[i]);
+		Point_3 B;
+		if (i + 1 < vertices.size()) {
+			B = get(profile.vertex_point_map(),vertices[i+1]);
+		} else {
+			B = get(profile.vertex_point_map(),vertices[0]);
+		}
+
+		Triangle_2 face(Point_2(A.x(), A.y()),Point_2(B.x(), B.y()),Point_2(x, y));
+		if (!face.is_degenerate()) {
+			for (auto pixel : raster.triangle_to_pixel(A, B, Point_3(x, y, 0))) { //for each pixel
+				float px = 0.5 + pixel.first;
+				float py = 0.5 + pixel.second;
+				float pz = raster.dsm[pixel.second][pixel.first];
+
+				float i1 = ((A.x() - B.x()) * (-A.y() + py) + (-A.x() + px) * (-A.y() + B.y()));
+				float i2 = ((-A.x() + B.x()) * (-A.y() + y) - (-A.x() + x) * (-A.y() + B.y()));
+
+				d += i1 * (((A.x() - px) * (A.y() * B.z() - A.z() * B.y() + A.z() * y - B.z() * y) + (A.y() - py) * (-A.x() * B.z() + A.z() * B.x() - A.z() * x + B.z() * x) + (A.z() - pz) * i2) / (i2 * i2));
+				D += (i1 * i1) / (i2 * i2);
+				count ++;
+			}
+		}
+	}
+
+	if (count > 0) {
+		z = d / D;
+	} else {
+		if (profile.p1().x() != profile.p0().x()) {
+			z = (x - profile.p0().x())/(profile.p1().x() - profile.p0().x())*(profile.p1().z() - profile.p0().z());
+		} else {
+			z = (y - profile.p0().y())/(profile.p1().y() - profile.p0().y())*(profile.p1().z() - profile.p0().z());
+		}
+	}
+
+	return Point_3(x,y,z);
+}
+
+class Custom_placement {
+	const Raster &raster;
+	float alpha;
+
+	public:
+		Custom_placement (const Raster &raster, float alpha) : alpha(alpha), raster(raster) {}
+
+		template <typename Edge_profile>
+		boost::optional<typename Edge_profile::Point> operator()(const Edge_profile& profile) const {
+			typedef boost::optional<typename Edge_profile::Point> result_type;
+
+			Vector_3 vector(profile.p0(), profile.p1());
+			Point_3 p[5] = {profile.p0(), profile.p0() + 0.25 * vector, profile.p0() + 0.5 * vector, profile.p0() + 0.75 * vector, profile.p1()};
+			float cost0 = 0, cost1 = 0, cost2 = 0, cost3 = 0, cost4 = 0;
+
+			std::vector<typename Edge_profile::vertex_descriptor > vertices = profile.link();
+
+			#pragma omp parallel for
+			for (int j = 0; j < 5; j++) {
+				p[j] = best_point(raster, p[j].x(), p[j].y(), profile);
+			}
+
+			#pragma omp parallel for reduction(+:cost0,cost1,cost2,cost3,cost4)
+			for (std::size_t i = 0; i < vertices.size(); i++) { // for each face
+				Point_3 A = get(profile.vertex_point_map(),vertices[i]);
+				Point_3 B;
+				if (i + 1 < vertices.size()) {
+					B = get(profile.vertex_point_map(),vertices[i+1]);
+				} else {
+					B = get(profile.vertex_point_map(),vertices[0]);
+				}
+
+				cost0 += face_cost(raster, A, B, p[0], alpha);
+				cost1 += face_cost(raster, A, B, p[1], alpha);
+				cost2 += face_cost(raster, A, B, p[2], alpha);
+				cost3 += face_cost(raster, A, B, p[3], alpha);
+				cost4 += face_cost(raster, A, B, p[4], alpha);
+			}
+
+			for (int i = 0; i < 10; i++) {
+				float cost[] = {cost0, cost1, cost2, cost3, cost4};
+				int min_cost = std::min_element(cost, cost + 5) - cost;
+				
+				if (min_cost == 0 || min_cost == 1) {
+					p[4] = p[2];
+					cost4 = cost2;
+					p[2] = p[1];
+					cost2 = cost1;
+				} else if (min_cost == 2) {
+					p[0] = p[1];
+					cost0 = cost1;
+					p[4] = p[3];
+					cost4 = cost3;
+				} else {
+					p[0] = p[2];
+					cost0 = cost2;
+					p[2] = p[3];
+					cost2 = cost3;
+				}
+
+				vector = Vector_3(p[0], p[4]);
+				p[1] = p[0] + 0.25 * vector;
+				p[3] = p[0] + 0.75 * vector;
+				p[1] = best_point(raster, p[1].x(), p[1].y(), profile);
+				p[3] = best_point(raster, p[1].x(), p[1].y(), profile);
+
+				cost1 = 0;
+				cost3 = 0;
+				
+				#pragma omp parallel for reduction(+:cost1,cost3)
+				for (std::size_t i = 0; i < vertices.size(); i++) { // for each face
+					Point_3 A = get(profile.vertex_point_map(),vertices[i]);
+					Point_3 B;
+					if (i + 1 < vertices.size()) {
+						B = get(profile.vertex_point_map(),vertices[i+1]);
+					} else {
+						B = get(profile.vertex_point_map(),vertices[0]);
+					}
+					cost1 += face_cost(raster, A, B, p[1], alpha);
+					cost3 += face_cost(raster, A, B, p[3], alpha);
+				}
+			}
+
+			float cost[] = {cost0, cost1, cost2, cost3, cost4};
+			int min_cost = std::min_element(cost, cost + 5) - cost;
+
+			//std::cout << "Placement: (" << profile.p0() << ") - (" << profile.p1() << ") -> (" << p[min_cost] << ")\n";
+
+			return result_type(p[min_cost]);
+		}
+};
+
+class Custom_cost {
+	const Raster &raster;
+	float alpha;
+
+	public:
+		Custom_cost (const Raster &raster, float alpha) : alpha(alpha), raster(raster) {}
+
+		template <typename Edge_profile>
+		boost::optional<typename Edge_profile::FT> operator()(const Edge_profile& profile, const boost::optional<typename Edge_profile::Point>& placement) const {
+			typedef boost::optional<typename Edge_profile::FT> result_type;
+
+			if (placement) {
+
+				float old_cost = 0;
+				typename Edge_profile::Triangle_vector triangles = profile.triangles();
+				#pragma omp parallel for reduction(+:old_cost)
+				for (auto triange: triangles) {
+					Point_3 A = get(profile.vertex_point_map(),triange.v0);
+					Point_3 B = get(profile.vertex_point_map(),triange.v1);
+					Point_3 C = get(profile.vertex_point_map(),triange.v2);
+					old_cost += face_cost(raster, A, B, C, alpha);
+				} 
+
+				float new_cost = 0;
+				std::vector<typename Edge_profile::vertex_descriptor > vertices = profile.link();
+				
+				Point_3 C = *placement;
+				#pragma omp parallel for reduction(+:new_cost)
+				for (std::size_t i = 0; i < vertices.size(); i++) { // for each face
+					Point_3 A = get(profile.vertex_point_map(),vertices[i]);
+					Point_3 B;
+					if (i + 1 < vertices.size()) {
+						B = get(profile.vertex_point_map(),vertices[i+1]);
+					} else {
+						B = get(profile.vertex_point_map(),vertices[0]);
+					}
+					new_cost += face_cost(raster, A, B, C, alpha);
+				}
+
+				//std::cout << "Cost: " << (new_cost - old_cost) << "\n";
+
+				return result_type(new_cost - old_cost);
+			}
+
+			return result_type();
+		}
+};
+
 int compute_LOD2(char *DSM, char *DTM, char *land_use_map, char *LOD0, char *orthophoto) {
 	const Raster raster(DSM, DTM, land_use_map);
 
@@ -245,7 +478,9 @@ int compute_LOD2(char *DSM, char *DTM, char *land_use_map, char *LOD0, char *ort
 	std::cout << "Faces added" << std::endl;
 
 	SMS::Count_ratio_stop_predicate<Surface_mesh> stop(0.05);
-	int r = SMS::edge_collapse(mesh, stop);
+	Custom_cost cf(raster, 0.5);
+	Custom_placement pf(raster, 0.5);
+	int r = SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).get_placement(pf));
 	std::cout << "Mesh simplified" << std::endl;
 
 	typedef CGAL::Surface_mesh<CGAL::Simple_cartesian<double>::Point_3> OutputMesh;
