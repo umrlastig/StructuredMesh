@@ -8,6 +8,7 @@
 #include <vector>
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 
 #include "ogrsf_frmts.h"
 #include <CGAL/Simple_cartesian.h>
@@ -17,6 +18,7 @@
 #include <CGAL/Polygon_with_holes_2.h>
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Count_ratio_stop_predicate.h>
+#include <CGAL/Surface_mesh_simplification/Edge_collapse_visitor_base.h>
 #include <CGAL/boost/graph/copy_face_graph.h>
 
 #include "label.cpp"
@@ -221,18 +223,23 @@ std::list<Polygon> get_LOD0_from_shapefile(char *path) {
 	return polygons;
 }
 
-float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, const Point_3 &p2, float alpha) {
-
-	Triangle_2 face(Point_2(p0.x(), p0.y()),Point_2(p1.x(), p1.y()),Point_2(p2.x(), p2.y()));
-	if (face.is_degenerate()) {
+float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, const Point_3 &p2) {
+	float alpha = 1;
+	float beta = 50;
+	float gamma = 1;
+	
+	float nz = ((-p0.x() + p1.x()) * (-p0.y() + p2.y()) - (-p0.x() + p2.x()) * (-p0.y() + p1.y()));
+	if (nz == 0) {
 		// flat triangle
 		return 0;
 	}
+	
+	std::list<std::pair<int,int>> pixels = raster.triangle_to_pixel(p0, p1, p2);
 
 	// Entropy
 	int face_label[LABELS.size()] = {0};
 	int sum_face_label = 0;
-	for (auto pixel : raster.triangle_to_pixel(p0, p1, p2)) {
+	for (auto pixel : pixels) {
 		if (raster.land_cover[pixel.second][pixel.first] > -1) {
 			sum_face_label++;
 			face_label[raster.land_cover[pixel.second][pixel.first]]++;
@@ -250,17 +257,24 @@ float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, cons
 
 	// Least squares
 	float least_squares = 0;
-	Plane_3 plane(p0, p1, p2);
-	for (auto pixel : raster.triangle_to_pixel(p0, p1, p2)) {
-		float px = 0.5 + pixel.first;
-		float py = 0.5 + pixel.second;
-		float pz = - (plane.a() * px + plane.b() * py + plane.d()) / plane.c();
-		least_squares += pow(raster.dsm[pixel.second][pixel.first] - pz,2);
+	if (pixels.size() != 0) {
+		Plane_3 plane(p0, p1, p2);
+		for (auto pixel : pixels) {
+			float px = 0.5 + pixel.first;
+			float py = 0.5 + pixel.second;
+			float pz = - (plane.a() * px + plane.b() * py + plane.d()) / plane.c();
+			least_squares += pow(raster.dsm[pixel.second][pixel.first] - pz,2);
+		}
+		least_squares /= pixels.size();
+	}
+	
+	// Verticality
+	float verticality = 0;
+	if (pixels.size() == 0) {
+		verticality = nz;
 	}
 
-	//std::cout << "Least squares cost: " << least_squares << "\nEntropy: " << entropy << "\n";
-
-	return least_squares + alpha * entropy;
+	return alpha * least_squares + beta * entropy + gamma * verticality;
 }
 
 template <typename Edge_profile>
@@ -281,15 +295,14 @@ Point_3 best_point(const Raster &raster, K::FT x, K::FT y, const Edge_profile& p
 			B = get(profile.vertex_point_map(),vertices[0]);
 		}
 
-		Triangle_2 face(Point_2(A.x(), A.y()),Point_2(B.x(), B.y()),Point_2(x, y));
-		if (!face.is_degenerate()) {
+		float i2 = ((-A.x() + B.x()) * (-A.y() + y) - (-A.x() + x) * (-A.y() + B.y()));
+		if (i2 != 0) {
 			for (auto pixel : raster.triangle_to_pixel(A, B, Point_3(x, y, 0))) { //for each pixel
 				float px = 0.5 + pixel.first;
 				float py = 0.5 + pixel.second;
 				float pz = raster.dsm[pixel.second][pixel.first];
 
 				float i1 = ((A.x() - B.x()) * (-A.y() + py) + (-A.x() + px) * (-A.y() + B.y()));
-				float i2 = ((-A.x() + B.x()) * (-A.y() + y) - (-A.x() + x) * (-A.y() + B.y()));
 
 				d += i1 * (((A.x() - px) * (A.y() * B.z() - A.z() * B.y() + A.z() * y - B.z() * y) + (A.y() - py) * (-A.x() * B.z() + A.z() * B.x() - A.z() * x + B.z() * x) + (A.z() - pz) * i2) / (i2 * i2));
 				D += (i1 * i1) / (i2 * i2);
@@ -313,10 +326,9 @@ Point_3 best_point(const Raster &raster, K::FT x, K::FT y, const Edge_profile& p
 
 class Custom_placement {
 	const Raster &raster;
-	float alpha;
 
 	public:
-		Custom_placement (const Raster &raster, float alpha) : alpha(alpha), raster(raster) {}
+		Custom_placement (const Raster &raster) : raster(raster) {}
 
 		template <typename Edge_profile>
 		boost::optional<typename Edge_profile::Point> operator()(const Edge_profile& profile) const {
@@ -343,14 +355,14 @@ class Custom_placement {
 					B = get(profile.vertex_point_map(),vertices[0]);
 				}
 
-				cost0 += face_cost(raster, A, B, p[0], alpha);
-				cost1 += face_cost(raster, A, B, p[1], alpha);
-				cost2 += face_cost(raster, A, B, p[2], alpha);
-				cost3 += face_cost(raster, A, B, p[3], alpha);
-				cost4 += face_cost(raster, A, B, p[4], alpha);
+				cost0 += face_cost(raster, A, B, p[0]);
+				cost1 += face_cost(raster, A, B, p[1]);
+				cost2 += face_cost(raster, A, B, p[2]);
+				cost3 += face_cost(raster, A, B, p[3]);
+				cost4 += face_cost(raster, A, B, p[4]);
 			}
 
-			for (int i = 0; i < 10; i++) {
+			for (int i = 0; i < 0; i++) {
 				float cost[] = {cost0, cost1, cost2, cost3, cost4};
 				int min_cost = std::min_element(cost, cost + 5) - cost;
 				
@@ -389,8 +401,8 @@ class Custom_placement {
 					} else {
 						B = get(profile.vertex_point_map(),vertices[0]);
 					}
-					cost1 += face_cost(raster, A, B, p[1], alpha);
-					cost3 += face_cost(raster, A, B, p[3], alpha);
+					cost1 += face_cost(raster, A, B, p[1]);
+					cost3 += face_cost(raster, A, B, p[3]);
 				}
 			}
 
@@ -405,41 +417,50 @@ class Custom_placement {
 
 class Custom_cost {
 	const Raster &raster;
-	float alpha;
 
 	public:
-		Custom_cost (const Raster &raster, float alpha) : alpha(alpha), raster(raster) {}
+		Custom_cost (const Raster &raster) : raster(raster) {}
 
 		template <typename Edge_profile>
 		boost::optional<typename Edge_profile::FT> operator()(const Edge_profile& profile, const boost::optional<typename Edge_profile::Point>& placement) const {
 			typedef boost::optional<typename Edge_profile::FT> result_type;
 
 			if (placement) {
-
-				float old_cost = 0;
-				typename Edge_profile::Triangle_vector triangles = profile.triangles();
-				#pragma omp parallel for reduction(+:old_cost)
-				for (auto triange: triangles) {
-					Point_3 A = get(profile.vertex_point_map(),triange.v0);
-					Point_3 B = get(profile.vertex_point_map(),triange.v1);
-					Point_3 C = get(profile.vertex_point_map(),triange.v2);
-					old_cost += face_cost(raster, A, B, C, alpha);
-				} 
-
-				float new_cost = 0;
-				std::vector<typename Edge_profile::vertex_descriptor > vertices = profile.link();
 				
-				Point_3 C = *placement;
-				#pragma omp parallel for reduction(+:new_cost)
-				for (std::size_t i = 0; i < vertices.size(); i++) { // for each face
-					Point_3 A = get(profile.vertex_point_map(),vertices[i]);
-					Point_3 B;
-					if (i + 1 < vertices.size()) {
-						B = get(profile.vertex_point_map(),vertices[i+1]);
-					} else {
-						B = get(profile.vertex_point_map(),vertices[0]);
+				float old_cost = 0;
+				float new_cost = 0;
+				
+				//#pragma omp parallel sections reduction(+:old_cost, new_cost)
+				{
+					//#pragma omp section
+					{
+						typename Edge_profile::Triangle_vector triangles = profile.triangles();
+						#pragma omp parallel for reduction(+:old_cost)
+						for (auto triange: triangles) {
+							Point_3 A = get(profile.vertex_point_map(),triange.v0);
+							Point_3 B = get(profile.vertex_point_map(),triange.v1);
+							Point_3 C = get(profile.vertex_point_map(),triange.v2);
+							old_cost += face_cost(raster, A, B, C);
+						}
 					}
-					new_cost += face_cost(raster, A, B, C, alpha);
+					
+					//#pragma omp section
+					{
+						std::vector<typename Edge_profile::vertex_descriptor > vertices = profile.link();
+						Point_3 C = *placement;
+						#pragma omp parallel for reduction(+:new_cost)
+						for (std::size_t i = 0; i < vertices.size(); i++) { // for each face
+							Point_3 A = get(profile.vertex_point_map(),vertices[i]);
+							Point_3 B;
+							if (i + 1 < vertices.size()) {
+								B = get(profile.vertex_point_map(),vertices[i+1]);
+							} else {
+								B = get(profile.vertex_point_map(),vertices[0]);
+							}
+							new_cost += face_cost(raster, A, B, C);
+						}
+					}
+
 				}
 
 				//std::cout << "Cost: " << (new_cost - old_cost) << "\n";
@@ -449,6 +470,58 @@ class Custom_cost {
 
 			return result_type();
 		}
+};
+
+class Cost_stop_predicate {
+	public:
+
+		Cost_stop_predicate(const float cost) : cost(cost) {}
+
+		template <typename Edge_profile>
+		bool operator()(const typename Edge_profile::FT & current_cost, const Edge_profile &, const typename Edge_profile::edges_size_type, const typename Edge_profile::edges_size_type) const {
+			return current_cost > cost;
+		}
+
+	private:
+		const float cost;
+};
+
+
+struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
+	int i_collecte = 0;
+	int number_of_edges;
+	std::chrono::time_point<std::chrono::system_clock> start_collecte;
+	std::chrono::time_point<std::chrono::system_clock> start_collapse;
+
+	void OnStarted (Surface_mesh &mesh) {
+		number_of_edges = mesh.number_of_edges();
+		/*std::ofstream statistiques("stats.csv",std::ios::out);
+		statistiques << "edge,cost\n";
+		statistiques.close();*/
+		start_collecte = std::chrono::system_clock::now();
+	}
+	
+	void OnCollected(const SMS::Edge_profile<Surface_mesh>& profile, const boost::optional<float>& cost) {
+		start_collapse = std::chrono::system_clock::now();
+		i_collecte++;
+		if (i_collecte%1000 == 0) {
+			std::chrono::duration<double> diff = start_collapse - start_collecte;
+			std::cout << "\rCollecte: " << i_collecte << "/" << number_of_edges << " (" << ((int) (((float) i_collecte)/number_of_edges*100)) << "%)" << " still " << (((float) number_of_edges - i_collecte) * diff.count() / i_collecte) << "s" << " (" << (((float) i_collecte) / diff.count()) << " op/s)" << std::flush;
+		}
+	}
+
+	void OnSelected (const SMS::Edge_profile<Surface_mesh> &profile, boost::optional< SMS::Edge_profile<Surface_mesh>::FT > cost, const SMS::Edge_profile<Surface_mesh>::edges_size_type initial_edge_count, const SMS::Edge_profile<Surface_mesh>::edges_size_type current_edge_count) {
+		/*std::ofstream statistiques("stats.csv",std::ios::app);
+		statistiques << current_edge_count << "," << *cost << "\n";
+		statistiques.close();*/
+		
+		if (current_edge_count%100 == 0) {
+			auto end = std::chrono::system_clock::now();
+        	std::chrono::duration<double> diff = end - start_collapse;
+			std::cout << "\rCollapse: " << (initial_edge_count-current_edge_count) << "/" << initial_edge_count << " (" << ((int) (((float) (initial_edge_count-current_edge_count))/initial_edge_count*100)) << "%)" << " still " << (((float) current_edge_count) * diff.count() / (initial_edge_count-current_edge_count)) << "s" << " (" << (((float) (initial_edge_count-current_edge_count)) / diff.count()) << " op/s) - cost: " << *cost << "     " << std::flush;
+		}
+	}
+
 };
 
 int compute_LOD2(char *DSM, char *DTM, char *land_use_map, char *LOD0, char *orthophoto) {
@@ -477,11 +550,11 @@ int compute_LOD2(char *DSM, char *DTM, char *land_use_map, char *LOD0, char *ort
 	}
 	std::cout << "Faces added" << std::endl;
 
-	SMS::Count_ratio_stop_predicate<Surface_mesh> stop(0.05);
-	Custom_cost cf(raster, 0.5);
-	Custom_placement pf(raster, 0.5);
-	int r = SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).get_placement(pf));
-	std::cout << "Mesh simplified" << std::endl;
+	Cost_stop_predicate stop(50);
+	Custom_cost cf(raster);
+	Custom_placement pf(raster);
+	int r = SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).get_placement(pf).visitor(My_visitor()));
+	std::cout << "\rMesh simplified                                               " << std::endl;
 
 	typedef CGAL::Surface_mesh<CGAL::Simple_cartesian<double>::Point_3> OutputMesh;
 	OutputMesh output_mesh;
