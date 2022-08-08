@@ -224,10 +224,6 @@ std::list<Polygon> get_LOD0_from_shapefile(char *path) {
 }
 
 float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, const Point_3 &p2) {
-	float alpha = 0;
-	float beta = 10;
-	float gamma = 0;
-	
 	float nz = ((-p0.x() + p1.x()) * (-p0.y() + p2.y()) - (-p0.x() + p2.x()) * (-p0.y() + p1.y()));
 	if (nz == 0) {
 		// flat triangle
@@ -274,7 +270,13 @@ float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, cons
 		verticality = nz;
 	}
 
-	return alpha * least_squares + beta * entropy + gamma * verticality;
+	// Eccentricity
+	Point_3 S = CGAL::centroid(p0,p1,p2);
+	float M = (pow(p2.x()-S.x(),2) + pow(p2.y()-S.y(),2) + pow(p2.z()-S.z(),2) + (pow(p1.x()-p0.x(),2) + pow(p1.y()-p0.y(),2) + pow(p1.z()-p0.z(),2))/3)/4;
+	float N = sqrtf(pow((p2.y()-S.y())*(p1.z()-p0.z())-(p2.z()-S.z())*(p1.y()-p0.y()),2) + pow((p2.z()-S.z())*(p1.x()-p0.x())-(p2.x()-S.x())*(p1.z()-p0.z()),2) + pow((p2.x()-S.x())*(p1.y()-p0.y())-(p2.y()-S.y())*(p1.x()-p0.x()),2))/(4 * sqrtf(3));
+	float eccentricity = pow(M*M - 4*N*N,1/4);
+	
+	return 0 * least_squares + 10 * entropy + 0 * verticality + 1 * eccentricity;
 }
 
 template <typename Edge_profile>
