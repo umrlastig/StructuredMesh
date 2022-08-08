@@ -224,7 +224,7 @@ std::list<Polygon> get_LOD0_from_shapefile(char *path) {
 }
 
 float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, const Point_3 &p2) {
-	float alpha = 0.1;
+	float alpha = 0;
 	float beta = 10;
 	float gamma = 0;
 	
@@ -508,13 +508,20 @@ void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filen
 	boost::tie(blue, created) = output_mesh.add_property_map<OutputMesh::Face_index, unsigned char>("blue",0);
 	assert(created);
 
+	// Entropy
+	OutputMesh::Property_map<OutputMesh::Face_index, float> quality;
+	boost::tie(quality, created) = output_mesh.add_property_map<OutputMesh::Face_index, float>("quality",0);
+	assert(created);
+
 	for (auto face : output_mesh.faces()) {
 		int face_label[LABELS.size()] = {0};
+		int sum_face_label = 0;
 
 		CGAL::Vertex_around_face_iterator<OutputMesh> vbegin, vend;
     	boost::tie(vbegin, vend) = vertices_around_face(output_mesh.halfedge(face), output_mesh);
 		for (auto pixel : raster.triangle_to_pixel(output_mesh.point(*vbegin++), output_mesh.point(*(vbegin++)), output_mesh.point(*(vbegin++)))) {
 			if (raster.land_cover[pixel.second][pixel.first] > -1) {
+				sum_face_label++;
 				face_label[raster.land_cover[pixel.second][pixel.first]]++;
 			}
 		}
@@ -524,6 +531,17 @@ void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filen
 		red[face] = LABELS[argmax - face_label].red;
 		green[face] = LABELS[argmax - face_label].green;
 		blue[face] = LABELS[argmax - face_label].blue;
+
+		float entropy = 0;
+		if (sum_face_label > 0) {
+			for (int i = 0; i < LABELS.size(); i++) {
+				if (face_label[i] > 0) {
+					entropy += ((float) face_label[i])*log((float) face_label[i]);
+				}
+			}
+			entropy = log((float) sum_face_label) - entropy/((float) sum_face_label);
+		}
+		quality[face] = entropy;
 	}
 
 	for(auto vertex : output_mesh.vertices()) {
@@ -573,18 +591,18 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 			}
 
 			if (cost) {
-				if(*cost >+ 1 && !output[0]) {
+				if(*cost >+ 0.1 && !output[0]) {
 					output[0] = true;
-					save_mesh(*mesh,*raster,"mesh-1.ply");
-				} else if(*cost >= 2 && !output[1]) {
+					save_mesh(*mesh,*raster,"mesh-0.1.ply");
+				} else if(*cost >= 0.5 && !output[1]) {
 					output[1] = true;
-					save_mesh(*mesh,*raster,"mesh-2.ply");
-				} else if(*cost >= 4 && !output[2]) {
+					save_mesh(*mesh,*raster,"mesh-0.5.ply");
+				} else if(*cost >= 1 && !output[2]) {
 					output[2] = true;
-					save_mesh(*mesh,*raster,"mesh-4.ply");
-				} else if(*cost >= 7 && !output[3]) {
+					save_mesh(*mesh,*raster,"mesh-1.ply");
+				} else if(*cost >= 1.5 && !output[3]) {
 					output[3] = true;
-					save_mesh(*mesh,*raster,"mesh-7.ply");
+					save_mesh(*mesh,*raster,"mesh-1.5.ply");
 				}
 			}
 
@@ -618,7 +636,7 @@ int compute_LOD2(char *DSM, char *DTM, char *land_use_map, char *LOD0, char *ort
 	}
 	std::cout << "Faces added" << std::endl;
 
-	Cost_stop_predicate stop(10);
+	Cost_stop_predicate stop(2);
 	Custom_cost cf(raster);
 	Custom_placement pf(raster);
 	int r = SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).get_placement(pf).visitor(My_visitor(&mesh, &raster)));
