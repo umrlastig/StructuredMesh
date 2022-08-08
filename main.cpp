@@ -225,8 +225,8 @@ std::list<Polygon> get_LOD0_from_shapefile(char *path) {
 
 float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, const Point_3 &p2) {
 	float alpha = 1;
-	float beta = 50;
-	float gamma = 1;
+	float beta = 1;
+	float gamma = 0;
 	
 	float nz = ((-p0.x() + p1.x()) * (-p0.y() + p2.y()) - (-p0.x() + p2.x()) * (-p0.y() + p1.y()));
 	if (nz == 0) {
@@ -486,76 +486,7 @@ class Cost_stop_predicate {
 		const float cost;
 };
 
-
-struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
-	int i_collecte = 0;
-	int number_of_edges;
-	std::chrono::time_point<std::chrono::system_clock> start_collecte;
-	std::chrono::time_point<std::chrono::system_clock> start_collapse;
-
-	void OnStarted (Surface_mesh &mesh) {
-		number_of_edges = mesh.number_of_edges();
-		/*std::ofstream statistiques("stats.csv",std::ios::out);
-		statistiques << "edge,cost\n";
-		statistiques.close();*/
-		start_collecte = std::chrono::system_clock::now();
-	}
-	
-	void OnCollected(const SMS::Edge_profile<Surface_mesh>& profile, const boost::optional<float>& cost) {
-		start_collapse = std::chrono::system_clock::now();
-		i_collecte++;
-		if (i_collecte%1000 == 0) {
-			std::chrono::duration<double> diff = start_collapse - start_collecte;
-			std::cout << "\rCollecte: " << i_collecte << "/" << number_of_edges << " (" << ((int) (((float) i_collecte)/number_of_edges*100)) << "%)" << " still " << (((float) number_of_edges - i_collecte) * diff.count() / i_collecte) << "s" << " (" << (((float) i_collecte) / diff.count()) << " op/s)" << std::flush;
-		}
-	}
-
-	void OnSelected (const SMS::Edge_profile<Surface_mesh> &profile, boost::optional< SMS::Edge_profile<Surface_mesh>::FT > cost, const SMS::Edge_profile<Surface_mesh>::edges_size_type initial_edge_count, const SMS::Edge_profile<Surface_mesh>::edges_size_type current_edge_count) {
-		/*std::ofstream statistiques("stats.csv",std::ios::app);
-		statistiques << current_edge_count << "," << *cost << "\n";
-		statistiques.close();*/
-		
-		if (current_edge_count%100 == 0) {
-			auto end = std::chrono::system_clock::now();
-        	std::chrono::duration<double> diff = end - start_collapse;
-			std::cout << "\rCollapse: " << (initial_edge_count-current_edge_count) << "/" << initial_edge_count << " (" << ((int) (((float) (initial_edge_count-current_edge_count))/initial_edge_count*100)) << "%)" << " still " << (((float) current_edge_count) * diff.count() / (initial_edge_count-current_edge_count)) << "s" << " (" << (((float) (initial_edge_count-current_edge_count)) / diff.count()) << " op/s) - cost: " << *cost << "     " << std::flush;
-		}
-	}
-
-};
-
-int compute_LOD2(char *DSM, char *DTM, char *land_use_map, char *LOD0, char *orthophoto) {
-	const Raster raster(DSM, DTM, land_use_map);
-
-	Surface_mesh mesh;
-	// Add points
-	std::vector<std::vector<Surface_mesh::Vertex_index>> vertex_index(raster.ySize, std::vector<Surface_mesh::Vertex_index>(raster.xSize, Surface_mesh::Vertex_index()));
-	for (int L = 0; L < raster.ySize; L++) {
-		for (int P = 0; P < raster.xSize; P++) {
-			vertex_index[L][P] = mesh.add_vertex(Point_3(0.5 + P, 0.5 + L, raster.dsm[L][P]));
-		}
-	}
-	std::cout << "Point added" << std::endl;
-	// Add faces
-	for (int L = 0; L < raster.ySize-1; L++) {
-		for (int P = 0; P < raster.xSize-1; P++) {
-			if (pow(raster.dsm[L][P]-raster.dsm[L+1][P+1], 2) < pow(raster.dsm[L+1][P]-raster.dsm[L][P+1], 2)) {
-				mesh.add_face(vertex_index[L][P], vertex_index[L+1][P+1], vertex_index[L+1][P]);
-				mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P+1]);
-			} else {
-				mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P]);
-				mesh.add_face(vertex_index[L][P+1], vertex_index[L+1][P+1], vertex_index[L+1][P]);
-			}
-		}
-	}
-	std::cout << "Faces added" << std::endl;
-
-	Cost_stop_predicate stop(50);
-	Custom_cost cf(raster);
-	Custom_placement pf(raster);
-	int r = SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).get_placement(pf).visitor(My_visitor()));
-	std::cout << "\rMesh simplified                                               " << std::endl;
-
+void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filename) {
 	typedef CGAL::Surface_mesh<CGAL::Simple_cartesian<double>::Point_3> OutputMesh;
 	OutputMesh output_mesh;
 	CGAL::copy_face_graph (mesh, output_mesh);
@@ -602,10 +533,85 @@ int compute_LOD2(char *DSM, char *DTM, char *land_use_map, char *LOD0, char *ort
 		output_mesh.point(vertex) = CGAL::Simple_cartesian<double>::Point_3(x, y, (double) point.z());
 	}
 
-	std::ofstream mesh_ofile ("mesh.ply", std::ios_base::binary);
+	std::ofstream mesh_ofile (filename, std::ios_base::binary);
 	CGAL::IO::set_binary_mode (mesh_ofile);
 	CGAL::IO::write_PLY (mesh_ofile, output_mesh);
 	mesh_ofile.close();
+}
+
+
+struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
+	int i_collecte = 0;
+	Surface_mesh *mesh;
+	std::chrono::time_point<std::chrono::system_clock> start_collecte;
+	std::chrono::time_point<std::chrono::system_clock> start_collapse;
+
+	My_visitor() {}
+
+	void OnStarted (Surface_mesh &_mesh) {
+		mesh = &_mesh;
+		/*std::ofstream statistiques("stats.csv",std::ios::out);
+		statistiques << "edge,cost\n";
+		statistiques.close();*/
+		start_collecte = std::chrono::system_clock::now();
+	}
+	
+	void OnCollected(const SMS::Edge_profile<Surface_mesh>& profile, const boost::optional<float>& cost) {
+		start_collapse = std::chrono::system_clock::now();
+		i_collecte++;
+		if (i_collecte%1000 == 0) {
+			std::chrono::duration<double> diff = start_collapse - start_collecte;
+			std::cout << "\rCollecte: " << i_collecte << "/" << mesh->number_of_edges() << " (" << ((int) (((float) i_collecte)/mesh->number_of_edges()*100)) << "%)" << " still " << (((float) mesh->number_of_edges() - i_collecte) * diff.count() / i_collecte) << "s" << " (" << (((float) i_collecte) / diff.count()) << " op/s)" << std::flush;
+		}
+	}
+
+	void OnSelected (const SMS::Edge_profile<Surface_mesh> &profile, boost::optional< SMS::Edge_profile<Surface_mesh>::FT > cost, const SMS::Edge_profile<Surface_mesh>::edges_size_type initial_edge_count, const SMS::Edge_profile<Surface_mesh>::edges_size_type current_edge_count) {
+		/*std::ofstream statistiques("stats.csv",std::ios::app);
+		statistiques << current_edge_count << "," << *cost << "\n";
+		statistiques.close();*/
+		
+		if (current_edge_count%100 == 0) {
+			auto end = std::chrono::system_clock::now();
+        	std::chrono::duration<double> diff = end - start_collapse;
+			std::cout << "\rCollapse: " << (initial_edge_count-current_edge_count) << "/" << initial_edge_count << " (" << ((int) (((float) (initial_edge_count-current_edge_count))/initial_edge_count*100)) << "%)" << " still " << (((float) current_edge_count) * diff.count() / (initial_edge_count-current_edge_count)) << "s" << " (" << (((float) (initial_edge_count-current_edge_count)) / diff.count()) << " op/s) - cost: " << *cost << "     " << std::flush;
+		}
+	}
+
+};
+
+int compute_LOD2(char *DSM, char *DTM, char *land_use_map, char *LOD0, char *orthophoto) {
+	const Raster raster(DSM, DTM, land_use_map);
+
+	Surface_mesh mesh;
+	// Add points
+	std::vector<std::vector<Surface_mesh::Vertex_index>> vertex_index(raster.ySize, std::vector<Surface_mesh::Vertex_index>(raster.xSize, Surface_mesh::Vertex_index()));
+	for (int L = 0; L < raster.ySize; L++) {
+		for (int P = 0; P < raster.xSize; P++) {
+			vertex_index[L][P] = mesh.add_vertex(Point_3(0.5 + P, 0.5 + L, raster.dsm[L][P]));
+		}
+	}
+	std::cout << "Point added" << std::endl;
+	// Add faces
+	for (int L = 0; L < raster.ySize-1; L++) {
+		for (int P = 0; P < raster.xSize-1; P++) {
+			if (pow(raster.dsm[L][P]-raster.dsm[L+1][P+1], 2) < pow(raster.dsm[L+1][P]-raster.dsm[L][P+1], 2)) {
+				mesh.add_face(vertex_index[L][P], vertex_index[L+1][P+1], vertex_index[L+1][P]);
+				mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P+1]);
+			} else {
+				mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P]);
+				mesh.add_face(vertex_index[L][P+1], vertex_index[L+1][P+1], vertex_index[L+1][P]);
+			}
+		}
+	}
+	std::cout << "Faces added" << std::endl;
+
+	Cost_stop_predicate stop(10);
+	Custom_cost cf(raster);
+	Custom_placement pf(raster);
+	int r = SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).get_placement(pf).visitor(My_visitor()));
+	std::cout << "\rMesh simplified                                               " << std::endl;
+
+	save_mesh(mesh, raster, "mesh.ply");
 
 	return EXIT_SUCCESS;
 }
