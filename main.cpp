@@ -224,8 +224,8 @@ std::list<Polygon> get_LOD0_from_shapefile(char *path) {
 }
 
 float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, const Point_3 &p2) {
-	float alpha = 1;
-	float beta = 1;
+	float alpha = 0.1;
+	float beta = 10;
 	float gamma = 0;
 	
 	float nz = ((-p0.x() + p1.x()) * (-p0.y() + p2.y()) - (-p0.x() + p2.x()) * (-p0.y() + p1.y()));
@@ -541,41 +541,54 @@ void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filen
 
 
 struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
-	int i_collecte = 0;
-	Surface_mesh *mesh;
-	std::chrono::time_point<std::chrono::system_clock> start_collecte;
-	std::chrono::time_point<std::chrono::system_clock> start_collapse;
+	private:
+		int i_collecte = 0;
+		const Surface_mesh *mesh;
+		const Raster *raster;
+		std::chrono::time_point<std::chrono::system_clock> start_collecte;
+		std::chrono::time_point<std::chrono::system_clock> start_collapse;
+		bool output[4] = {false};
 
-	My_visitor() {}
+	public:
+		My_visitor(const Surface_mesh *mesh, const Raster *raster) : mesh(mesh), raster(raster) {}
 
-	void OnStarted (Surface_mesh &_mesh) {
-		mesh = &_mesh;
-		/*std::ofstream statistiques("stats.csv",std::ios::out);
-		statistiques << "edge,cost\n";
-		statistiques.close();*/
-		start_collecte = std::chrono::system_clock::now();
-	}
-	
-	void OnCollected(const SMS::Edge_profile<Surface_mesh>& profile, const boost::optional<float>& cost) {
-		start_collapse = std::chrono::system_clock::now();
-		i_collecte++;
-		if (i_collecte%1000 == 0) {
-			std::chrono::duration<double> diff = start_collapse - start_collecte;
-			std::cout << "\rCollecte: " << i_collecte << "/" << mesh->number_of_edges() << " (" << ((int) (((float) i_collecte)/mesh->number_of_edges()*100)) << "%)" << " still " << (((float) mesh->number_of_edges() - i_collecte) * diff.count() / i_collecte) << "s" << " (" << (((float) i_collecte) / diff.count()) << " op/s)" << std::flush;
+		void OnStarted (Surface_mesh &mesh) {
+			start_collecte = std::chrono::system_clock::now();
 		}
-	}
-
-	void OnSelected (const SMS::Edge_profile<Surface_mesh> &profile, boost::optional< SMS::Edge_profile<Surface_mesh>::FT > cost, const SMS::Edge_profile<Surface_mesh>::edges_size_type initial_edge_count, const SMS::Edge_profile<Surface_mesh>::edges_size_type current_edge_count) {
-		/*std::ofstream statistiques("stats.csv",std::ios::app);
-		statistiques << current_edge_count << "," << *cost << "\n";
-		statistiques.close();*/
 		
-		if (current_edge_count%100 == 0) {
-			auto end = std::chrono::system_clock::now();
-        	std::chrono::duration<double> diff = end - start_collapse;
-			std::cout << "\rCollapse: " << (initial_edge_count-current_edge_count) << "/" << initial_edge_count << " (" << ((int) (((float) (initial_edge_count-current_edge_count))/initial_edge_count*100)) << "%)" << " still " << (((float) current_edge_count) * diff.count() / (initial_edge_count-current_edge_count)) << "s" << " (" << (((float) (initial_edge_count-current_edge_count)) / diff.count()) << " op/s) - cost: " << *cost << "     " << std::flush;
+		void OnCollected(const SMS::Edge_profile<Surface_mesh>& profile, const boost::optional<float>& cost) {
+			start_collapse = std::chrono::system_clock::now();
+			i_collecte++;
+			if (i_collecte%1000 == 0) {
+				std::chrono::duration<double> diff = start_collapse - start_collecte;
+				std::cout << "\rCollecte: " << i_collecte << "/" << mesh->number_of_edges() << " (" << ((int) (((float) i_collecte)/mesh->number_of_edges()*100)) << "%)" << " still " << (((float) mesh->number_of_edges() - i_collecte) * diff.count() / i_collecte) << "s" << " (" << (((float) i_collecte) / diff.count()) << " op/s)" << std::flush;
+			}
 		}
-	}
+
+		void OnSelected (const SMS::Edge_profile<Surface_mesh> &profile, boost::optional< SMS::Edge_profile<Surface_mesh>::FT > cost, const SMS::Edge_profile<Surface_mesh>::edges_size_type initial_edge_count, const SMS::Edge_profile<Surface_mesh>::edges_size_type current_edge_count) {
+			if (current_edge_count%100 == 0) {
+				auto end = std::chrono::system_clock::now();
+				std::chrono::duration<double> diff = end - start_collapse;
+				std::cout << "\rCollapse: " << (initial_edge_count-current_edge_count) << "/" << initial_edge_count << " (" << ((int) (((float) (initial_edge_count-current_edge_count))/initial_edge_count*100)) << "%)" << " still " << (((float) current_edge_count) * diff.count() / (initial_edge_count-current_edge_count)) << "s" << " (" << (((float) (initial_edge_count-current_edge_count)) / diff.count()) << " op/s) - cost: " << *cost << "     " << std::flush;
+			}
+
+			if (cost) {
+				if(*cost >+ 1 && !output[0]) {
+					output[0] = true;
+					save_mesh(*mesh,*raster,"mesh-1.ply");
+				} else if(*cost >= 2 && !output[1]) {
+					output[1] = true;
+					save_mesh(*mesh,*raster,"mesh-2.ply");
+				} else if(*cost >= 4 && !output[2]) {
+					output[2] = true;
+					save_mesh(*mesh,*raster,"mesh-4.ply");
+				} else if(*cost >= 7 && !output[3]) {
+					output[3] = true;
+					save_mesh(*mesh,*raster,"mesh-7.ply");
+				}
+			}
+
+		}
 
 };
 
@@ -608,7 +621,7 @@ int compute_LOD2(char *DSM, char *DTM, char *land_use_map, char *LOD0, char *ort
 	Cost_stop_predicate stop(10);
 	Custom_cost cf(raster);
 	Custom_placement pf(raster);
-	int r = SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).get_placement(pf).visitor(My_visitor()));
+	int r = SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).get_placement(pf).visitor(My_visitor(&mesh, &raster)));
 	std::cout << "\rMesh simplified                                               " << std::endl;
 
 	save_mesh(mesh, raster, "mesh.ply");
