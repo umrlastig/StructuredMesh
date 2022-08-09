@@ -274,7 +274,8 @@ float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, cons
 	Point_3 S = CGAL::centroid(p0,p1,p2);
 	float M = (pow(p2.x()-S.x(),2) + pow(p2.y()-S.y(),2) + pow(p2.z()-S.z(),2) + (pow(p1.x()-p0.x(),2) + pow(p1.y()-p0.y(),2) + pow(p1.z()-p0.z(),2))/3)/4;
 	float N = sqrtf(pow((p2.y()-S.y())*(p1.z()-p0.z())-(p2.z()-S.z())*(p1.y()-p0.y()),2) + pow((p2.z()-S.z())*(p1.x()-p0.x())-(p2.x()-S.x())*(p1.z()-p0.z()),2) + pow((p2.x()-S.x())*(p1.y()-p0.y())-(p2.y()-S.y())*(p1.x()-p0.x()),2))/(4 * sqrtf(3));
-	float eccentricity = pow(M*M - 4*N*N,1/4);
+	float eccentricity = M*M - 4*N*N;
+	eccentricity = sqrtf(1-(M-eccentricity)/(M+eccentricity));
 	
 	return 0 * least_squares + 10 * entropy + 0 * verticality + 1 * eccentricity;
 }
