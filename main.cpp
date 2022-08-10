@@ -413,8 +413,28 @@ class Custom_placement {
 			int min_cost = std::min_element(cost, cost + 5) - cost;
 
 			//std::cout << "Placement: (" << profile.p0() << ") - (" << profile.p1() << ") -> (" << p[min_cost] << ")\n";
+			Point_3 placement = p[min_cost];
 
-			return result_type(p[min_cost]);
+			for (auto he: CGAL::halfedges_around_source(profile.v0(), profile.surface_mesh())) {
+				if (he != profile.v0_v1() && he != profile.v0_vR()) {
+					Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
+					Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
+					if (CGAL::orientation(Point_2(A.x(),A.y()), Point_2(B.x(),B.y()), Point_2(profile.p0().x(),profile.p0().y())) != CGAL::orientation(Point_2(A.x(),A.y()), Point_2(B.x(),B.y()), Point_2(placement.x(),placement.y()))) {
+						return result_type();
+					}
+				}
+			}
+			for (auto he: CGAL::halfedges_around_source(profile.v1(), profile.surface_mesh())) {
+				if (he != profile.v1_v0() && he != profile.v1_vL()) {
+					Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
+					Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
+					if (CGAL::orientation(Point_2(A.x(),A.y()), Point_2(B.x(),B.y()), Point_2(profile.p1().x(),profile.p1().y())) != CGAL::orientation(Point_2(A.x(),A.y()), Point_2(B.x(),B.y()), Point_2(placement.x(),placement.y()))) {
+						return result_type();
+					}
+				}
+			}
+
+			return result_type(placement);
 		}
 };
 
