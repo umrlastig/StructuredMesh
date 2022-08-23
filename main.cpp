@@ -13,7 +13,6 @@
 #include "ogrsf_frmts.h"
 #include <CGAL/Simple_cartesian.h>
 #include <CGAL/Surface_mesh.h>
-#include <CGAL/Triangle_2.h>
 #include <CGAL/IO/WKT.h>
 #include <CGAL/Polygon_with_holes_2.h>
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
@@ -26,9 +25,6 @@
 typedef CGAL::Simple_cartesian<float>                       K;
 typedef K::Point_2                                          Point_2;
 typedef K::Point_3                                          Point_3;
-typedef K::Vector_3                                         Vector_3;
-typedef K::Triangle_2                                       Triangle_2;
-typedef K::Plane_3                                          Plane_3;
 typedef CGAL::Surface_mesh<Point_3>                         Surface_mesh;
 typedef CGAL::Polygon_2<K>                                  Polygon;
 
@@ -84,7 +80,7 @@ class Raster {
 			int max_x = std::min((int) std::max({a.x(), b.x(), c.x()}), xSize-1);
 			int min_y = std::max((int) std::min({a.y(), b.y(), c.y()}), 0);
 			int max_y = std::min((int) std::max({a.y(), b.y(), c.y()}), ySize-1);
-			Triangle_2 triangle (Point_2(a.x(), a.y()), Point_2(b.x(), b.y()), Point_2(c.x(), c.y()));
+			K::Triangle_2 triangle (Point_2(a.x(), a.y()), Point_2(b.x(), b.y()), Point_2(c.x(), c.y()));
 			for (int L = min_y; L <= max_y; L++) {
 				for (int P = min_x; P <= max_x; P++) {
 					if (triangle.bounded_side(Point_2(0.5 + P, 0.5 + L)) != CGAL::ON_UNBOUNDED_SIDE) {
@@ -254,7 +250,7 @@ float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, cons
 	// Least squares
 	float least_squares = 0;
 	if (pixels.size() != 0) {
-		Plane_3 plane(p0, p1, p2);
+		K::Plane_3 plane(p0, p1, p2);
 		for (auto pixel : pixels) {
 			float px = 0.5 + pixel.first;
 			float py = 0.5 + pixel.second;
@@ -351,7 +347,7 @@ class Custom_placement {
 		boost::optional<SMS::Edge_profile<Surface_mesh>::Point> operator()(const SMS::Edge_profile<Surface_mesh>& profile) const {
 			typedef boost::optional<SMS::Edge_profile<Surface_mesh>::Point> result_type;
 
-			Vector_3 vector(profile.p0(), profile.p1());
+			K::Vector_3 vector(profile.p0(), profile.p1());
 			Point_3 p[5] = {profile.p0(), profile.p0() + 0.25 * vector, profile.p0() + 0.5 * vector, profile.p0() + 0.75 * vector, profile.p1()};
 			float cost[5] = {0};
 
@@ -398,7 +394,7 @@ class Custom_placement {
 					cost[2] = cost[3];
 				}
 
-				vector = Vector_3(p[0], p[4]);
+				vector = K::Vector_3(p[0], p[4]);
 				p[1] = p[0] + 0.25 * vector;
 				p[3] = p[0] + 0.75 * vector;
 				p[1] = best_point(raster, p[1].x(), p[1].y(), profile);
@@ -546,7 +542,7 @@ void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filen
 
 		CGAL::Vertex_around_face_iterator<OutputMesh> vbegin, vend;
     	boost::tie(vbegin, vend) = vertices_around_face(output_mesh.halfedge(face), output_mesh);
-		for (auto pixel : raster.triangle_to_pixel(output_mesh.point(*vbegin++), output_mesh.point(*(vbegin++)), output_mesh.point(*(vbegin++)))) {
+		for (auto pixel : raster.triangle_to_pixel(output_mesh.point(*(vbegin++)), output_mesh.point(*(vbegin++)), output_mesh.point(*(vbegin++)))) {
 			if (raster.land_cover[pixel.second][pixel.first] > -1) {
 				sum_face_label++;
 				face_label[raster.land_cover[pixel.second][pixel.first]]++;
