@@ -353,57 +353,49 @@ class Custom_placement {
 
 			Vector_3 vector(profile.p0(), profile.p1());
 			Point_3 p[5] = {profile.p0(), profile.p0() + 0.25 * vector, profile.p0() + 0.5 * vector, profile.p0() + 0.75 * vector, profile.p1()};
-			float cost0 = 0, cost1 = 0, cost2 = 0, cost3 = 0, cost4 = 0;
+			float cost[5] = {0};
 
-			//#pragma omp parallel for
 			for (int j = 0; j < 5; j++) {
 				p[j] = best_point(raster, p[j].x(), p[j].y(), profile);
 			}
 
-			//#pragma omp parallel for reduction(+:cost0,cost1,cost2,cost3,cost4)
 			for (auto he : CGAL::halfedges_around_source(profile.v0(), profile.surface_mesh())) {
 				if (he != profile.v0_v1() && he != profile.v0_vR()) {
 					Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
 					Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
-					cost0 += face_cost(raster, A, B, p[0]);
-					cost1 += face_cost(raster, A, B, p[1]);
-					cost2 += face_cost(raster, A, B, p[2]);
-					cost3 += face_cost(raster, A, B, p[3]);
-					cost4 += face_cost(raster, A, B, p[4]);
+					for (int j = 0; j < 5; j++) {
+						cost[j] += face_cost(raster, A, B, p[j]);
 				}
 			}
-			//#pragma omp parallel for reduction(+:cost0,cost1,cost2,cost3,cost4)
+			}
 			for (auto he : CGAL::halfedges_around_source(profile.v1(), profile.surface_mesh())) {
 				if (he != profile.v1_v0() && he != profile.v1_vL()) {
 					Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
 					Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
-					cost0 += face_cost(raster, A, B, p[0]);
-					cost1 += face_cost(raster, A, B, p[1]);
-					cost2 += face_cost(raster, A, B, p[2]);
-					cost3 += face_cost(raster, A, B, p[3]);
-					cost4 += face_cost(raster, A, B, p[4]);
+					for (int j = 0; j < 5; j++) {
+						cost[j] += face_cost(raster, A, B, p[j]);
+					}
 				}
 			}
 
 			for (int i = 0; i < 1; i++) {
-				float cost[] = {cost0, cost1, cost2, cost3, cost4};
 				int min_cost = std::min_element(cost, cost + 5) - cost;
 				
 				if (min_cost == 0 || min_cost == 1) {
 					p[4] = p[2];
-					cost4 = cost2;
+					cost[4] = cost[2];
 					p[2] = p[1];
-					cost2 = cost1;
+					cost[2] = cost[1];
 				} else if (min_cost == 2) {
 					p[0] = p[1];
-					cost0 = cost1;
+					cost[0] = cost[1];
 					p[4] = p[3];
-					cost4 = cost3;
+					cost[4] = cost[3];
 				} else {
 					p[0] = p[2];
-					cost0 = cost2;
+					cost[0] = cost[2];
 					p[2] = p[3];
-					cost2 = cost3;
+					cost[2] = cost[3];
 				}
 
 				vector = Vector_3(p[0], p[4]);
@@ -412,30 +404,27 @@ class Custom_placement {
 				p[1] = best_point(raster, p[1].x(), p[1].y(), profile);
 				p[3] = best_point(raster, p[1].x(), p[1].y(), profile);
 
-				cost1 = 0;
-				cost3 = 0;
+				cost[1] = 0;
+				cost[3] = 0;
 				
-				//#pragma omp parallel for reduction(+:cost1,cost3)
 				for (auto he : CGAL::halfedges_around_source(profile.v0(), profile.surface_mesh())) {
 					if (he != profile.v0_v1() && he != profile.v0_vR()) {
 						Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
 						Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
-						cost1 += face_cost(raster, A, B, p[1]);
-						cost3 += face_cost(raster, A, B, p[3]);
+						cost[1] += face_cost(raster, A, B, p[1]);
+						cost[3] += face_cost(raster, A, B, p[3]);
 					}
 				}
-				//#pragma omp parallel for reduction(+:cost1,cost3)
 				for (auto he : CGAL::halfedges_around_source(profile.v1(), profile.surface_mesh())) {
 					if (he != profile.v1_v0() && he != profile.v1_vL()) {
 						Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
 						Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
-						cost1 += face_cost(raster, A, B, p[1]);
-						cost3 += face_cost(raster, A, B, p[3]);
+						cost[1] += face_cost(raster, A, B, p[1]);
+						cost[3] += face_cost(raster, A, B, p[3]);
 					}
 				}
 			}
 
-			float cost[] = {cost0, cost1, cost2, cost3, cost4};
 			int min_cost = std::min_element(cost, cost + 5) - cost;
 
 			//std::cout << "Placement: (" << profile.p0() << ") - (" << profile.p1() << ") -> (" << p[min_cost] << ")\n";
@@ -478,24 +467,15 @@ class Custom_cost {
 				float old_cost = 0;
 				float new_cost = 0;
 				
-				//#pragma omp parallel sections reduction(+:old_cost, new_cost)
-				{
-					//#pragma omp section
-					{
 						SMS::Edge_profile<Surface_mesh>::Triangle_vector triangles = profile.triangles();
-						//#pragma omp parallel for reduction(+:old_cost)
 						for (auto triange: triangles) {
 							Point_3 A = get(profile.vertex_point_map(),triange.v0);
 							Point_3 B = get(profile.vertex_point_map(),triange.v1);
 							Point_3 C = get(profile.vertex_point_map(),triange.v2);
 							old_cost += face_cost(raster, A, B, C);
 						}
-					}
 					
-					//#pragma omp section
-					{
 						Point_3 C = *placement;
-						//#pragma omp parallel for reduction(+:new_cost)
 						for (auto he : CGAL::halfedges_around_source(profile.v0(), profile.surface_mesh())) {
 							if (he != profile.v0_v1() && he != profile.v0_vR()) {
 								Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
@@ -503,16 +483,12 @@ class Custom_cost {
 								new_cost += face_cost(raster, A, B, C);
 							}
 						}
-						//#pragma omp parallel for reduction(+:new_cost)
 						for (auto he : CGAL::halfedges_around_source(profile.v1(), profile.surface_mesh())) {
 							if (he != profile.v1_v0() && he != profile.v1_vL()) {
 								Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
 								Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
 								new_cost += face_cost(raster, A, B, C);
 							}
-						}
-					}
-
 				}
 
 				//std::cout << "Cost: " << (new_cost - old_cost) << "\n";
