@@ -274,7 +274,8 @@ float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, cons
 	float eccentricity = M*M - 4*N*N;
 	eccentricity = sqrtf(1-(M-eccentricity)/(M+eccentricity));
 
-	return 1 * least_squares + 0 * entropy + 0 * verticality + 0 * eccentricity;
+	float surface = K::Triangle_3(p0, p1, p2).squared_area ();
+	return surface * (1 * least_squares + 0 * entropy + 0 * verticality + 0 * eccentricity);
 }
 
 Point_3 best_point(const Raster &raster, K::FT x, K::FT y, const SMS::Edge_profile<Surface_mesh>& profile) {
