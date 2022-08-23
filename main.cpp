@@ -250,6 +250,7 @@ float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, cons
 
 	// Least squares
 	float least_squares = 0;
+	float least = 0;
 	if (pixels.size() != 0) {
 		K::Plane_3 plane(p0, p1, p2);
 		for (auto pixel : pixels) {
@@ -257,8 +258,10 @@ float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, cons
 			float py = 0.5 + pixel.second;
 			float pz = - (plane.a() * px + plane.b() * py + plane.d()) / plane.c();
 			least_squares += pow(raster.dsm[pixel.second][pixel.first] - pz,2);
+			least += abs(raster.dsm[pixel.second][pixel.first] - pz);
 		}
 		least_squares /= pixels.size();
+		least /= pixels.size();
 	}
 	
 	// Verticality
@@ -275,7 +278,7 @@ float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, cons
 	eccentricity = sqrtf(1-(M-eccentricity)/(M+eccentricity));
 
 	float surface = K::Triangle_3(p0, p1, p2).squared_area ();
-	return surface * (1 * least_squares + 0 * entropy + 0 * verticality + 0 * eccentricity);
+	return surface * (0 * least_squares + 1 * least + 1 * entropy + 0 * verticality + 0 * eccentricity);
 }
 
 Point_3 best_point(const Raster &raster, K::FT x, K::FT y, const SMS::Edge_profile<Surface_mesh>& profile) {
@@ -283,6 +286,8 @@ Point_3 best_point(const Raster &raster, K::FT x, K::FT y, const SMS::Edge_profi
 	float z;
 	float d = 0;
 	float D = 0;
+	std::list<std::pair<float,float>> values;
+	float t = 0;
 	int count = 0;
 
 	//Foreach face
@@ -301,6 +306,8 @@ Point_3 best_point(const Raster &raster, K::FT x, K::FT y, const SMS::Edge_profi
 
 					d += i1 * (((A.x() - px) * (A.y() * B.z() - A.z() * B.y() + A.z() * y - B.z() * y) + (A.y() - py) * (-A.x() * B.z() + A.z() * B.x() - A.z() * x + B.z() * x) + (A.z() - pz) * i2) / (i2 * i2));
 					D += (i1 * i1) / (i2 * i2);
+					values.push_back(std::pair<float,float>(((A.x() - px) * (A.y() * B.z() - A.z() * B.y() + A.z() * y - B.z() * y) + (A.y() - py) * (-A.x() * B.z() + A.z() * B.x() - A.z() * x + B.z() * x) + (A.z() - pz) * i2) / i1, abs(i1/i2)));
+					t += abs(i1/i2);
 					count ++;
 				}
 			}
@@ -321,6 +328,8 @@ Point_3 best_point(const Raster &raster, K::FT x, K::FT y, const SMS::Edge_profi
 
 					d += i1 * (((A.x() - px) * (A.y() * B.z() - A.z() * B.y() + A.z() * y - B.z() * y) + (A.y() - py) * (-A.x() * B.z() + A.z() * B.x() - A.z() * x + B.z() * x) + (A.z() - pz) * i2) / (i2 * i2));
 					D += (i1 * i1) / (i2 * i2);
+					values.push_back(std::pair<float,float>(((A.x() - px) * (A.y() * B.z() - A.z() * B.y() + A.z() * y - B.z() * y) + (A.y() - py) * (-A.x() * B.z() + A.z() * B.x() - A.z() * x + B.z() * x) + (A.z() - pz) * i2) / i1, abs(i1/i2)));
+					t += abs(i1/i2);
 					count ++;
 				}
 			}
@@ -329,6 +338,19 @@ Point_3 best_point(const Raster &raster, K::FT x, K::FT y, const SMS::Edge_profi
 
 	if (count > 0) {
 		z = d / D;
+
+		values.sort([](std::pair<float,float> a, std::pair<float,float> b) {
+			return a.first > b.first;
+		});
+
+		auto p = values.begin();
+		float s = 0;
+		while (s+p->second < t/2) {
+			s += p->second;
+			p++;
+		}
+		z = p->first;
+
 	} else {
 		if (profile.p1().x() != profile.p0().x()) {
 			z = (x - profile.p0().x())/(profile.p1().x() - profile.p0().x())*(profile.p1().z() - profile.p0().z());
@@ -352,7 +374,7 @@ class Custom_placement {
 			K::Vector_3 vector(profile.p0(), profile.p1());
 			Point_3 p[5] = {profile.p0(), profile.p0() + 0.25 * vector, profile.p0() + 0.5 * vector, profile.p0() + 0.75 * vector, profile.p1()};
 			float cost[5] = {0};
-
+			
 			for (int j = 0; j < 5; j++) {
 				p[j] = best_point(raster, p[j].x(), p[j].y(), profile);
 			}
@@ -363,8 +385,8 @@ class Custom_placement {
 					Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
 					for (int j = 0; j < 5; j++) {
 						cost[j] += face_cost(raster, A, B, p[j]);
+					}
 				}
-			}
 			}
 			for (auto he : CGAL::halfedges_around_source(profile.v1(), profile.surface_mesh())) {
 				if (he != profile.v1_v0() && he != profile.v1_vL()) {
@@ -461,32 +483,32 @@ class Custom_cost {
 			typedef boost::optional<SMS::Edge_profile<Surface_mesh>::FT> result_type;
 
 			if (placement) {
-				
+
 				float old_cost = 0;
 				float new_cost = 0;
-				
-						SMS::Edge_profile<Surface_mesh>::Triangle_vector triangles = profile.triangles();
-						for (auto triange: triangles) {
-							Point_3 A = get(profile.vertex_point_map(),triange.v0);
-							Point_3 B = get(profile.vertex_point_map(),triange.v1);
-							Point_3 C = get(profile.vertex_point_map(),triange.v2);
-							old_cost += face_cost(raster, A, B, C);
-						}
-					
-						Point_3 C = *placement;
-						for (auto he : CGAL::halfedges_around_source(profile.v0(), profile.surface_mesh())) {
-							if (he != profile.v0_v1() && he != profile.v0_vR()) {
-								Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
-								Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
-								new_cost += face_cost(raster, A, B, C);
-							}
-						}
-						for (auto he : CGAL::halfedges_around_source(profile.v1(), profile.surface_mesh())) {
-							if (he != profile.v1_v0() && he != profile.v1_vL()) {
-								Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
-								Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
-								new_cost += face_cost(raster, A, B, C);
-							}
+
+				SMS::Edge_profile<Surface_mesh>::Triangle_vector triangles = profile.triangles();
+				for (auto triange: triangles) {
+					Point_3 A = get(profile.vertex_point_map(),triange.v0);
+					Point_3 B = get(profile.vertex_point_map(),triange.v1);
+					Point_3 C = get(profile.vertex_point_map(),triange.v2);
+					old_cost += face_cost(raster, A, B, C);
+				}
+
+				Point_3 C = *placement;
+				for (auto he : CGAL::halfedges_around_source(profile.v0(), profile.surface_mesh())) {
+					if (he != profile.v0_v1() && he != profile.v0_vR()) {
+						Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
+						Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
+						new_cost += face_cost(raster, A, B, C);
+					}
+				}
+				for (auto he : CGAL::halfedges_around_source(profile.v1(), profile.surface_mesh())) {
+					if (he != profile.v1_v0() && he != profile.v1_vL()) {
+						Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
+						Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
+						new_cost += face_cost(raster, A, B, C);
+					}
 				}
 
 				//std::cout << "Cost: " << (new_cost - old_cost) << "\n";
