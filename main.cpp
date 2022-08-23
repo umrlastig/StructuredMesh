@@ -17,6 +17,7 @@
 #include <CGAL/Polygon_with_holes_2.h>
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Edge_profile.h>
+#include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Count_stop_predicate.h>
 #include <CGAL/Surface_mesh_simplification/Edge_collapse_visitor_base.h>
 #include <CGAL/boost/graph/copy_face_graph.h>
 
@@ -555,7 +556,7 @@ void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filen
 		green[face] = LABELS[argmax - face_label].green;
 		blue[face] = LABELS[argmax - face_label].blue;
 
-		float entropy = 0;
+		/*float entropy = 0;
 		if (sum_face_label > 0) {
 			for (int i = 0; i < LABELS.size(); i++) {
 				if (face_label[i] > 0) {
@@ -564,15 +565,20 @@ void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filen
 			}
 			entropy = log((float) sum_face_label) - entropy/((float) sum_face_label);
 		}
-		quality[face] = entropy;
+		quality[face] = entropy;*/
+		boost::tie(vbegin, vend) = vertices_around_face(output_mesh.halfedge(face), output_mesh);
+		auto pa = output_mesh.point(*(vbegin++));
+		auto pb = output_mesh.point(*(vbegin++));
+		auto pc = output_mesh.point(*(vbegin++));
+		quality[face] = face_cost(raster, Point_3(pa.x(), pa.y(), pa.z()), Point_3(pb.x(), pb.y(), pb.z()), Point_3(pc.x(), pc.y(), pc.z()));
 	}
 
-	/*for(auto vertex : output_mesh.vertices()) {
+	for(auto vertex : output_mesh.vertices()) {
 		auto point = output_mesh.point(vertex);
 		double x, y;
 		raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
 		output_mesh.point(vertex) = CGAL::Simple_cartesian<double>::Point_3(x, y, (double) point.z());
-	}*/
+	}
 
 	std::ofstream mesh_ofile (filename, std::ios_base::binary);
 	CGAL::IO::set_binary_mode (mesh_ofile);
@@ -614,22 +620,25 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 			}
 
 			if (cost) {
-				if(*cost > 1e-4 && !output[4]) {
-					output[4] = true;
-					save_mesh(*mesh,*raster,"mesh-1e-4.ply");
-				}
-				if(current_edge_count <= 10000 && !output[0]) {
+				if(*cost > 1e-4 && !output[0]) {
 					output[0] = true;
-					save_mesh(*mesh,*raster,"mesh-10000.ply");
-				} else if(current_edge_count <= 8000 && !output[1]) {
+					save_mesh(*mesh,*raster,"mesh-1e-4.ply");
+				} else if(*cost > 0 && !output[1]) {
 					output[1] = true;
-					save_mesh(*mesh,*raster,"mesh-8000.ply");
-				} else if(current_edge_count <= 6000 && !output[2]) {
+					save_mesh(*mesh,*raster,"mesh-0.ply");
+				}
+				if(current_edge_count <= 100000 && !output[2]) {
 					output[2] = true;
-					save_mesh(*mesh,*raster,"mesh-6000.ply");
-				} else if(current_edge_count <= 2000 && !output[3]) {
+					save_mesh(*mesh,*raster,"mesh-100000.ply");
+				} else if(current_edge_count <= 10000 && !output[3]) {
 					output[3] = true;
-					save_mesh(*mesh,*raster,"mesh-2000.ply");
+					save_mesh(*mesh,*raster,"mesh-10000.ply");
+				} else if(current_edge_count <= 1000 && !output[4]) {
+					output[4] = true;
+					save_mesh(*mesh,*raster,"mesh-1000.ply");
+				} else if(current_edge_count <= 1000000 && !output[5]) {
+					output[5] = true;
+					save_mesh(*mesh,*raster,"mesh-1000000.ply");
 				}
 			}
 
@@ -665,7 +674,8 @@ int compute_LOD2(char *DSM, char *DTM, char *land_use_map, char *LOD0, char *ort
 
 	save_mesh(mesh, raster, "initial-mesh.ply");
 
-	Cost_stop_predicate stop(10);
+	// Cost_stop_predicate stop(10);
+	SMS::Count_stop_predicate<Surface_mesh> stop(1000);
 	Custom_cost cf(raster);
 	Custom_placement pf(raster);
 	int r = SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).get_placement(pf).visitor(My_visitor(&mesh, &raster)));
