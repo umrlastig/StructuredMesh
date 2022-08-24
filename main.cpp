@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <chrono>
+#include <regex>
 
 #include "ogrsf_frmts.h"
 #include <CGAL/Simple_cartesian.h>
@@ -72,6 +73,10 @@ class Raster {
 		void grid_to_coord(float P, float L, double& x, double& y) const {
 			x = grid_to_crs[0] + P*grid_to_crs[1] + L*grid_to_crs[2];
 			y = grid_to_crs[3] + P*grid_to_crs[4] + L*grid_to_crs[5];
+		}
+
+		OGRSpatialReference get_crs() const {
+			return OGRSpatialReference(crs);
 		}
 
 		template <typename T>
@@ -596,16 +601,44 @@ void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filen
 		quality[face] = face_cost(raster, Point_3(pa.x(), pa.y(), pa.z()), Point_3(pb.x(), pb.y(), pb.z()), Point_3(pc.x(), pc.y(), pc.z()));
 	}
 
+	double min_x, min_y;
+	raster.grid_to_coord(0, 0, min_x, min_y);
+
+	char *temp;
+	const char *options_json[] = { "MULTILINE=NO", NULL };
+	raster.get_crs().exportToPROJJSON(&temp, options_json);
+	std::string crs_as_json(temp);
+	CPLFree(temp);
+
+	crs_as_json = regex_replace(crs_as_json, std::regex(",\"id\":\\{\"authority\":\"EPSG\",\"code\":[^\\}]+\\}"), "");
+	crs_as_json = regex_replace(crs_as_json, std::regex("Lambert-93"), "Custom");
+
+	std::smatch matches;
+	regex_search(crs_as_json, matches, std::regex("\"name\":\"Northing at false origin\",\"value\":([^,]+),"));
+	crs_as_json = regex_replace(crs_as_json, std::regex("\"name\":\"Northing at false origin\",\"value\":([^,]+),"), "\"name\":\"Northing at false origin\",\"value\":" + std::to_string(std::stoi(matches[1]) - min_y) + ",");
+
+	regex_search(crs_as_json, matches, std::regex("\"name\":\"Easting at false origin\",\"value\":([^,]+),"));
+	crs_as_json = regex_replace(crs_as_json, std::regex("\"name\":\"Easting at false origin\",\"value\":([^,]+),"), "\"name\":\"Easting at false origin\",\"value\":" + std::to_string(std::stoi(matches[1]) - min_x) + ",");
+
+	OGRSpatialReference output_crs;
+	output_crs.SetFromUserInput(crs_as_json.c_str());
+	output_crs.AutoIdentifyEPSG();
+
+	/*const char *options_wkt[] = { "MULTILINE=NO", "FORMAT=WKT2", NULL };
+	output_crs.exportToWkt(&temp, options_wkt);*/ output_crs.exportToProj4(&temp); // WKT format is too long for MeshLab
+	std::string crs_as_wkt(temp);
+	CPLFree(temp);
+
 	for(auto vertex : output_mesh.vertices()) {
 		auto point = output_mesh.point(vertex);
 		double x, y;
 		raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
-		output_mesh.point(vertex) = CGAL::Simple_cartesian<double>::Point_3(x, y, (double) point.z());
+		output_mesh.point(vertex) = CGAL::Simple_cartesian<double>::Point_3(x-min_x, y-min_y, (double) point.z());
 	}
 
 	std::ofstream mesh_ofile (filename, std::ios_base::binary);
 	CGAL::IO::set_binary_mode (mesh_ofile);
-	CGAL::IO::write_PLY (mesh_ofile, output_mesh);
+	CGAL::IO::write_PLY (mesh_ofile, output_mesh, "crs " + crs_as_wkt);
 	mesh_ofile.close();
 }
 
