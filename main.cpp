@@ -887,9 +887,9 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 				} else if(current_edge_count <= 10000 && !output[3]) {
 					output[3] = true;
 					save_mesh(*mesh,*raster,"mesh-10000.ply");
-				} else if(current_edge_count <= 1000 && !output[4]) {
+				} else if(current_edge_count <= 5000 && !output[4]) {
 					output[4] = true;
-					save_mesh(*mesh,*raster,"mesh-1000.ply");
+					save_mesh(*mesh,*raster,"mesh-5000.ply");
 				} else if(current_edge_count <= 1000000 && !output[5]) {
 					output[5] = true;
 					save_mesh(*mesh,*raster,"mesh-1000000.ply");
