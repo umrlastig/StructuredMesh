@@ -97,6 +97,202 @@ class Raster {
 			return ret;
 		}
 
+		void fill_holes() {
+			int max_hole_size = 300;
+
+			//Negative holes
+			{
+				// Find holes
+				std::list<std::pair<float,std::list<std::pair<int,int>>>> holes;
+				for (int L = 1; L < ySize - 1; L++) {
+					for (int P = 1; P < xSize -1; P++) {
+						if (land_cover[L][P] >= 1 && land_cover[L][P] <= 3 || land_cover[L][P] >= 6) {
+							if (dsm[L][P] <= dsm[L+1][P] & dsm[L][P] <= dsm[L-1][P] & dsm[L][P] <= dsm[L][P+1] & dsm[L][P] <= dsm[L][P-1]) {
+								holes.push_back(std::pair<float,std::list<std::pair<int,int>>>(dsm[L][P], {std::pair<int,int>(P,L)}));
+							}
+						}
+					}
+				}
+				
+				// Compute hole elevation
+				for (auto &hole: holes) {
+					bool end = false;
+					std::list<std::pair<int,int>> ring ({
+						std::pair<int,int>(hole.second.front().first-1,hole.second.front().second),
+						std::pair<int,int>(hole.second.front().first+1,hole.second.front().second),
+						std::pair<int,int>(hole.second.front().first,hole.second.front().second-1),
+						std::pair<int,int>(hole.second.front().first,hole.second.front().second+1)
+						});
+
+					while(!end) {
+						float min_dsm = FLT_MAX;
+						std::pair<int,int> min_pixel;
+
+						for (auto pixel: ring) {
+							if (dsm[pixel.second][pixel.first] < min_dsm) {
+								min_pixel = pixel;
+								min_dsm = dsm[pixel.second][pixel.first];
+							}
+						}
+
+						hole.first = min_dsm;
+						hole.second.push_back(min_pixel);
+						ring.remove(min_pixel);
+
+						if (min_pixel.first-1 >= 0) {
+							if (std::find(hole.second.begin(), hole.second.end(), std::pair<int,int>(min_pixel.first-1, min_pixel.second)) == hole.second.end()) {
+								if (std::find(ring.begin(), ring.end(), std::pair<int,int>(min_pixel.first-1, min_pixel.second)) == ring.end()) {
+									if (dsm[min_pixel.second][min_pixel.first-1] < hole.first) {
+										end = true;
+									} else {
+										ring.push_back(std::pair<int,int>(min_pixel.first-1, min_pixel.second));
+									}
+								}
+							}
+						}
+						if (min_pixel.first+1 < xSize) {
+							if (std::find(hole.second.begin(), hole.second.end(), std::pair<int,int>(min_pixel.first+1, min_pixel.second)) == hole.second.end()) {
+								if (std::find(ring.begin(), ring.end(), std::pair<int,int>(min_pixel.first+1, min_pixel.second)) == ring.end()) {
+									if (dsm[min_pixel.second][min_pixel.first+1] < hole.first) {
+										end = true;
+									} else {
+										ring.push_back(std::pair<int,int>(min_pixel.first+1, min_pixel.second));
+									}
+								}
+							}
+						}
+						if (min_pixel.second-1 >= 0) {
+							if (std::find(hole.second.begin(), hole.second.end(), std::pair<int,int>(min_pixel.first, min_pixel.second-1)) == hole.second.end()) {
+								if (std::find(ring.begin(), ring.end(), std::pair<int,int>(min_pixel.first, min_pixel.second-1)) == ring.end()) {
+									if (dsm[min_pixel.second-1][min_pixel.first] < hole.first) {
+										end = true;
+									} else {
+										ring.push_back(std::pair<int,int>(min_pixel.first, min_pixel.second-1));
+									}
+								}
+							}
+						}
+						if (min_pixel.second+1 < ySize) {
+							if (std::find(hole.second.begin(), hole.second.end(), std::pair<int,int>(min_pixel.first, min_pixel.second+1)) == hole.second.end()) {
+								if (std::find(ring.begin(), ring.end(), std::pair<int,int>(min_pixel.first, min_pixel.second+1)) == ring.end()) {
+									if (dsm[min_pixel.second+1][min_pixel.first] < hole.first) {
+										end = true;
+									} else {
+										ring.push_back(std::pair<int,int>(min_pixel.first, min_pixel.second+1));
+									}
+								}
+							}
+						}
+
+						if (hole.second.size() >= max_hole_size) {
+							end = true;
+						}
+					}
+
+					//Fill holes
+					for (auto pixel: hole.second) {
+						dsm[pixel.second][pixel.first] = hole.first;
+					}
+				}
+			}
+
+			//Positive holes
+			{
+				// Find holes
+				std::list<std::pair<float,std::list<std::pair<int,int>>>> holes;
+				for (int L = 1; L < ySize - 1; L++) {
+					for (int P = 1; P < xSize -1; P++) {
+						if (land_cover[L][P] >= 1 && land_cover[L][P] <= 3 || land_cover[L][P] >= 6) {
+							if (dsm[L][P] >= dsm[L+1][P] & dsm[L][P] >= dsm[L-1][P] & dsm[L][P] >= dsm[L][P+1] & dsm[L][P] >= dsm[L][P-1]) {
+								holes.push_back(std::pair<float,std::list<std::pair<int,int>>>(dsm[L][P], {std::pair<int,int>(P,L)}));
+							}
+						}
+					}
+				}
+				
+				// Compute hole elevation
+				for (auto &hole: holes) {
+					bool end = false;
+					std::list<std::pair<int,int>> ring ({
+						std::pair<int,int>(hole.second.front().first-1,hole.second.front().second),
+						std::pair<int,int>(hole.second.front().first+1,hole.second.front().second),
+						std::pair<int,int>(hole.second.front().first,hole.second.front().second-1),
+						std::pair<int,int>(hole.second.front().first,hole.second.front().second+1)
+						});
+
+					while(!end) {
+						float max_dsm = FLT_MIN;
+						std::pair<int,int> max_pixel;
+
+						for (auto pixel: ring) {
+							if (dsm[pixel.second][pixel.first] > max_dsm) {
+								max_pixel = pixel;
+								max_dsm = dsm[pixel.second][pixel.first];
+							}
+						}
+
+						hole.first = max_dsm;
+						hole.second.push_back(max_pixel);
+						ring.remove(max_pixel);
+
+						if (max_pixel.first-1 >= 0) {
+							if (std::find(hole.second.begin(), hole.second.end(), std::pair<int,int>(max_pixel.first-1, max_pixel.second)) == hole.second.end()) {
+								if (std::find(ring.begin(), ring.end(), std::pair<int,int>(max_pixel.first-1, max_pixel.second)) == ring.end()) {
+									if (dsm[max_pixel.second][max_pixel.first-1] > hole.first) {
+										end = true;
+									} else {
+										ring.push_back(std::pair<int,int>(max_pixel.first-1, max_pixel.second));
+									}
+								}
+							}
+						}
+						if (max_pixel.first+1 < xSize) {
+							if (std::find(hole.second.begin(), hole.second.end(), std::pair<int,int>(max_pixel.first+1, max_pixel.second)) == hole.second.end()) {
+								if (std::find(ring.begin(), ring.end(), std::pair<int,int>(max_pixel.first+1, max_pixel.second)) == ring.end()) {
+									if (dsm[max_pixel.second][max_pixel.first+1] > hole.first) {
+										end = true;
+									} else {
+										ring.push_back(std::pair<int,int>(max_pixel.first+1, max_pixel.second));
+									}
+								}
+							}
+						}
+						if (max_pixel.second-1 >= 0) {
+							if (std::find(hole.second.begin(), hole.second.end(), std::pair<int,int>(max_pixel.first, max_pixel.second-1)) == hole.second.end()) {
+								if (std::find(ring.begin(), ring.end(), std::pair<int,int>(max_pixel.first, max_pixel.second-1)) == ring.end()) {
+									if (dsm[max_pixel.second-1][max_pixel.first] > hole.first) {
+										end = true;
+									} else {
+										ring.push_back(std::pair<int,int>(max_pixel.first, max_pixel.second-1));
+									}
+								}
+							}
+						}
+						if (max_pixel.second+1 < ySize) {
+							if (std::find(hole.second.begin(), hole.second.end(), std::pair<int,int>(max_pixel.first, max_pixel.second+1)) == hole.second.end()) {
+								if (std::find(ring.begin(), ring.end(), std::pair<int,int>(max_pixel.first, max_pixel.second+1)) == ring.end()) {
+									if (dsm[max_pixel.second+1][max_pixel.first] > hole.first) {
+										end = true;
+									} else {
+										ring.push_back(std::pair<int,int>(max_pixel.first, max_pixel.second+1));
+									}
+								}
+							}
+						}
+
+						if (hole.second.size() >= max_hole_size) {
+							end = true;
+						}
+					}
+
+					//Fill holes
+					for (auto pixel: hole.second) {
+						dsm[pixel.second][pixel.first] = hole.first;
+					}
+				}
+			}
+		}
+
 		Raster(char *dsm_path, char *dtm_path, char *land_cover_path) {
 			GDALAllRegister();
 
@@ -177,6 +373,8 @@ class Raster {
 				}
 			}
 			std::cout << "Land cover load" << std::endl;
+
+			fill_holes();
 		}
 };
 
@@ -705,6 +903,33 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 int compute_LOD2(char *DSM, char *DTM, char *land_use_map, char *LOD0, char *orthophoto) {
 	const Raster raster(DSM, DTM, land_use_map);
 
+	std::cout << "Terrain mesh" << std::endl;
+	Surface_mesh terrain_mesh;
+	// Add points
+	std::vector<std::vector<Surface_mesh::Vertex_index>> terrain_vertex_index(raster.ySize, std::vector<Surface_mesh::Vertex_index>(raster.xSize, Surface_mesh::Vertex_index()));
+	for (int L = 0; L < raster.ySize; L++) {
+		for (int P = 0; P < raster.xSize; P++) {
+			terrain_vertex_index[L][P] = terrain_mesh.add_vertex(Point_3(0.5 + P, 0.5 + L, raster.dtm[L][P]));
+		}
+	}
+	std::cout << "Point added" << std::endl;
+	// Add faces
+	for (int L = 0; L < raster.ySize-1; L++) {
+		for (int P = 0; P < raster.xSize-1; P++) {
+			if (pow(raster.dtm[L][P]-raster.dtm[L+1][P+1], 2) < pow(raster.dtm[L+1][P]-raster.dtm[L][P+1], 2)) {
+				terrain_mesh.add_face(terrain_vertex_index[L][P], terrain_vertex_index[L+1][P+1], terrain_vertex_index[L+1][P]);
+				terrain_mesh.add_face(terrain_vertex_index[L][P], terrain_vertex_index[L][P+1], terrain_vertex_index[L+1][P+1]);
+			} else {
+				terrain_mesh.add_face(terrain_vertex_index[L][P], terrain_vertex_index[L][P+1], terrain_vertex_index[L+1][P]);
+				terrain_mesh.add_face(terrain_vertex_index[L][P+1], terrain_vertex_index[L+1][P+1], terrain_vertex_index[L+1][P]);
+			}
+		}
+	}
+	std::cout << "Faces added" << std::endl;
+
+	save_mesh(terrain_mesh, raster, "terrain-mesh.ply");
+
+	std::cout << "Surface mesh" << std::endl;
 	Surface_mesh mesh;
 	// Add points
 	std::vector<std::vector<Surface_mesh::Vertex_index>> vertex_index(raster.ySize, std::vector<Surface_mesh::Vertex_index>(raster.xSize, Surface_mesh::Vertex_index()));
