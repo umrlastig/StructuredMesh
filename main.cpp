@@ -306,7 +306,8 @@ float single_face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p
 	// Verticality
 	float verticality = 0;
 	if (pixels.size() == 0) {
-		verticality = nz;
+		float surface = K::Triangle_3(p0, p1, p2).squared_area ();
+		verticality = abs(nz)/(2*surface);
 	}
 
 	// Eccentricity
