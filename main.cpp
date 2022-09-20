@@ -10,6 +10,7 @@
 #include <cmath>
 #include <chrono>
 #include <regex>
+#include <unordered_map>
 
 #include "ogrsf_frmts.h"
 #include <CGAL/Simple_cartesian.h>
@@ -580,13 +581,24 @@ class Cost_stop_predicate {
 void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filename) {
 	typedef CGAL::Surface_mesh<CGAL::Simple_cartesian<double>::Point_3> OutputMesh;
 	OutputMesh output_mesh;
-	CGAL::copy_face_graph (mesh, output_mesh);
+
+	std::unordered_map<boost::graph_traits<Surface_mesh>::face_descriptor, boost::graph_traits<OutputMesh>::face_descriptor> f2f;
+	CGAL::copy_face_graph (mesh, output_mesh, CGAL::parameters::face_to_face_output_iterator(std::inserter(f2f, f2f.end())));
 
 	// Label
-	OutputMesh::Property_map<OutputMesh::Face_index, unsigned char> label;
+	OutputMesh::Property_map<OutputMesh::Face_index, unsigned char> output_label;
 	bool created;
-	boost::tie(label, created) = output_mesh.add_property_map<OutputMesh::Face_index, unsigned char>("label",0);
+	boost::tie(output_label, created) = output_mesh.add_property_map<OutputMesh::Face_index, unsigned char>("label",0);
 	assert(created);
+
+	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
+	bool has_label;
+	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+	if (has_label) {
+		for (auto face : mesh.faces()) {
+			output_label[f2f[face]] = label[face];
+		}
+	}
 
 	// Color
 	OutputMesh::Property_map<OutputMesh::Face_index, unsigned char> red;
@@ -605,34 +617,26 @@ void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filen
 	assert(created);
 
 	for (auto face : output_mesh.faces()) {
+		if (!has_label) {
 		int face_label[LABELS.size()] = {0};
-		int sum_face_label = 0;
 
 		CGAL::Vertex_around_face_iterator<OutputMesh> vbegin, vend;
     	boost::tie(vbegin, vend) = vertices_around_face(output_mesh.halfedge(face), output_mesh);
 		for (auto pixel : raster.triangle_to_pixel(output_mesh.point(*(vbegin++)), output_mesh.point(*(vbegin++)), output_mesh.point(*(vbegin++)))) {
 			if (raster.land_cover[pixel.second][pixel.first] > -1) {
-				sum_face_label++;
 				face_label[raster.land_cover[pixel.second][pixel.first]]++;
 			}
 		}
 		
 		auto argmax = std::max_element(face_label, face_label+LABELS.size());
-		label[face] = argmax - face_label;
-		red[face] = LABELS[argmax - face_label].red;
-		green[face] = LABELS[argmax - face_label].green;
-		blue[face] = LABELS[argmax - face_label].blue;
-
-		/*float entropy = 0;
-		if (sum_face_label > 0) {
-			for (int i = 0; i < LABELS.size(); i++) {
-				if (face_label[i] > 0) {
-					entropy += ((float) face_label[i])*log((float) face_label[i]);
+			output_label[face] = argmax - face_label;
 				}
-			}
-			entropy = log((float) sum_face_label) - entropy/((float) sum_face_label);
-		}
-		quality[face] = entropy;*/
+
+		red[face] = LABELS[output_label[face]].red;
+		green[face] = LABELS[output_label[face]].green;
+		blue[face] = LABELS[output_label[face]].blue;
+
+		CGAL::Vertex_around_face_iterator<OutputMesh> vbegin, vend;
 		boost::tie(vbegin, vend) = vertices_around_face(output_mesh.halfedge(face), output_mesh);
 		auto pa = output_mesh.point(*(vbegin++));
 		auto pb = output_mesh.point(*(vbegin++));
