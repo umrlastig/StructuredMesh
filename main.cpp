@@ -794,8 +794,8 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster) {
 
 	save_mesh(mesh, raster, "initial-mesh.ply");
 
-	// Cost_stop_predicate stop(10);
-	SMS::Count_stop_predicate<Surface_mesh> stop(1000);
+	Cost_stop_predicate stop(250);
+	//SMS::Count_stop_predicate<Surface_mesh> stop(1000);
 	Custom_cost cf(raster);
 	Custom_placement pf(raster);
 	int r = SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).get_placement(pf).visitor(My_visitor(&mesh, &raster)));
@@ -815,6 +815,8 @@ int main(int argc, char **argv) {
 		{"land_use_map", required_argument, NULL, 'l'},
 		{"LOD0", required_argument, NULL, '0'},
 		{"orthophoto", required_argument, NULL, 'i'},
+		{"mesh", required_argument, NULL, 'M'},
+		{"terrain_mesh", required_argument, NULL, 'T'},
 		{NULL, 0, 0, '\0'}
 	};
 
@@ -823,8 +825,10 @@ int main(int argc, char **argv) {
 	char *land_use_map = NULL;
 	char *LOD0 = NULL;
 	char *orthophoto = NULL;
+	char *MESH = NULL;
+	char *TERRAIN_MESH = NULL;
 
-	while ((opt = getopt_long(argc, argv, "hs:t:l:0:i:", options, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "hs:t:l:0:i:M:T:", options, NULL)) != -1) {
 		switch(opt) {
 			case 'h':
 				std::cout << "Usage: " << argv[0] << " [OPTIONS] -s DSM -t DTM -l land_use_map" << std::endl;
@@ -836,6 +840,8 @@ int main(int argc, char **argv) {
 				std::cout << " -l, --land_use_map=/file/path.tiff land use map as TIFF file." << std::endl << std::endl;
 				std::cout << " -0, --LOD0=/file/path.shp          LOD0 as Shapefile." << std::endl << std::endl;
 				std::cout << " -i, --orthophoto=/file/path.tiff   RGB orthophoto as TIFF file." << std::endl;
+				std::cout << " -M, --mesh=/file/path.ply          mesh as PLY file." << std::endl;
+				std::cout << " -T, --terrain_mesh=/file/path.ply  terrain mesh as PLY file." << std::endl;
 				return EXIT_SUCCESS;
 				break;
 			case 's':
@@ -852,6 +858,12 @@ int main(int argc, char **argv) {
 				break;
 			case 'i':
 				orthophoto = optarg;
+				break;
+			case 'M':
+				MESH = optarg;
+				break;
+			case 'T':
+				TERRAIN_MESH = optarg;
 				break;
 		}
 	}
@@ -875,8 +887,33 @@ int main(int argc, char **argv) {
 	std::cout << std::endl;
 
 	const Raster raster(DSM, DTM, land_use_map);
-	auto [terrain_mesh, mesh] = compute_meshes(raster);
 
+	Surface_mesh terrain_mesh, mesh;
+	if (MESH == NULL || TERRAIN_MESH == NULL) {
+		std::tie(terrain_mesh, mesh) = compute_meshes(raster);
+
+		std::ofstream mesh_ofile ("save_mesh.ply", std::ios_base::binary);
+		CGAL::IO::set_binary_mode (mesh_ofile);
+		CGAL::IO::write_PLY (mesh_ofile, mesh);
+		mesh_ofile.close();
+
+		mesh_ofile = std::ofstream("save_terrain_mesh.ply", std::ios_base::binary);
+		CGAL::IO::set_binary_mode (mesh_ofile);
+		CGAL::IO::write_PLY (mesh_ofile, terrain_mesh);
+		mesh_ofile.close();
+
+	} else {
+		std::ifstream mesh_ifile (MESH, std::ios_base::binary);
+		CGAL::IO::set_binary_mode (mesh_ifile);
+		CGAL::IO::read_PLY (mesh_ifile, mesh);
+		mesh_ifile.close();
+
+		mesh_ifile = std::ifstream(TERRAIN_MESH, std::ios_base::binary);
+		CGAL::IO::set_binary_mode (mesh_ifile);
+		CGAL::IO::read_PLY (mesh_ifile, terrain_mesh);
+		mesh_ifile.close();
+		std::cout << "Mesh and terrain mesh load" << std::endl;
+	}
 
 	return EXIT_SUCCESS;
 }
