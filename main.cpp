@@ -423,7 +423,7 @@ std::list<Polygon> get_LOD0_from_shapefile(char *path) {
 	return polygons;
 }
 
-float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, const Point_3 &p2) {
+float single_face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, const Point_3 &p2) {
 	float nz = ((-p0.x() + p1.x()) * (-p0.y() + p2.y()) - (-p0.x() + p2.x()) * (-p0.y() + p1.y()));
 	if (nz == 0) {
 		// flat triangle
@@ -480,8 +480,12 @@ float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, cons
 	float eccentricity = M*M - 4*N*N;
 	eccentricity = sqrtf(1-(M-eccentricity)/(M+eccentricity));
 
+	return 0 * least_squares + 1 * least + 1 * entropy + 0 * verticality + 0 * eccentricity;
+}
+
+float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, const Point_3 &p2) {
 	float surface = K::Triangle_3(p0, p1, p2).squared_area ();
-	return surface * (0 * least_squares + 1 * least + 1 * entropy + 0 * verticality + 0 * eccentricity);
+	return surface * single_face_cost(raster, p0, p1, p2);
 }
 
 Point_3 best_point(const Raster &raster, K::FT x, K::FT y, const SMS::Edge_profile<Surface_mesh>& profile) {
@@ -796,7 +800,7 @@ void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filen
 		auto pa = output_mesh.point(*(vbegin++));
 		auto pb = output_mesh.point(*(vbegin++));
 		auto pc = output_mesh.point(*(vbegin++));
-		quality[face] = face_cost(raster, Point_3(pa.x(), pa.y(), pa.z()), Point_3(pb.x(), pb.y(), pb.z()), Point_3(pc.x(), pc.y(), pc.z()));
+		quality[face] = single_face_cost(raster, Point_3(pa.x(), pa.y(), pa.z()), Point_3(pb.x(), pb.y(), pb.z()), Point_3(pc.x(), pc.y(), pc.z()));
 	}
 
 	double min_x, min_y;
