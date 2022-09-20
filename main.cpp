@@ -307,7 +307,7 @@ float single_face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p
 	// Verticality
 	float verticality = 0;
 	if (pixels.size() == 0) {
-		float surface = K::Triangle_3(p0, p1, p2).squared_area ();
+		float surface = pow(K::Triangle_3(p0, p1, p2).squared_area (), 0.5);
 		verticality = abs(nz)/(2*surface);
 	}
 
@@ -322,7 +322,7 @@ float single_face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p
 }
 
 float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, const Point_3 &p2) {
-	float surface = K::Triangle_3(p0, p1, p2).squared_area ();
+	float surface = pow(K::Triangle_3(p0, p1, p2).squared_area (), 0.5);
 	return surface * single_face_cost(raster, p0, p1, p2);
 }
 
@@ -799,7 +799,7 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster) {
 
 	save_mesh(mesh, raster, "initial-mesh.ply");
 
-	Cost_stop_predicate stop(250);
+	Cost_stop_predicate stop(20);
 	//SMS::Count_stop_predicate<Surface_mesh> stop(1000);
 	Custom_cost cf(raster);
 	Custom_placement pf(raster);
