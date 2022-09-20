@@ -13,7 +13,7 @@ struct Label {
 };
 
 std::array<Label, 11> LABELS {
-    Label(0, "other", 0, 0, 0),
+    Label(0, "other", 255, 255, 255),
     Label(1, "bare ground", 100, 50, 0),
     Label(2, "low vegetation", 0, 250, 50),
     Label(3, "water", 0, 50, 250),
