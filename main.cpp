@@ -740,8 +740,7 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 
 };
 
-int compute_LOD2(char *DSM, char *DTM, char *land_use_map, char *LOD0, char *orthophoto) {
-	const Raster raster(DSM, DTM, land_use_map);
+std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster) {
 
 	std::cout << "Terrain mesh" << std::endl;
 	Surface_mesh terrain_mesh;
@@ -804,7 +803,7 @@ int compute_LOD2(char *DSM, char *DTM, char *land_use_map, char *LOD0, char *ort
 
 	save_mesh(mesh, raster, "final-mesh.ply");
 
-	return EXIT_SUCCESS;
+	return std::make_tuple(terrain_mesh, mesh);
 }
 
 int main(int argc, char **argv) {
@@ -875,5 +874,9 @@ int main(int argc, char **argv) {
 	}
 	std::cout << std::endl;
 
-	return compute_LOD2(DSM, DTM, land_use_map, LOD0, orthophoto);
+	const Raster raster(DSM, DTM, land_use_map);
+	auto [terrain_mesh, mesh] = compute_meshes(raster);
+
+
+	return EXIT_SUCCESS;
 }

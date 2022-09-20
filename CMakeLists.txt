@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.1...3.15)
 
 project( compute-LOD2 )
 
-set (CMAKE_CXX_STANDARD 11)
+set (CMAKE_CXX_STANDARD 17)
 
 # CGAL and its components
 find_package( CGAL QUIET COMPONENTS  )
