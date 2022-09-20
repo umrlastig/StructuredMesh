@@ -56,6 +56,38 @@ class Raster {
 			return std::pair<int,int>(newP, newL);
 		}
 
+		void align_land_cover_and_dsm() {
+			std::vector<std::vector<char>> new_land_cover = std::vector<std::vector<char>>(ySize, std::vector<char>(xSize, -1));
+			for (int L = 0; L < ySize; L++) {
+				for (int P = 0; P < xSize; P++) {
+					float neighboors_count[LABELS.size()] = {0};
+					int n = 0;
+					float moy = 0;
+					float square_moy = 0;
+					for (int i = -5; i <= 5; i++) {
+						for (int j = -5; j <= 5; j++) {
+							if (L+i >= 0 && P + j >= 0 && L+i < ySize && P+j < xSize) {
+								neighboors_count[land_cover[L+i][P+j]] += 1/(0.1+abs(dsm[L][P] - dsm[L+i][P+j]));
+								if (i > -3 && i < 3 && j > -3 && j < 3) {
+									n++;
+									moy += dsm[L+i][P+j];
+									square_moy += pow(dsm[L+i][P+j], 2);
+								}
+							}
+						}
+					}
+					if (pow(square_moy/n - pow(moy/n, 2), 0.5) > 0.2) {
+						new_land_cover[L][P] = std::max_element(neighboors_count, neighboors_count + LABELS.size()) - neighboors_count;
+					} else {
+						new_land_cover[L][P] = land_cover[L][P];
+					}
+					
+				}
+			}
+
+			land_cover = new_land_cover;
+		}
+
 	public:
 		void coord_to_grid(double x, double y, float& P, float& L) const {
 			double fact = grid_to_crs[1]*grid_to_crs[5] - grid_to_crs[2]*grid_to_crs[4];
@@ -177,6 +209,8 @@ class Raster {
 				}
 			}
 			std::cout << "Land cover load" << std::endl;
+
+			align_land_cover_and_dsm();
 		}
 };
 
