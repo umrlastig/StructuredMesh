@@ -618,19 +618,19 @@ void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filen
 
 	for (auto face : output_mesh.faces()) {
 		if (!has_label) {
-		int face_label[LABELS.size()] = {0};
+			int face_label[LABELS.size()] = {0};
 
-		CGAL::Vertex_around_face_iterator<OutputMesh> vbegin, vend;
-    	boost::tie(vbegin, vend) = vertices_around_face(output_mesh.halfedge(face), output_mesh);
-		for (auto pixel : raster.triangle_to_pixel(output_mesh.point(*(vbegin++)), output_mesh.point(*(vbegin++)), output_mesh.point(*(vbegin++)))) {
-			if (raster.land_cover[pixel.second][pixel.first] > -1) {
-				face_label[raster.land_cover[pixel.second][pixel.first]]++;
-			}
-		}
-		
-		auto argmax = std::max_element(face_label, face_label+LABELS.size());
-			output_label[face] = argmax - face_label;
+			CGAL::Vertex_around_face_iterator<OutputMesh> vbegin, vend;
+			boost::tie(vbegin, vend) = vertices_around_face(output_mesh.halfedge(face), output_mesh);
+			for (auto pixel : raster.triangle_to_pixel(output_mesh.point(*(vbegin++)), output_mesh.point(*(vbegin++)), output_mesh.point(*(vbegin++)))) {
+				if (raster.land_cover[pixel.second][pixel.first] > -1) {
+					face_label[raster.land_cover[pixel.second][pixel.first]]++;
 				}
+			}
+			
+			auto argmax = std::max_element(face_label, face_label+LABELS.size());
+			output_label[face] = argmax - face_label;
+		}
 
 		red[face] = LABELS[output_label[face]].red;
 		green[face] = LABELS[output_label[face]].green;
@@ -811,6 +811,83 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster) {
 	return std::make_tuple(terrain_mesh, mesh);
 }
 
+void change_vertical_faces(const Raster &raster, Surface_mesh &mesh) {
+	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
+	bool created;
+	boost::tie(label, created) = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("label",0);
+	assert(created);
+
+	for (auto face : mesh.faces()) {
+		int face_label[LABELS.size()] = {0};
+		int sum_face_label = 0;
+
+		CGAL::Vertex_around_face_iterator<Surface_mesh> vbegin, vend;
+		boost::tie(vbegin, vend) = vertices_around_face(mesh.halfedge(face), mesh);
+		for (auto pixel : raster.triangle_to_pixel(mesh.point(*(vbegin++)), mesh.point(*(vbegin++)), mesh.point(*(vbegin++)))) {
+			if (raster.land_cover[pixel.second][pixel.first] > -1) {
+				sum_face_label++;
+				face_label[raster.land_cover[pixel.second][pixel.first]]++;
+			}
+		}
+		
+		auto argmax = std::max_element(face_label, face_label+LABELS.size());
+		label[face] = argmax - face_label;
+	}
+
+	std::unordered_map<Surface_mesh::Face_index, char> new_label;
+	std::list<Surface_mesh::Face_index> remove_face;
+
+	for (auto face : mesh.faces()) {
+		new_label[face] = label[face];
+		CGAL::Vertex_around_face_iterator<Surface_mesh> vbegin, vend;
+		boost::tie(vbegin, vend) = vertices_around_face(mesh.halfedge(face), mesh);
+		auto p0 = mesh.point(*(vbegin++));
+		auto p1 = mesh.point(*(vbegin++));
+		auto p2 = mesh.point(*(vbegin++));
+		float nz = ((-p0.x() + p1.x()) * (-p0.y() + p2.y()) - (-p0.x() + p2.x()) * (-p0.y() + p1.y()));
+		float surface = pow(K::Triangle_3(p0, p1, p2).squared_area(), 0.5);
+		if (abs(nz)/(2*surface) < 0.5) {
+			CGAL::Face_around_face_iterator<Surface_mesh> fbegin, fend;
+			for(boost::tie(fbegin, fend) = faces_around_face(mesh.halfedge(face), mesh); fbegin != fend && new_label[face] != 4; ++fbegin) {
+				if (*fbegin != boost::graph_traits<Surface_mesh>::null_face()) {
+					if (label[*fbegin] == 4) {
+						//Building
+						new_label[face] = 4;
+					} else if (label[*fbegin] == 5 && new_label[face] != 4) {
+						//High vegetation
+						new_label[face] = 5;
+					}
+					CGAL::Face_around_face_iterator<Surface_mesh> fbegin2, fend2;
+					for(boost::tie(fbegin2, fend2) = faces_around_face(mesh.halfedge(*fbegin), mesh); fbegin2 != fend2 && new_label[face] != 4; ++fbegin2) {
+						if (*fbegin2 != boost::graph_traits<Surface_mesh>::null_face()) {
+							if (label[*fbegin2] == 4) {
+								//Building
+								new_label[face] = 4;					
+							} else if (label[*fbegin2] == 5 && new_label[face] != 4) {
+								//High vegetation
+								new_label[face] = 5;
+							}
+						}
+					}
+				}
+			}
+
+			if (new_label[face] != 4 && new_label[face] != 5) {
+				remove_face.push_back(face);
+			}
+		}
+	}
+
+	for (auto &face_label: new_label) {
+		label[face_label.first] = face_label.second;
+	}
+
+	for(auto &face: remove_face) {
+		CGAL::Euler::remove_face(mesh.halfedge(face), mesh);
+	}
+
+}
+
 int main(int argc, char **argv) {
 	int opt;
 	const struct option options[] = {
@@ -919,6 +996,9 @@ int main(int argc, char **argv) {
 		mesh_ifile.close();
 		std::cout << "Mesh and terrain mesh load" << std::endl;
 	}
+
+	change_vertical_faces(raster, mesh);
+	save_mesh(mesh, raster, "final-mesh-without-facade.ply");
 
 	return EXIT_SUCCESS;
 }
