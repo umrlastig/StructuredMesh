@@ -811,7 +811,7 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster) {
 	return std::make_tuple(terrain_mesh, mesh);
 }
 
-void change_vertical_faces(const Raster &raster, Surface_mesh &mesh) {
+void add_label(const Raster &raster, Surface_mesh &mesh) {
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool created;
 	boost::tie(label, created) = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("label",0);
@@ -833,6 +833,13 @@ void change_vertical_faces(const Raster &raster, Surface_mesh &mesh) {
 		auto argmax = std::max_element(face_label, face_label+LABELS.size());
 		label[face] = argmax - face_label;
 	}
+}
+
+void change_vertical_faces(Surface_mesh &mesh) {
+	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
+	bool has_label;
+	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+	assert(has_label);
 
 	std::unordered_map<Surface_mesh::Face_index, char> new_label;
 	std::list<Surface_mesh::Face_index> remove_face;
@@ -997,7 +1004,8 @@ int main(int argc, char **argv) {
 		std::cout << "Mesh and terrain mesh load" << std::endl;
 	}
 
-	change_vertical_faces(raster, mesh);
+	add_label(raster, mesh);
+	change_vertical_faces(mesh);
 	save_mesh(mesh, raster, "final-mesh-without-facade.ply");
 
 	return EXIT_SUCCESS;
