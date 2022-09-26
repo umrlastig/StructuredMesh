@@ -616,9 +616,9 @@ void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filen
 	boost::tie(quality, created) = output_mesh.add_property_map<OutputMesh::Face_index, float>("quality",0);
 	assert(created);
 
-	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned int> path;
+	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
 	bool has_path;
-	boost::tie(path, has_path) = mesh.property_map<Surface_mesh::Face_index, unsigned int>("path");
+	boost::tie(path, has_path) = mesh.property_map<Surface_mesh::Face_index, int>("path");
 	if (has_path) {
 		for (auto face : mesh.faces()) {
 			quality[f2f[face]] = path[face];
@@ -907,42 +907,44 @@ void change_vertical_faces(Surface_mesh &mesh) {
 }
 
 void set_path(Surface_mesh &mesh,
-				Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned int> &path,
+				Surface_mesh::Property_map<Surface_mesh::Face_index, int> &path,
 				Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> &label,
+				std::vector<std::list<Surface_mesh::Face_index>> &paths,
 				Surface_mesh::Face_index face,
-				unsigned int path_id) {
-	std::cout << path_id << " for " << face << "\n";
+				int path_id) {
 	path[face] = path_id;
+	paths[path_id].push_back(face);
 	CGAL::Face_around_face_iterator<Surface_mesh> fbegin, fend;
 	for(boost::tie(fbegin, fend) = faces_around_face(mesh.halfedge(face), mesh); fbegin != fend; ++fbegin) {
 		if (*fbegin != boost::graph_traits<Surface_mesh>::null_face()) {
-			if (label[face] == label[*fbegin] && path[*fbegin] == 0) {
-				set_path(mesh, path, label, *fbegin, path_id);
-			} else {
-				std::cout << *fbegin << " neighboors of " << face << " but not the same\n";
-				std::cout << int(label[face]) << " != " << int(label[*fbegin]) << " || " << path[*fbegin] << " != 0\n";
+			if (label[face] == label[*fbegin] && path[*fbegin] == -1) {
+				set_path(mesh, path, label, paths, *fbegin, path_id);
 			}
 		}
 	}
 }
 
-void compute_path(Surface_mesh &mesh) {
+std::vector<std::list<Surface_mesh::Face_index>> compute_path(Surface_mesh &mesh) {
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool has_label;
 	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
 	assert(has_label);
 
-	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned int> path;
+	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
 	bool created;
-	boost::tie(path, created) = mesh.add_property_map<Surface_mesh::Face_index, unsigned int>("path", 0);
+	boost::tie(path, created) = mesh.add_property_map<Surface_mesh::Face_index, int>("path", -1);
 	assert(created);
 
-	unsigned int path_id = 1;
+	std::vector<std::list<Surface_mesh::Face_index>> paths;
+
 	for (auto face: mesh.faces()) {
-		if (path[face] == 0) {
-			set_path(mesh, path, label, face, path_id++);
+		if (path[face] == -1) {
+			paths.push_back(std::list<Surface_mesh::Face_index>{});
+			set_path(mesh, path, label, paths, face, paths.size()-1);
 		}
 	}
+
+	return paths;
 }
 
 int main(int argc, char **argv) {
@@ -1058,7 +1060,7 @@ int main(int argc, char **argv) {
 	change_vertical_faces(mesh);
 	save_mesh(mesh, raster, "final-mesh-without-facade.ply");
 
-	compute_path(mesh);
+	std::vector<std::list<Surface_mesh::Face_index>> paths = compute_path(mesh);
 	save_mesh(mesh, raster, "final-mesh-with-path.ply");
 
 	return EXIT_SUCCESS;
