@@ -323,7 +323,7 @@ float single_face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p
 
 float face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, const Point_3 &p2) {
 	float surface = pow(K::Triangle_3(p0, p1, p2).squared_area (), 0.5);
-	return surface * single_face_cost(raster, p0, p1, p2);
+	return surface * (1 + single_face_cost(raster, p0, p1, p2));
 }
 
 Point_3 best_point(const Raster &raster, K::FT x, K::FT y, const SMS::Edge_profile<Surface_mesh>& profile) {
@@ -420,9 +420,9 @@ class Custom_placement {
 			Point_3 p[5] = {profile.p0(), profile.p0() + 0.25 * vector, profile.p0() + 0.5 * vector, profile.p0() + 0.75 * vector, profile.p1()};
 			float cost[5] = {0};
 			
-			for (int j = 0; j < 5; j++) {
+			/*for (int j = 0; j < 5; j++) {
 				p[j] = best_point(raster, p[j].x(), p[j].y(), profile);
-			}
+			}*/
 
 			for (auto he : CGAL::halfedges_around_source(profile.v0(), profile.surface_mesh())) {
 				if (he != profile.v0_v1() && he != profile.v0_vR()) {
@@ -443,7 +443,7 @@ class Custom_placement {
 				}
 			}
 
-			for (int i = 0; i < 1; i++) {
+			for (int i = 0; i < 2; i++) {
 				int min_cost = std::min_element(cost, cost + 5) - cost;
 				
 				if (min_cost == 0 || min_cost == 1) {
@@ -466,8 +466,8 @@ class Custom_placement {
 				vector = K::Vector_3(p[0], p[4]);
 				p[1] = p[0] + 0.25 * vector;
 				p[3] = p[0] + 0.75 * vector;
-				p[1] = best_point(raster, p[1].x(), p[1].y(), profile);
-				p[3] = best_point(raster, p[1].x(), p[1].y(), profile);
+				//p[1] = best_point(raster, p[1].x(), p[1].y(), profile);
+				//p[3] = best_point(raster, p[1].x(), p[1].y(), profile);
 
 				cost[1] = 0;
 				cost[3] = 0;
@@ -726,7 +726,10 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 			if (current_edge_count%100 == 0) {
 				auto end = std::chrono::system_clock::now();
 				std::chrono::duration<double> diff = end - start_collapse;
-				std::cout << "\rCollapse: " << (initial_edge_count-current_edge_count) << "/" << initial_edge_count << " (" << ((int) (((float) (initial_edge_count-current_edge_count))/initial_edge_count*100)) << "%)" << " still " << (((float) current_edge_count) * diff.count() / (initial_edge_count-current_edge_count)) << "s" << " (" << (((float) (initial_edge_count-current_edge_count)) / diff.count()) << " op/s) - cost: " << *cost << "     " << std::flush;
+				std::cout << "\rCollapse: " << (initial_edge_count-current_edge_count) << "/" << initial_edge_count << " (" << ((int) (((float) (initial_edge_count-current_edge_count))/initial_edge_count*100)) << "%)" << " still " << (((float) current_edge_count) * diff.count() / (initial_edge_count-current_edge_count)) << "s" << " (" << (((float) (initial_edge_count-current_edge_count)) / diff.count()) << " op/s)";
+				if (cost) {
+					std::cout << " - cost: " << *cost << "     " << std::flush;
+				}
 			}
 
 			if (cost) {
@@ -810,7 +813,7 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster) {
 
 	save_mesh(mesh, raster, "initial-mesh.ply");
 
-	Cost_stop_predicate stop(20);
+	Cost_stop_predicate stop(10);
 	//SMS::Count_stop_predicate<Surface_mesh> stop(1000);
 	Custom_cost cf(raster);
 	Custom_placement pf(raster);
