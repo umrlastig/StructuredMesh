@@ -16,12 +16,18 @@
 #include <CGAL/Simple_cartesian.h>
 #include <CGAL/Surface_mesh.h>
 #include <CGAL/IO/WKT.h>
+#include <CGAL/Polygon_2.h>
 #include <CGAL/Polygon_with_holes_2.h>
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Edge_profile.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Count_stop_predicate.h>
 #include <CGAL/Surface_mesh_simplification/Edge_collapse_visitor_base.h>
 #include <CGAL/boost/graph/copy_face_graph.h>
+#include <CGAL/boost/graph/Face_filtered_graph.h>
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+#include <CGAL/Arr_segment_traits_2.h>
+#include <CGAL/Arrangement_2.h>
+#include <CGAL/create_straight_skeleton_from_polygon_with_holes_2.h>
 
 #include "label.cpp"
 
@@ -30,8 +36,13 @@ typedef K::Point_2                                          Point_2;
 typedef K::Point_3                                          Point_3;
 typedef CGAL::Surface_mesh<Point_3>                         Surface_mesh;
 typedef CGAL::Polygon_2<K>                                  Polygon;
+typedef CGAL::Polygon_with_holes_2<K>                       Polygon_with_holes;
 
 namespace SMS = CGAL::Surface_mesh_simplification;
+
+typedef CGAL::Exact_predicates_inexact_constructions_kernel Arr_Kernel;
+typedef CGAL::Arr_segment_traits_2<Arr_Kernel>              Traits_2;
+typedef CGAL::Arrangement_2<Traits_2>                       Arrangement_2;
 
 class Raster {
 	public:
@@ -950,6 +961,114 @@ std::vector<std::list<Surface_mesh::Face_index>> compute_path(Surface_mesh &mesh
 	return paths;
 }
 
+
+Polygon_with_holes polygon(Arrangement_2::Face_handle face) {
+	Polygon border;
+	auto curr = face->outer_ccb();
+	do {
+		auto p = curr->target()->point();
+		border.push_back(Point_2((float) p.x(), (float) p.y()));
+	} while (++curr != face->outer_ccb());
+
+	std::list<Polygon> holes;
+	for(auto hole = face->holes_begin(); hole != face->holes_end(); hole++) {
+		auto curr = *hole;
+		Polygon hole_polygon;
+		do {
+			auto p = curr->target()->point();
+			hole_polygon.push_back(Point_2((float) p.x(), (float) p.y()));
+		} while (++curr != *hole);
+		holes.push_back(hole_polygon);
+	} 
+
+	return Polygon_with_holes(border, holes.begin(), holes.end());
+}
+
+
+void compute_midle_axe(Surface_mesh &mesh, std::vector<std::list<Surface_mesh::Face_index>> &paths, const Raster &raster) {
+	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
+	bool has_path;
+	boost::tie(path, has_path) = mesh.property_map<Surface_mesh::Face_index, int>("path");
+	assert(has_path);
+
+	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
+	bool has_label;
+	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+	assert(has_label);
+
+	typedef CGAL::Face_filtered_graph<Surface_mesh> Filtered_graph;
+	for (int i = 0; i < paths.size(); i++) {
+
+		Filtered_graph filtered_sm(mesh, i, path);
+
+		int lab = label[*(CGAL::faces(filtered_sm).first)];
+		if (lab == 3 || lab == 8 || lab == 9) {
+
+			Arrangement_2 arr;
+			std::map<Surface_mesh::vertex_index, Arrangement_2::Vertex_handle> point_map;
+			for (auto edge: CGAL::edges(filtered_sm)) {
+				if (CGAL::is_border (edge, filtered_sm)) {
+					auto p0 = mesh.point(CGAL::source(edge, filtered_sm));
+					auto p1 = mesh.point(CGAL::target(edge, filtered_sm));
+					insert_non_intersecting_curve(arr, Traits_2::X_monotone_curve_2(Arr_Kernel::Point_2(p0.x(), p0.y()), Arr_Kernel::Point_2(p1.x(), p1.y())));
+				}
+			}
+
+			Polygon_with_holes poly = polygon((*(arr.unbounded_face()->holes_begin()))->twin()->face());
+
+			auto iss = CGAL::create_interior_straight_skeleton_2(poly);
+
+			Surface_mesh skeleton;
+
+			std::map<int, Surface_mesh::vertex_index> v_map;
+			for (auto v = iss->vertices_begin(); v != iss->vertices_end(); v++) {
+				if (v->is_skeleton()) {
+					auto p = v->point();
+					auto z = raster.dsm[int(p.y())][int(p.x())];
+					v_map[v->id()] = skeleton.add_vertex(Point_3((float) p.x(), (float) p.y(),z));
+				}
+			}
+
+			for (auto he = iss->halfedges_begin(); he != iss->halfedges_end(); ++he ) {
+				if (he->is_inner_bisector()) {
+					auto v0 = v_map.find(he->vertex()->id());
+					auto v1 = v_map.find(he->opposite()->vertex()->id());
+					if (v0 != v_map.end() && v1 != v_map.end() && v0->second != v1->second) {
+						skeleton.add_edge(v_map[he->vertex()->id()], v_map[he->opposite()->vertex()->id()]);
+					}
+				}
+			}
+
+			Surface_mesh::Property_map<Surface_mesh::Edge_index, int> edge_prop;
+			bool created;
+			boost::tie(edge_prop, created) = skeleton.add_property_map<Surface_mesh::Edge_index, int>("prop",0);
+			assert(created);
+
+			double min_x, min_y;
+			raster.grid_to_coord(0, 0, min_x, min_y);
+
+			for(auto vertex : skeleton.vertices()) {
+				auto point = skeleton.point(vertex);
+				double x, y;
+				raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
+				skeleton.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
+			}
+
+			std::stringstream skeleton_name;
+			skeleton_name << "skeleton_" << i << ".ply";
+			std::ofstream mesh_ofile (skeleton_name.str().c_str());
+			CGAL::IO::write_PLY (mesh_ofile, skeleton);
+			mesh_ofile.close();
+
+			Surface_mesh part_mesh;
+			CGAL::copy_face_graph(filtered_sm, part_mesh);
+			std::stringstream name;
+			name << "part_mesh_" << i << ".ply";
+			save_mesh(part_mesh, raster, name.str().c_str());
+		}
+	}
+}
+
 int main(int argc, char **argv) {
 	int opt;
 	const struct option options[] = {
@@ -1065,6 +1184,8 @@ int main(int argc, char **argv) {
 
 	std::vector<std::list<Surface_mesh::Face_index>> paths = compute_path(mesh);
 	save_mesh(mesh, raster, "final-mesh-with-path.ply");
+
+	compute_midle_axe(mesh, paths, raster);
 
 	return EXIT_SUCCESS;
 }
