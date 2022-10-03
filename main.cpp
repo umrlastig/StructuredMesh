@@ -796,6 +796,11 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster) {
 	}
 	std::cout << "Faces added" << std::endl;
 
+	save_mesh(terrain_mesh, raster, "initial-terrain-mesh.ply");
+
+	SMS::edge_collapse(terrain_mesh, Cost_stop_predicate(10));
+	std::cout << "Terrain mesh simplified" << std::endl;
+
 	save_mesh(terrain_mesh, raster, "terrain-mesh.ply");
 
 	std::cout << "Surface mesh" << std::endl;
