@@ -1011,165 +1011,384 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<Arr_Kernel>>> compute_
 
 		if (filtered_sm.number_of_faces() > 1) {
 
-		int lab = label[*(CGAL::faces(filtered_sm).first)];
-		if (lab == 3 || lab == 8 || lab == 9) {
+			int lab = label[*(CGAL::faces(filtered_sm).first)];
+			if (lab == 3 || lab == 8 || lab == 9) {
 
-			Arrangement_2 arr;
-			std::map<Surface_mesh::vertex_index, Arrangement_2::Vertex_handle> point_map;
-			for (auto edge: CGAL::edges(filtered_sm)) {
-				if (CGAL::is_border (edge, filtered_sm)) {
-					auto p0 = mesh.point(CGAL::source(edge, filtered_sm));
-					auto p1 = mesh.point(CGAL::target(edge, filtered_sm));
-					insert_non_intersecting_curve(arr, Traits_2::X_monotone_curve_2(Arr_Kernel::Point_2(p0.x(), p0.y()), Arr_Kernel::Point_2(p1.x(), p1.y())));
-				}
-			}
-
-			Polygon_with_holes poly = polygon((*(arr.unbounded_face()->holes_begin()))->twin()->face());
-
-			poly = CGAL::Polyline_simplification_2::simplify(
-				poly,
-				CGAL::Polyline_simplification_2::Squared_distance_cost(),
-				CGAL::Polyline_simplification_2::Stop_above_cost_threshold(10)
-			);
-
-			auto iss = CGAL::create_interior_straight_skeleton_2(poly, Arr_Kernel());
-			medial_axes[i] = iss;
-
-			{ // Arrangement
-				Surface_mesh skeleton;
-
-				std::map<Arrangement_2::Vertex_handle, Surface_mesh::vertex_index> v_map;
-				for (auto v = arr.vertices_begin(); v != arr.vertices_end(); v++) {
-					auto p = v->point();
-					auto z = raster.dsm[int(p.y())][int(p.x())];
-					v_map[v] = skeleton.add_vertex(Point_3((float) p.x(), (float) p.y(), z));
+				Arrangement_2 arr;
+				std::map<Surface_mesh::vertex_index, Arrangement_2::Vertex_handle> point_map;
+				for (auto edge: CGAL::edges(filtered_sm)) {
+					if (CGAL::is_border (edge, filtered_sm)) {
+						auto p0 = mesh.point(CGAL::source(edge, filtered_sm));
+						auto p1 = mesh.point(CGAL::target(edge, filtered_sm));
+						insert_non_intersecting_curve(arr, Traits_2::X_monotone_curve_2(Arr_Kernel::Point_2(p0.x(), p0.y()), Arr_Kernel::Point_2(p1.x(), p1.y())));
+					}
 				}
 
-				for (auto he = arr.edges_begin(); he != arr.edges_end(); ++he ) {
-					skeleton.add_edge(v_map[he->source()], v_map[he->target()]);
-				}
+				Polygon_with_holes poly = polygon((*(arr.unbounded_face()->holes_begin()))->twin()->face());
 
-				Surface_mesh::Property_map<Surface_mesh::Edge_index, int> edge_prop;
-				bool created;
-				boost::tie(edge_prop, created) = skeleton.add_property_map<Surface_mesh::Edge_index, int>("prop",0);
-				assert(created);
+				poly = CGAL::Polyline_simplification_2::simplify(
+					poly,
+					CGAL::Polyline_simplification_2::Squared_distance_cost(),
+					CGAL::Polyline_simplification_2::Stop_above_cost_threshold(10)
+				);
 
-				double min_x, min_y;
-				raster.grid_to_coord(0, 0, min_x, min_y);
+				auto iss = CGAL::create_interior_straight_skeleton_2(poly, Arr_Kernel());
+				medial_axes[i] = iss;
 
-				for(auto vertex : skeleton.vertices()) {
-					auto point = skeleton.point(vertex);
-					double x, y;
-					raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
-					skeleton.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
-				}
+				{ // Arrangement
+					Surface_mesh skeleton;
 
-				std::stringstream skeleton_name;
-					skeleton_name << "arr_" << lab << "_" << i << ".ply";
-				std::ofstream mesh_ofile (skeleton_name.str().c_str());
-				CGAL::IO::write_PLY (mesh_ofile, skeleton);
-				mesh_ofile.close();
-			}
-
-			{ // Skeleton
-				Surface_mesh skeleton;
-
-				std::map<int, Surface_mesh::vertex_index> v_map;
-				for (auto v = iss->vertices_begin(); v != iss->vertices_end(); v++) {
-					auto p = v->point();
-					auto z = raster.dsm[int(p.y())][int(p.x())];
-					v_map[v->id()] = skeleton.add_vertex(Point_3((float) p.x(), (float) p.y(), z));
-				}
-
-				for (auto he = iss->halfedges_begin(); he != iss->halfedges_end(); ++he ) {
-					skeleton.add_edge(v_map[he->vertex()->id()], v_map[he->opposite()->vertex()->id()]);
-				}
-
-				Surface_mesh::Property_map<Surface_mesh::Edge_index, int> edge_prop;
-				bool created;
-				boost::tie(edge_prop, created) = skeleton.add_property_map<Surface_mesh::Edge_index, int>("prop",0);
-				assert(created);
-
-				double min_x, min_y;
-				raster.grid_to_coord(0, 0, min_x, min_y);
-
-				for(auto vertex : skeleton.vertices()) {
-					auto point = skeleton.point(vertex);
-					double x, y;
-					raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
-					skeleton.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
-				}
-
-				std::stringstream skeleton_name;
-					skeleton_name << "skeleton_" << lab << "_" << i << ".ply";
-				std::ofstream mesh_ofile (skeleton_name.str().c_str());
-				CGAL::IO::write_PLY (mesh_ofile, skeleton);
-				mesh_ofile.close();
-			}
-
-			{ // Path
-				Surface_mesh skeleton;
-
-				std::map<int, Surface_mesh::vertex_index> v_map;
-				for (auto v = iss->vertices_begin(); v != iss->vertices_end(); v++) {
-					if (v->is_skeleton()) {
+					std::map<Arrangement_2::Vertex_handle, Surface_mesh::vertex_index> v_map;
+					for (auto v = arr.vertices_begin(); v != arr.vertices_end(); v++) {
 						auto p = v->point();
 						auto z = raster.dsm[int(p.y())][int(p.x())];
-						v_map[v->id()] = skeleton.add_vertex(Point_3((float) p.x(), (float) p.y(),z));
+						v_map[v] = skeleton.add_vertex(Point_3((float) p.x(), (float) p.y(), z));
 					}
+
+					for (auto he = arr.edges_begin(); he != arr.edges_end(); ++he ) {
+						skeleton.add_edge(v_map[he->source()], v_map[he->target()]);
+					}
+
+					Surface_mesh::Property_map<Surface_mesh::Edge_index, int> edge_prop;
+					bool created;
+					boost::tie(edge_prop, created) = skeleton.add_property_map<Surface_mesh::Edge_index, int>("prop",0);
+					assert(created);
+
+					double min_x, min_y;
+					raster.grid_to_coord(0, 0, min_x, min_y);
+
+					for(auto vertex : skeleton.vertices()) {
+						auto point = skeleton.point(vertex);
+						double x, y;
+						raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
+						skeleton.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
+					}
+
+					std::stringstream skeleton_name;
+					skeleton_name << "arr_" << lab << "_" << i << ".ply";
+					std::ofstream mesh_ofile (skeleton_name.str().c_str());
+					CGAL::IO::write_PLY (mesh_ofile, skeleton);
+					mesh_ofile.close();
 				}
 
-				for (auto he = iss->halfedges_begin(); he != iss->halfedges_end(); ++he ) {
-					if (he->is_inner_bisector()) {
-						auto v0 = v_map.find(he->vertex()->id());
-						auto v1 = v_map.find(he->opposite()->vertex()->id());
-						if (v0 != v_map.end() && v1 != v_map.end() && v0->second != v1->second) {
-							skeleton.add_edge(v_map[he->vertex()->id()], v_map[he->opposite()->vertex()->id()]);
+				{ // Skeleton
+					Surface_mesh skeleton;
+
+					std::map<int, Surface_mesh::vertex_index> v_map;
+					for (auto v = iss->vertices_begin(); v != iss->vertices_end(); v++) {
+						auto p = v->point();
+						auto z = raster.dsm[int(p.y())][int(p.x())];
+						v_map[v->id()] = skeleton.add_vertex(Point_3((float) p.x(), (float) p.y(), z));
+					}
+
+					for (auto he = iss->halfedges_begin(); he != iss->halfedges_end(); ++he ) {
+						skeleton.add_edge(v_map[he->vertex()->id()], v_map[he->opposite()->vertex()->id()]);
+					}
+
+					Surface_mesh::Property_map<Surface_mesh::Edge_index, int> edge_prop;
+					bool created;
+					boost::tie(edge_prop, created) = skeleton.add_property_map<Surface_mesh::Edge_index, int>("prop",0);
+					assert(created);
+
+					double min_x, min_y;
+					raster.grid_to_coord(0, 0, min_x, min_y);
+
+					for(auto vertex : skeleton.vertices()) {
+						auto point = skeleton.point(vertex);
+						double x, y;
+						raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
+						skeleton.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
+					}
+
+					std::stringstream skeleton_name;
+					skeleton_name << "skeleton_" << lab << "_" << i << ".ply";
+					std::ofstream mesh_ofile (skeleton_name.str().c_str());
+					CGAL::IO::write_PLY (mesh_ofile, skeleton);
+					mesh_ofile.close();
+				}
+
+				{ // Path
+					Surface_mesh skeleton;
+
+					std::map<int, Surface_mesh::vertex_index> v_map;
+					for (auto v = iss->vertices_begin(); v != iss->vertices_end(); v++) {
+						if (v->is_skeleton()) {
+							auto p = v->point();
+							auto z = raster.dsm[int(p.y())][int(p.x())];
+							v_map[v->id()] = skeleton.add_vertex(Point_3((float) p.x(), (float) p.y(),z));
 						}
 					}
-				}
 
-				bool created;
-				Surface_mesh::Property_map<Surface_mesh::Edge_index, int> edge_prop;
-				boost::tie(edge_prop, created) = skeleton.add_property_map<Surface_mesh::Edge_index, int>("prop",0);
-				assert(created);
-				Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> red;
-				boost::tie(red, created) = skeleton.add_property_map<Surface_mesh::Vertex_index, unsigned char>("red", LABELS[lab].red);
-				assert(created);
-				Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> green;
-				boost::tie(green, created) = skeleton.add_property_map<Surface_mesh::Vertex_index, unsigned char>("green", LABELS[lab].green);
-				assert(created);
-				Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> blue;
-				boost::tie(blue, created) = skeleton.add_property_map<Surface_mesh::Vertex_index, unsigned char>("blue", LABELS[lab].blue);
-				assert(created);
+					for (auto he = iss->halfedges_begin(); he != iss->halfedges_end(); ++he ) {
+						if (he->is_inner_bisector()) {
+							auto v0 = v_map.find(he->vertex()->id());
+							auto v1 = v_map.find(he->opposite()->vertex()->id());
+							if (v0 != v_map.end() && v1 != v_map.end() && v0->second != v1->second) {
+								skeleton.add_edge(v_map[he->vertex()->id()], v_map[he->opposite()->vertex()->id()]);
+							}
+						}
+					}
 
-				double min_x, min_y;
-				raster.grid_to_coord(0, 0, min_x, min_y);
+					bool created;
+					Surface_mesh::Property_map<Surface_mesh::Edge_index, int> edge_prop;
+					boost::tie(edge_prop, created) = skeleton.add_property_map<Surface_mesh::Edge_index, int>("prop",0);
+					assert(created);
+					Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> red;
+					boost::tie(red, created) = skeleton.add_property_map<Surface_mesh::Vertex_index, unsigned char>("red", LABELS[lab].red);
+					assert(created);
+					Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> green;
+					boost::tie(green, created) = skeleton.add_property_map<Surface_mesh::Vertex_index, unsigned char>("green", LABELS[lab].green);
+					assert(created);
+					Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> blue;
+					boost::tie(blue, created) = skeleton.add_property_map<Surface_mesh::Vertex_index, unsigned char>("blue", LABELS[lab].blue);
+					assert(created);
 
-				for(auto vertex : skeleton.vertices()) {
-					auto point = skeleton.point(vertex);
-					double x, y;
-					raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
-					skeleton.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
-				}
+					double min_x, min_y;
+					raster.grid_to_coord(0, 0, min_x, min_y);
 
-				std::stringstream skeleton_name;
+					for(auto vertex : skeleton.vertices()) {
+						auto point = skeleton.point(vertex);
+						double x, y;
+						raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
+						skeleton.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
+					}
+
+					std::stringstream skeleton_name;
 					skeleton_name << "path_" << lab << "_" << i << ".ply";
-				std::ofstream mesh_ofile (skeleton_name.str().c_str());
-				CGAL::IO::write_PLY (mesh_ofile, skeleton);
-				mesh_ofile.close();
-			}
+					std::ofstream mesh_ofile (skeleton_name.str().c_str());
+					CGAL::IO::write_PLY (mesh_ofile, skeleton);
+					mesh_ofile.close();
+				}
 
-			Surface_mesh part_mesh;
-			CGAL::copy_face_graph(filtered_sm, part_mesh);
-			std::stringstream name;
+				Surface_mesh part_mesh;
+				CGAL::copy_face_graph(filtered_sm, part_mesh);
+				std::stringstream name;
 				name << "part_mesh_" << lab << "_" << i << ".ply";
-			save_mesh(part_mesh, raster, name.str().c_str());
+				save_mesh(part_mesh, raster, name.str().c_str());
+			}
 		}
-	}
 	}
 
 	return medial_axes;
+
+}
+
+void link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<Arr_Kernel>>> &medial_axes, const Raster &raster) {
+
+	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
+	bool has_label;
+	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+	assert(has_label);
+
+	for (int selected_label:  {3, 8, 9}) {
+		std::list<int> same_label_paths;
+		
+		for (int i = 0; i < paths.size(); i++) {
+			if (label[paths[i].front()] == selected_label && medial_axes.count(i) == 1) {
+				same_label_paths.push_back(i);
+			}
+		}
+
+		Surface_mesh candidats;
+
+		for (int path1: same_label_paths) {
+			for (int path2: same_label_paths) {
+				if (path1 < path2) {
+					std::map<Arr_Kernel::Point_2, Arr_Kernel::Point_2> nearests1, nearests2;
+					
+					//for each vertex of path1 compute nearest point on path2
+					for (auto point1: medial_axes.at(path1)->vertex_handles()) {
+						if (point1->is_skeleton()) {
+							Arr_Kernel::Point_2 nearest;
+							Arr_Kernel::FT min_distance = -1;
+
+							for (auto point2: medial_axes.at(path2)->vertex_handles()) {
+								if (point2->is_skeleton()) {
+									if (CGAL::squared_distance(point1->point(), point2->point()) < min_distance || min_distance == -1) {
+										min_distance = CGAL::squared_distance(point1->point(), point2->point());
+										nearest = point2->point();
+									}
+								}
+							}
+							for (auto edge2: medial_axes.at(path2)->halfedge_handles()) {
+								if (edge2->vertex()->id() < edge2->opposite()->vertex()->id()) {
+									if(edge2->is_inner_bisector() && edge2->opposite()->is_inner_bisector()) {
+										auto target = edge2->vertex()->point();
+										auto source = edge2->opposite()->vertex()->point();
+										auto proj = Arr_Kernel::Line_2(source, target).projection(point1->point());
+										if (Arr_Kernel::Segment_2(source, target).collinear_has_on(proj)) {
+											if (CGAL::squared_distance(point1->point(), proj) < min_distance) {
+												min_distance = CGAL::squared_distance(point1->point(), proj);
+												nearest = proj;
+											}
+										} else {
+
+										}
+									}
+								}
+							}
+							nearests1[point1->point()] = nearest;
+						}
+					}
+
+					//for each vertex of path2 compute nearest point on path1
+					for (auto point2: medial_axes.at(path2)->vertex_handles()) {
+						if (point2->is_skeleton()) {
+							Arr_Kernel::Point_2 nearest;
+							Arr_Kernel::FT min_distance = -1;
+
+							for (auto point1: medial_axes.at(path1)->vertex_handles()) {
+								if (point1->is_skeleton()) {
+									if (CGAL::squared_distance(point2->point(), point1->point()) < min_distance || min_distance == -1) {
+										min_distance = CGAL::squared_distance(point2->point(), point1->point());
+										nearest = point1->point();
+									}
+								}
+							}
+							for (auto edge1: medial_axes.at(path1)->halfedge_handles()) {
+								if (edge1->vertex()->id() < edge1->opposite()->vertex()->id()) {
+									if(edge1->is_inner_bisector() && edge1->opposite()->is_inner_bisector()) {
+										auto target = edge1->vertex()->point();
+										auto source = edge1->opposite()->vertex()->point();
+										auto proj = Arr_Kernel::Line_2(source, target).projection(point2->point());
+										if (Arr_Kernel::Segment_2(source, target).collinear_has_on(proj)) {
+											if (CGAL::squared_distance(point2->point(), proj) < min_distance) {
+												min_distance = CGAL::squared_distance(point2->point(), proj);
+												nearest = proj;
+											}
+										}
+									}
+								}
+							}
+							nearests2[point2->point()] = nearest;
+						}
+					}
+
+					//for projetion on path2, compute nearest point on path 1 if its a vertex
+					for (auto points1: nearests1) {
+						if (nearests2.count(points1.second) == 0) {
+							Arr_Kernel::Point_2 nearest = points1.first;
+							Arr_Kernel::FT min_distance = CGAL::squared_distance(points1.first, points1.second);
+
+							for (auto point1: medial_axes.at(path1)->vertex_handles()) {
+								if (point1->is_skeleton()) {
+									if (CGAL::squared_distance(points1.second, point1->point()) < min_distance) {
+										min_distance = CGAL::squared_distance(points1.second, point1->point());
+										nearest = point1->point();
+									}
+								}
+							}
+							for (auto edge1: medial_axes.at(path1)->halfedge_handles()) {
+								if (edge1->vertex()->id() < edge1->opposite()->vertex()->id()) {
+									if(edge1->is_inner_bisector() && edge1->opposite()->is_inner_bisector()) {
+										auto target = edge1->vertex()->point();
+										auto source = edge1->opposite()->vertex()->point();
+										auto proj = Arr_Kernel::Line_2(source, target).projection(points1.second);
+										if (Arr_Kernel::Segment_2(source, target).has_on(proj)) {
+											if (CGAL::squared_distance(points1.second, proj) < min_distance) {
+												min_distance = CGAL::squared_distance(points1.second, proj);
+												nearest = proj;
+											}
+										}
+									}
+								}
+							}
+							if (nearests1.count(nearest) == 1) {
+								nearests2[points1.second] = nearest;
+							}
+						}
+					}
+
+					//for projetion on path1, compute nearest point on path 2 if its a vertex
+					for (auto points2: nearests2) {
+						if (nearests1.count(points2.second) == 0) {
+							Arr_Kernel::Point_2 nearest = points2.first;
+							Arr_Kernel::FT min_distance = CGAL::squared_distance(points2.first, points2.second);
+
+							for (auto point2: medial_axes.at(path2)->vertex_handles()) {
+								if (point2->is_skeleton()) {
+									if (CGAL::squared_distance(points2.second, point2->point()) < min_distance) {
+										min_distance = CGAL::squared_distance(points2.second, point2->point());
+										nearest = point2->point();
+									}
+								}
+							}
+							for (auto edge2: medial_axes.at(path2)->halfedge_handles()) {
+								if (edge2->vertex()->id() < edge2->opposite()->vertex()->id()) {
+									if(edge2->is_inner_bisector() && edge2->opposite()->is_inner_bisector()) {
+										auto target = edge2->vertex()->point();
+										auto source = edge2->opposite()->vertex()->point();
+										auto proj = Arr_Kernel::Line_2(source, target).projection(points2.second);
+										if (Arr_Kernel::Segment_2(source, target).has_on(proj)) {
+											if (CGAL::squared_distance(points2.second, proj) < min_distance) {
+												min_distance = CGAL::squared_distance(points2.second, proj);
+												nearest = proj;
+											}
+										}
+									}
+								}
+							}
+							if (nearests2.count(nearest) == 1) {
+								nearests1[points2.second] = nearest;
+							}
+						}
+					}
+
+					for (auto points1: nearests1) {
+						if (nearests2.count(points1.second) == 1 && nearests2.at(points1.second) == points1.first) {
+							if (CGAL::squared_distance(points1.first, points1.second) < 10000) {
+								auto z1 = raster.dsm[int(points1.first.y())][int(points1.first.x())];
+								auto z2 = raster.dsm[int(points1.second.y())][int(points1.second.x())];
+								auto middle_point = CGAL::midpoint(Point_3(points1.first.x(), points1.first.y(), z1), Point_3(points1.second.x(), points1.second.y(), z2));
+								auto middle_dsm_z = raster.dsm[int(middle_point.y())][int(middle_point.x())];
+								auto middle_dtm_z = raster.dtm[int(middle_point.y())][int(middle_point.x())];
+
+								if (middle_point.z() > middle_dtm_z - 0.5 && middle_point.z() < middle_dsm_z + 0.5) {
+									if (abs(z1 - z2) / CGAL::squared_distance(points1.first, points1.second) < 0.3) {
+										auto v1 = candidats.add_vertex(Point_3((float) points1.first.x(), (float) points1.first.y(), z1));
+										auto v2 = candidats.add_vertex(Point_3((float) points1.second.x(), (float) points1.second.y(), z2));
+										candidats.add_edge(v1,v2);
+									}
+								}
+							}
+						}
+					}
+
+				}
+			}
+		}
+
+		bool created;
+		Surface_mesh::Property_map<Surface_mesh::Edge_index, int> edge_prop;
+		boost::tie(edge_prop, created) = candidats.add_property_map<Surface_mesh::Edge_index, int>("prop",0);
+		assert(created);
+		Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> red;
+		boost::tie(red, created) = candidats.add_property_map<Surface_mesh::Vertex_index, unsigned char>("red", LABELS[selected_label].red);
+		assert(created);
+		Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> green;
+		boost::tie(green, created) = candidats.add_property_map<Surface_mesh::Vertex_index, unsigned char>("green", LABELS[selected_label].green);
+		assert(created);
+		Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> blue;
+		boost::tie(blue, created) = candidats.add_property_map<Surface_mesh::Vertex_index, unsigned char>("blue", LABELS[selected_label].blue);
+		assert(created);
+
+		double min_x, min_y;
+		raster.grid_to_coord(0, 0, min_x, min_y);
+
+		for(auto vertex : candidats.vertices()) {
+			auto point = candidats.point(vertex);
+			double x, y;
+			raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
+			candidats.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
+		}
+
+		std::stringstream candidats_name;
+		candidats_name << "link_" << selected_label << ".ply";
+		std::ofstream mesh_ofile (candidats_name.str().c_str());
+		CGAL::IO::write_PLY (mesh_ofile, candidats);
+		mesh_ofile.close();
+
+	}
 
 }
 
@@ -1290,6 +1509,8 @@ int main(int argc, char **argv) {
 	save_mesh(mesh, raster, "final-mesh-with-path.ply");
 
 	std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<Arr_Kernel>>> medial_axes = compute_medial_axes(mesh, paths, raster);
+
+	link_paths(mesh, paths, medial_axes, raster);
 
 	return EXIT_SUCCESS;
 }
