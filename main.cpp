@@ -1009,6 +1009,8 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<Arr_Kernel>>> compute_
 
 		Filtered_graph filtered_sm(mesh, i, path);
 
+		if (filtered_sm.number_of_faces() > 1) {
+
 		int lab = label[*(CGAL::faces(filtered_sm).first)];
 		if (lab == 3 || lab == 8 || lab == 9) {
 
@@ -1063,7 +1065,7 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<Arr_Kernel>>> compute_
 				}
 
 				std::stringstream skeleton_name;
-				skeleton_name << "arr_" << i << ".ply";
+					skeleton_name << "arr_" << lab << "_" << i << ".ply";
 				std::ofstream mesh_ofile (skeleton_name.str().c_str());
 				CGAL::IO::write_PLY (mesh_ofile, skeleton);
 				mesh_ofile.close();
@@ -1099,7 +1101,7 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<Arr_Kernel>>> compute_
 				}
 
 				std::stringstream skeleton_name;
-				skeleton_name << "skeleton_" << i << ".ply";
+					skeleton_name << "skeleton_" << lab << "_" << i << ".ply";
 				std::ofstream mesh_ofile (skeleton_name.str().c_str());
 				CGAL::IO::write_PLY (mesh_ofile, skeleton);
 				mesh_ofile.close();
@@ -1152,7 +1154,7 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<Arr_Kernel>>> compute_
 				}
 
 				std::stringstream skeleton_name;
-				skeleton_name << "path_" << i << ".ply";
+					skeleton_name << "path_" << lab << "_" << i << ".ply";
 				std::ofstream mesh_ofile (skeleton_name.str().c_str());
 				CGAL::IO::write_PLY (mesh_ofile, skeleton);
 				mesh_ofile.close();
@@ -1161,9 +1163,10 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<Arr_Kernel>>> compute_
 			Surface_mesh part_mesh;
 			CGAL::copy_face_graph(filtered_sm, part_mesh);
 			std::stringstream name;
-			name << "part_mesh_" << i << ".ply";
+				name << "part_mesh_" << lab << "_" << i << ".ply";
 			save_mesh(part_mesh, raster, name.str().c_str());
 		}
+	}
 	}
 
 	return medial_axes;
