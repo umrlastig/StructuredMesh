@@ -1298,7 +1298,7 @@ void link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_me
 										auto target = edge1->vertex()->point();
 										auto source = edge1->opposite()->vertex()->point();
 										auto proj = Arr_Kernel::Line_2(source, target).projection(points1.second);
-										if (Arr_Kernel::Segment_2(source, target).has_on(proj)) {
+										if (Arr_Kernel::Segment_2(source, target).collinear_has_on(proj)) {
 											if (CGAL::squared_distance(points1.second, proj) < min_distance) {
 												min_distance = CGAL::squared_distance(points1.second, proj);
 												nearest = proj;
@@ -1333,7 +1333,7 @@ void link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_me
 										auto target = edge2->vertex()->point();
 										auto source = edge2->opposite()->vertex()->point();
 										auto proj = Arr_Kernel::Line_2(source, target).projection(points2.second);
-										if (Arr_Kernel::Segment_2(source, target).has_on(proj)) {
+										if (Arr_Kernel::Segment_2(source, target).collinear_has_on(proj)) {
 											if (CGAL::squared_distance(points2.second, proj) < min_distance) {
 												min_distance = CGAL::squared_distance(points2.second, proj);
 												nearest = proj;
@@ -1350,15 +1350,92 @@ void link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_me
 
 					for (auto points1: nearests1) {
 						if (nearests2.count(points1.second) == 1 && nearests2.at(points1.second) == points1.first) {
-							if (CGAL::squared_distance(points1.first, points1.second) < 10000) {
+							if (CGAL::squared_distance(points1.first, points1.second) < pow(raster.coord_distance_to_grid_distance(50),2)) {
+
+								// slope
+								float max_slope;
+								if (selected_label == 8) {
+									// slop for road
+									max_slope = 0.3;
+								} else {
+									// slop for railways and water
+									max_slope = 0.1;
+								}
 								auto z1 = raster.dsm[int(points1.first.y())][int(points1.first.x())];
 								auto z2 = raster.dsm[int(points1.second.y())][int(points1.second.x())];
-								auto middle_point = CGAL::midpoint(Point_3(points1.first.x(), points1.first.y(), z1), Point_3(points1.second.x(), points1.second.y(), z2));
-								auto middle_dsm_z = raster.dsm[int(middle_point.y())][int(middle_point.x())];
-								auto middle_dtm_z = raster.dtm[int(middle_point.y())][int(middle_point.x())];
 
-								if (middle_point.z() > middle_dtm_z - 0.5 && middle_point.z() < middle_dsm_z + 0.5) {
-									if (abs(z1 - z2) / CGAL::squared_distance(points1.first, points1.second) < 0.3) {
+								if (abs(z1 - z2) / raster.grid_distance_to_coord_distance(sqrt(CGAL::squared_distance(points1.first, points1.second))) < max_slope) {
+
+									K::Point_3 source = Point_3(points1.first.x(), points1.first.y(), z1);
+									K::Vector_3 direction(source, Point_3(points1.second.x(), points1.second.y(), z2));
+									float distance = sqrt(pow(direction.x(),2) + pow(direction.y(),2));
+									
+									int label_count[LABELS.size()] = {0};
+									bool out = false;
+
+									for(int t = 0; t < distance; t++) {
+										K::Point_3 point = source + t/distance * direction;
+										auto dsm_z = raster.dsm[int(point.y())][int(point.x())];
+										auto dtm_z = raster.dtm[int(point.y())][int(point.x())];
+										auto label = raster.land_cover[int(point.y())][int(point.x())];
+										
+										if (point.z() > dsm_z + 0.5) {
+											out = true;
+											break;
+										}
+
+										if (point.z() < dtm_z - 0.5) {
+											out = true;
+											break;
+										}
+
+										if (point.z() > dsm_z - 0.5) {
+											label_count[label]++;
+										}
+
+									}
+
+									if (out) {
+										break;
+									}
+
+									if (label_count[1] > 0) {
+										// bare ground
+										break;
+									}
+									if (label_count[2] > 0) {
+										// low vegetation
+										break;
+									}
+									if (selected_label != 3 && label_count[3] > 0) {
+										// water
+										break;
+									}
+									if (label_count[4] > 0) {
+										// building
+										break;
+									}
+									if (label_count[6] > 0) {
+										// parking
+										break;
+									}
+									if (label_count[7] > raster.coord_distance_to_grid_distance(0.5)) {
+										// pedestrian
+										break;
+									}
+									if (selected_label == 3 && label_count[8] > 0) {
+										// road
+										break;
+									}
+									if (selected_label == 3 && label_count[9] > 0) {
+										// railways
+										break;
+									}
+									if (label_count[10] > 0) {
+										// swimming pool
+										break;
+									}
+
 										auto v1 = candidats.add_vertex(Point_3((float) points1.first.x(), (float) points1.first.y(), z1));
 										auto v2 = candidats.add_vertex(Point_3((float) points1.second.x(), (float) points1.second.y(), z2));
 										candidats.add_edge(v1,v2);
