@@ -120,6 +120,21 @@ class Raster {
 			y = grid_to_crs[3] + P*grid_to_crs[4] + L*grid_to_crs[5];
 		}
 
+		float coord_distance_to_grid_distance(double d) const {
+			float P, L;
+			double x, y;
+			grid_to_coord(0, 0, x, y);
+			coord_to_grid(x+d/sqrt(2),y+d/sqrt(2),P,L);
+			return sqrt(pow(P,2)+pow(L,2));
+		}
+		
+		double grid_distance_to_coord_distance(float d) const {
+			double x1, y1, x2, y2;
+			grid_to_coord(0, 0, x1, y1);
+			grid_to_coord((float) (d/sqrt(2)), (float) (d/sqrt(2)), x2, y2);
+			return sqrt(pow(x2-x1,2)+pow(y2-y1,2));
+		}
+
 		OGRSpatialReference get_crs() const {
 			return OGRSpatialReference(crs);
 		}
@@ -882,6 +897,7 @@ void change_vertical_faces(Surface_mesh &mesh) {
 		auto p0 = mesh.point(*(vbegin++));
 		auto p1 = mesh.point(*(vbegin++));
 		auto p2 = mesh.point(*(vbegin++));
+		//TODO : use coords and not grid
 		float nz = ((-p0.x() + p1.x()) * (-p0.y() + p2.y()) - (-p0.x() + p2.x()) * (-p0.y() + p1.y()));
 		float surface = pow(K::Triangle_3(p0, p1, p2).squared_area(), 0.5);
 		if (abs(nz)/(2*surface) < 0.5) {
@@ -1029,7 +1045,7 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<Arr_Kernel>>> compute_
 				poly = CGAL::Polyline_simplification_2::simplify(
 					poly,
 					CGAL::Polyline_simplification_2::Squared_distance_cost(),
-					CGAL::Polyline_simplification_2::Stop_above_cost_threshold(10)
+					CGAL::Polyline_simplification_2::Stop_above_cost_threshold(pow(raster.coord_distance_to_grid_distance(1.5),2))
 				);
 
 				auto iss = CGAL::create_interior_straight_skeleton_2(poly, Arr_Kernel());
@@ -1221,8 +1237,6 @@ void link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_me
 												min_distance = CGAL::squared_distance(point1->point(), proj);
 												nearest = proj;
 											}
-										} else {
-
 										}
 									}
 								}
