@@ -881,7 +881,7 @@ void add_label(const Raster &raster, Surface_mesh &mesh) {
 	}
 }
 
-void change_vertical_faces(Surface_mesh &mesh) {
+void change_vertical_faces(Surface_mesh &mesh, const Raster &raster) {
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool has_label;
 	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
@@ -901,7 +901,7 @@ void change_vertical_faces(Surface_mesh &mesh) {
 		float nz = ((-p0.x() + p1.x()) * (-p0.y() + p2.y()) - (-p0.x() + p2.x()) * (-p0.y() + p1.y()));
 		float surface = pow(K::Triangle_3(p0, p1, p2).squared_area(), 0.5);
 		if (abs(nz)/(2*surface) < 0.5) {
-			CGAL::Face_around_face_iterator<Surface_mesh> fbegin, fend;
+			/*CGAL::Face_around_face_iterator<Surface_mesh> fbegin, fend;
 			for(boost::tie(fbegin, fend) = faces_around_face(mesh.halfedge(face), mesh); fbegin != fend && new_label[face] != 4; ++fbegin) {
 				if (*fbegin != boost::graph_traits<Surface_mesh>::null_face()) {
 					if (label[*fbegin] == 4) {
@@ -924,6 +924,26 @@ void change_vertical_faces(Surface_mesh &mesh) {
 						}
 					}
 				}
+			}*/
+
+			int face_label[LABELS.size()] = {0};
+			int sum_face_label = 0;
+
+			CGAL::Vertex_around_face_iterator<Surface_mesh> vbegin, vend;
+			boost::tie(vbegin, vend) = vertices_around_face(mesh.halfedge(face), mesh);
+			for (auto pixel : raster.triangle_to_pixel(mesh.point(*(vbegin++)), mesh.point(*(vbegin++)), mesh.point(*(vbegin++)))) {
+				if (raster.land_cover[pixel.second][pixel.first] > -1) {
+					sum_face_label++;
+					face_label[raster.land_cover[pixel.second][pixel.first]]++;
+				}
+			}
+			
+			if (face_label[4] > 0) {
+				//Building
+				new_label[face] = 4;
+			} else if (face_label[5] > 0) {
+				//High vegetation
+				new_label[face] = 5;
 			}
 
 			if (new_label[face] != 4 && new_label[face] != 5) {
@@ -1593,7 +1613,7 @@ int main(int argc, char **argv) {
 	}
 
 	add_label(raster, mesh);
-	change_vertical_faces(mesh);
+	change_vertical_faces(mesh, raster);
 	save_mesh(mesh, raster, "final-mesh-without-facade.ply");
 
 	std::vector<std::list<Surface_mesh::Face_index>> paths = compute_path(mesh);
