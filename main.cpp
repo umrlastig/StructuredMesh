@@ -1459,12 +1459,166 @@ void link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_me
 										auto v1 = candidats.add_vertex(Point_3((float) points1.first.x(), (float) points1.first.y(), z1));
 										auto v2 = candidats.add_vertex(Point_3((float) points1.second.x(), (float) points1.second.y(), z2));
 										candidats.add_edge(v1,v2);
-									}
 								}
 							}
 						}
 					}
 
+				} else if (path1 == path2) {
+					std::map<Arr_Kernel::Point_2, Arr_Kernel::Point_2> nearests1;
+
+					//for each vertex of path1 compute nearest point on path2
+					for (auto point1: medial_axes.at(path1)->vertex_handles()) {
+						if (point1->is_skeleton()) {
+							Arr_Kernel::Point_2 nearest;
+							Arr_Kernel::FT min_distance = -1;
+							bool nearest_point = false;
+
+							auto he = point1->halfedge_around_vertex_begin();
+							do {
+								auto point2 = (*he)->opposite()->vertex();
+								if (point2->is_skeleton()) {
+									if (CGAL::squared_distance(point1->point(), point2->point()) < min_distance || min_distance == -1) {
+										min_distance = CGAL::squared_distance(point1->point(), point2->point());
+										nearest = point2->point();
+									}
+								}
+							} while (++he != point1->halfedge_around_vertex_begin());
+
+							for (auto point2: medial_axes.at(path2)->vertex_handles()) {
+								if (point1 != point2 && point2->is_skeleton()) {
+									if (CGAL::squared_distance(point1->point(), point2->point()) < min_distance) {
+										min_distance = CGAL::squared_distance(point1->point(), point2->point());
+										nearest = point2->point();
+										nearest_point = true;
+									}
+								}
+							}
+							for (auto edge2: medial_axes.at(path2)->halfedge_handles()) {
+								if (edge2->vertex()->id() < edge2->opposite()->vertex()->id()) {
+									if(edge2->is_inner_bisector() && edge2->opposite()->is_inner_bisector()) {
+										auto target = edge2->vertex()->point();
+										auto source = edge2->opposite()->vertex()->point();
+										auto proj = Arr_Kernel::Line_2(source, target).projection(point1->point());
+										if (Arr_Kernel::Segment_2(source, target).collinear_has_on(proj)) {
+											if (CGAL::squared_distance(point1->point(), proj) < min_distance) {
+												min_distance = CGAL::squared_distance(point1->point(), proj);
+												nearest = proj;
+												nearest_point = true;
+											}
+										}
+									}
+								}
+							}
+
+							if (nearest_point) {
+								nearests1[point1->point()] = nearest;
+							}
+						}
+					}
+
+					for (auto points1: nearests1) {
+						if (CGAL::squared_distance(points1.first, points1.second) < pow(raster.coord_distance_to_grid_distance(50),2)) {
+
+							// slope
+							float max_slope;
+							if (selected_label == 8) {
+								// slop for road
+								max_slope = 0.3;
+							} else {
+								// slop for railways and water
+								max_slope = 0.1;
+							}
+							auto z1 = raster.dsm[int(points1.first.y())][int(points1.first.x())];
+							auto z2 = raster.dsm[int(points1.second.y())][int(points1.second.x())];
+
+							if (abs(z1 - z2) / raster.grid_distance_to_coord_distance(sqrt(CGAL::squared_distance(points1.first, points1.second))) < max_slope) {
+
+								K::Point_3 source = Point_3(points1.first.x(), points1.first.y(), z1);
+								K::Vector_3 direction(source, Point_3(points1.second.x(), points1.second.y(), z2));
+								float distance = sqrt(pow(direction.x(),2) + pow(direction.y(),2));
+
+								int label_count[LABELS.size()] = {0};
+								bool out = false;
+
+								for(int t = 0; t < distance; t++) {
+									K::Point_3 point = source + t/distance * direction;
+									auto dsm_z = raster.dsm[int(point.y())][int(point.x())];
+									auto dtm_z = raster.dtm[int(point.y())][int(point.x())];
+									auto label = raster.land_cover[int(point.y())][int(point.x())];
+
+									if (point.z() > dsm_z + 0.5) {
+										out = true;
+										break;
+									}
+
+									if (point.z() < dtm_z - 0.5) {
+										out = true;
+										break;
+									}
+
+									if (point.z() > dsm_z - 0.5) {
+										label_count[label]++;
+									}
+
+								}
+
+								if (out) {
+									break;
+							}
+
+								int sum = - label_count[selected_label];
+								for (int label = 0; label < LABELS.size(); label++) {
+									sum += label_count[label];
+						}
+								if (sum == 0) {
+									// no other class
+									break;
+					}
+
+								if (label_count[1] > 0) {
+									// bare ground
+									break;
+								}
+								if (label_count[2] > 0) {
+									// low vegetation
+									break;
+								}
+								if (selected_label != 3 && label_count[3] > 0) {
+									// water
+									break;
+								}
+								if (label_count[4] > 0) {
+									// building
+									break;
+								}
+								if (label_count[6] > 0) {
+									// parking
+									break;
+								}
+								if (label_count[7] > raster.coord_distance_to_grid_distance(0.5)) {
+									// pedestrian
+									break;
+								}
+								if (selected_label == 3 && label_count[8] > 0) {
+									// road
+									break;
+								}
+								if (selected_label == 3 && label_count[9] > 0) {
+									// railways
+									break;
+								}
+								if (label_count[10] > 0) {
+									// swimming pool
+									break;
+								}
+
+								auto v1 = candidats.add_vertex(Point_3((float) points1.first.x(), (float) points1.first.y(), z1));
+								auto v2 = candidats.add_vertex(Point_3((float) points1.second.x(), (float) points1.second.y(), z2));
+								candidats.add_edge(v1,v2);
+							}
+						}
+					}
 				}
 			}
 		}
