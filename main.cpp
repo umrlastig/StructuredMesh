@@ -94,7 +94,7 @@ class Raster {
 					} else {
 						new_land_cover[L][P] = land_cover[L][P];
 					}
-					
+
 				}
 			}
 
@@ -127,7 +127,7 @@ class Raster {
 			coord_to_grid(x+d/sqrt(2),y+d/sqrt(2),P,L);
 			return sqrt(pow(P,2)+pow(L,2));
 		}
-		
+
 		double grid_distance_to_coord_distance(float d) const {
 			double x1, y1, x2, y2;
 			grid_to_coord(0, 0, x1, y1);
@@ -256,11 +256,11 @@ std::list<Polygon> get_LOD0_from_shapefile(char *path) {
 	}
 
 	for( OGRLayer *layer: dataset->GetLayers() ) {
-        for( const auto& feature: *layer ) {
+		for( const auto& feature: *layer ) {
 			if ((*feature)["num_class"].GetInteger() == 4) {
 				// Get only the buildings
 				OGRGeometry *geometry = feature->GetGeometryRef();
-				
+
 				if (wkbFlatten(geometry->getGeometryType()) == wkbPolygon) {
 
 					OGRPolygon *shp_polygon = geometry->toPolygon();
@@ -281,8 +281,8 @@ std::list<Polygon> get_LOD0_from_shapefile(char *path) {
 
 				}
 			}
-        }
-    }
+		}
+	}
 
 	return polygons;
 }
@@ -293,7 +293,7 @@ float single_face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p
 		// flat triangle
 		return 0;
 	}
-	
+
 	std::list<std::pair<int,int>> pixels = raster.triangle_to_pixel(p0, p1, p2);
 
 	// Entropy
@@ -330,7 +330,7 @@ float single_face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p
 		least_squares /= pixels.size();
 		least /= pixels.size();
 	}
-	
+
 	// Verticality
 	float verticality = 0;
 	if (pixels.size() == 0) {
@@ -446,7 +446,7 @@ class Custom_placement {
 			K::Vector_3 vector(profile.p0(), profile.p1());
 			Point_3 p[5] = {profile.p0(), profile.p0() + 0.25 * vector, profile.p0() + 0.5 * vector, profile.p0() + 0.75 * vector, profile.p1()};
 			float cost[5] = {0};
-			
+
 			/*for (int j = 0; j < 5; j++) {
 				p[j] = best_point(raster, p[j].x(), p[j].y(), profile);
 			}*/
@@ -472,7 +472,7 @@ class Custom_placement {
 
 			for (int i = 0; i < 2; i++) {
 				int min_cost = std::min_element(cost, cost + 5) - cost;
-				
+
 				if (min_cost == 0 || min_cost == 1) {
 					p[4] = p[2];
 					cost[4] = cost[2];
@@ -498,7 +498,7 @@ class Custom_placement {
 
 				cost[1] = 0;
 				cost[3] = 0;
-				
+
 				for (auto he : CGAL::halfedges_around_source(profile.v0(), profile.surface_mesh())) {
 					if (he != profile.v0_v1() && he != profile.v0_vR()) {
 						Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
@@ -663,7 +663,7 @@ void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filen
 					face_label[raster.land_cover[pixel.second][pixel.first]]++;
 				}
 			}
-			
+
 			auto argmax = std::max_element(face_label, face_label+LABELS.size());
 			output_label[face] = argmax - face_label;
 		}
@@ -739,7 +739,7 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 		void OnStarted (Surface_mesh &mesh) {
 			start_collecte = std::chrono::system_clock::now();
 		}
-		
+
 		void OnCollected(const SMS::Edge_profile<Surface_mesh>& profile, const boost::optional<float>& cost) {
 			start_collapse = std::chrono::system_clock::now();
 			i_collecte++;
@@ -875,7 +875,7 @@ void add_label(const Raster &raster, Surface_mesh &mesh) {
 				face_label[raster.land_cover[pixel.second][pixel.first]]++;
 			}
 		}
-		
+
 		auto argmax = std::max_element(face_label, face_label+LABELS.size());
 		label[face] = argmax - face_label;
 	}
@@ -916,7 +916,7 @@ void change_vertical_faces(Surface_mesh &mesh, const Raster &raster) {
 						if (*fbegin2 != boost::graph_traits<Surface_mesh>::null_face()) {
 							if (label[*fbegin2] == 4) {
 								//Building
-								new_label[face] = 4;					
+								new_label[face] = 4;
 							} else if (label[*fbegin2] == 5 && new_label[face] != 4) {
 								//High vegetation
 								new_label[face] = 5;
@@ -937,7 +937,7 @@ void change_vertical_faces(Surface_mesh &mesh, const Raster &raster) {
 					face_label[raster.land_cover[pixel.second][pixel.first]]++;
 				}
 			}
-			
+
 			if (face_label[4] > 0) {
 				//Building
 				new_label[face] = 4;
@@ -1218,7 +1218,7 @@ void link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_me
 
 	for (int selected_label:  {3, 8, 9}) {
 		std::list<int> same_label_paths;
-		
+
 		for (int i = 0; i < paths.size(); i++) {
 			if (label[paths[i].front()] == selected_label && medial_axes.count(i) == 1) {
 				same_label_paths.push_back(i);
@@ -1231,7 +1231,7 @@ void link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_me
 			for (int path2: same_label_paths) {
 				if (path1 < path2) {
 					std::map<Arr_Kernel::Point_2, Arr_Kernel::Point_2> nearests1, nearests2;
-					
+
 					//for each vertex of path1 compute nearest point on path2
 					for (auto point1: medial_axes.at(path1)->vertex_handles()) {
 						if (point1->is_skeleton()) {
@@ -1389,7 +1389,7 @@ void link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_me
 									K::Point_3 source = Point_3(points1.first.x(), points1.first.y(), z1);
 									K::Vector_3 direction(source, Point_3(points1.second.x(), points1.second.y(), z2));
 									float distance = sqrt(pow(direction.x(),2) + pow(direction.y(),2));
-									
+
 									int label_count[LABELS.size()] = {0};
 									bool out = false;
 
@@ -1398,7 +1398,7 @@ void link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_me
 										auto dsm_z = raster.dsm[int(point.y())][int(point.x())];
 										auto dtm_z = raster.dtm[int(point.y())][int(point.x())];
 										auto label = raster.land_cover[int(point.y())][int(point.x())];
-										
+
 										if (point.z() > dsm_z + 0.5) {
 											out = true;
 											break;
@@ -1456,9 +1456,9 @@ void link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_me
 										break;
 									}
 
-										auto v1 = candidats.add_vertex(Point_3((float) points1.first.x(), (float) points1.first.y(), z1));
-										auto v2 = candidats.add_vertex(Point_3((float) points1.second.x(), (float) points1.second.y(), z2));
-										candidats.add_edge(v1,v2);
+									auto v1 = candidats.add_vertex(Point_3((float) points1.first.x(), (float) points1.first.y(), z1));
+									auto v2 = candidats.add_vertex(Point_3((float) points1.second.x(), (float) points1.second.y(), z2));
+									candidats.add_edge(v1,v2);
 								}
 							}
 						}
@@ -1565,16 +1565,16 @@ void link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_me
 
 								if (out) {
 									break;
-							}
+								}
 
 								int sum = - label_count[selected_label];
 								for (int label = 0; label < LABELS.size(); label++) {
 									sum += label_count[label];
-						}
+								}
 								if (sum == 0) {
 									// no other class
 									break;
-					}
+								}
 
 								if (label_count[1] > 0) {
 									// bare ground
