@@ -1689,6 +1689,69 @@ std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &
 
 }
 
+void add_road(
+		std::list<std::pair<Arr_Kernel::Vector_2, Arr_Kernel::FT>> &roads,
+		CGAL::Straight_skeleton_2<Arr_Kernel>::Vertex_handle vertex,
+		CGAL::Straight_skeleton_2<Arr_Kernel>::Vertex_handle previous_vertex) {
+	auto he = vertex->halfedge_around_vertex_begin();
+	do {
+		auto vertex2 = (*he)->opposite()->vertex();
+		if (vertex2->is_skeleton() && vertex2 != previous_vertex) {
+			if (abs(vertex2->time() - vertex->time()) / sqrt(CGAL::squared_distance(vertex->point(), vertex2->point())) < 0.1) {
+				roads.push_back(std::pair<Arr_Kernel::Vector_2, Arr_Kernel::FT>(Arr_Kernel::Vector_2(vertex2->point(), vertex->point()), vertex2->time() + vertex->time()));
+			} else {
+				add_road(roads, vertex2, vertex);
+			}
+		}
+	} while (++he != vertex->halfedge_around_vertex_begin());
+
+}
+
+Arr_Kernel::FT diameter (std::pair<skeletonPoint,skeletonPoint> link, const Raster &raster) {
+	Arr_Kernel::Vector_2 vector(link.first.point, link.second.point);
+
+	std::list<std::pair<Arr_Kernel::Vector_2, Arr_Kernel::FT>> roads1;
+	std::list<std::pair<Arr_Kernel::Vector_2, Arr_Kernel::FT>> roads2;
+
+	if (link.first.vertex != nullptr) {
+		add_road(roads1, link.first.vertex, nullptr);
+	} else {
+		add_road(roads1, link.first.halfedge->vertex(), link.first.halfedge->opposite()->vertex());
+		add_road(roads1, link.first.halfedge->opposite()->vertex(), link.first.halfedge->vertex());
+		if (abs(link.first.halfedge->opposite()->vertex()->time() - link.first.halfedge->vertex()->time()) / sqrt(CGAL::squared_distance(link.first.halfedge->vertex()->point(), link.first.halfedge->opposite()->vertex()->point())) < 0.1) {
+			roads1.push_back(std::pair<Arr_Kernel::Vector_2, Arr_Kernel::FT>(Arr_Kernel::Vector_2(link.first.halfedge->opposite()->vertex()->point(), link.first.halfedge->vertex()->point()), link.first.halfedge->opposite()->vertex()->time() + link.first.halfedge->vertex()->time()));
+		}
+	}
+
+	if (link.second.vertex != nullptr) {
+		add_road(roads2, link.second.vertex, nullptr);
+	} else {
+		add_road(roads2, link.second.halfedge->vertex(), link.second.halfedge->opposite()->vertex());
+		add_road(roads2, link.second.halfedge->opposite()->vertex(), link.second.halfedge->vertex());
+		if (abs(link.second.halfedge->opposite()->vertex()->time() - link.second.halfedge->vertex()->time()) / sqrt(CGAL::squared_distance(link.second.halfedge->vertex()->point(), link.second.halfedge->opposite()->vertex()->point())) < 0.1) {
+			roads2.push_back(std::pair<Arr_Kernel::Vector_2, Arr_Kernel::FT>(Arr_Kernel::Vector_2(link.second.halfedge->opposite()->vertex()->point(), link.second.halfedge->vertex()->point()), link.second.halfedge->opposite()->vertex()->time() + link.second.halfedge->vertex()->time()));
+		}
+	}
+
+	Arr_Kernel::FT diameter = 0;
+	Arr_Kernel::FT sum = 0;
+
+	for (auto road: roads1) {
+		auto angle = abs(CGAL::scalar_product(road.first, vector) / sqrt(road.first.squared_length()));
+		diameter += road.second * angle;
+		sum += angle;
+	}
+
+	for (auto road: roads2) {
+		auto angle = abs(CGAL::scalar_product(road.first, vector) / sqrt(road.first.squared_length()));
+		diameter += road.second * angle;
+		sum += angle;
+	}
+
+	return diameter/sum;
+
+}
+
 int main(int argc, char **argv) {
 	int opt;
 	const struct option options[] = {
@@ -1808,6 +1871,10 @@ int main(int argc, char **argv) {
 	std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<Arr_Kernel>>> medial_axes = compute_medial_axes(mesh, paths, raster);
 
 	std::set<std::pair<skeletonPoint,skeletonPoint>> links = link_paths(mesh, paths, medial_axes, raster);
+
+	for (auto link: links) {
+		std::cout << diameter(link, raster) << "\n";
+	}
 
 	return EXIT_SUCCESS;
 }
