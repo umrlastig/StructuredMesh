@@ -1740,22 +1740,36 @@ std::pair<K::FT, K::FT> road_width (std::pair<skeletonPoint,skeletonPoint> link)
 	}
 
 	K::FT road_width1 = 0;
-	K::FT sum1 = 0;
-	for (auto road: roads1) {
-		auto angle = abs(CGAL::scalar_product(road.first, vector) / sqrt(road.first.squared_length()));
-		road_width1 += road.second * angle;
-		sum1 += angle;
+	if (roads1.size() > 0) {
+		K::FT sum1 = 0;
+		for (auto road: roads1) {
+			auto angle = abs(CGAL::scalar_product(road.first, vector) / sqrt(road.first.squared_length())) + 0.01;
+			road_width1 += road.second * angle;
+			sum1 += angle;
+		}
+		road_width1 /= sum1;
+	} else if (link.first.vertex != nullptr) {
+		road_width1 = 2*link.first.vertex->time();
+	} else {
+		road_width1 = link.first.halfedge->vertex()->time() + link.first.halfedge->opposite()->vertex()->time();
 	}
 
 	K::FT road_width2 = 0;
-	K::FT sum2 = 0;
-	for (auto road: roads2) {
-		auto angle = abs(CGAL::scalar_product(road.first, vector) / sqrt(road.first.squared_length()));
-		road_width2 += road.second * angle;
-		sum2 += angle;
+	if (roads2.size() > 0) {
+		K::FT sum2 = 0;
+		for (auto road: roads2) {
+			auto angle = abs(CGAL::scalar_product(road.first, vector) / sqrt(road.first.squared_length())) + 0.01;
+			road_width2 += road.second * angle;
+			sum2 += angle;
+		}
+		road_width2 /= sum2;
+	} else if (link.second.vertex != nullptr) {
+		road_width2 = 2*link.second.vertex->time();
+	} else {
+		road_width2 = link.second.halfedge->vertex()->time() + link.second.halfedge->opposite()->vertex()->time();
 	}
 
-	return std::pair<K::FT, K::FT>(road_width1/sum1, road_width2/sum2);
+	return std::pair<K::FT, K::FT>(road_width1, road_width2);
 
 }
 
