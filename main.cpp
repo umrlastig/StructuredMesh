@@ -30,6 +30,7 @@
 #include <CGAL/Arrangement_2.h>
 #include <CGAL/Polyline_simplification_2/simplify.h>
 #include <CGAL/create_straight_skeleton_from_polygon_with_holes_2.h>
+#include <CGAL/Straight_skeleton_converter_2.h>
 
 #include "label.cpp"
 
@@ -42,8 +43,8 @@ typedef CGAL::Polygon_with_holes_2<K>                       Polygon_with_holes;
 
 namespace SMS = CGAL::Surface_mesh_simplification;
 
-typedef CGAL::Exact_predicates_inexact_constructions_kernel Arr_Kernel;
-typedef CGAL::Arr_segment_traits_2<Arr_Kernel>              Traits_2;
+typedef CGAL::Exact_predicates_inexact_constructions_kernel Exact_predicates_kernel;
+typedef CGAL::Arr_segment_traits_2<Exact_predicates_kernel> Traits_2;
 typedef CGAL::Arrangement_2<Traits_2>                       Arrangement_2;
 
 class Raster {
@@ -741,7 +742,7 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 			start_collecte = std::chrono::system_clock::now();
 		}
 
-		void OnCollected(const SMS::Edge_profile<Surface_mesh>& profile, const boost::optional<float>& cost) {
+		void OnCollected(const SMS::Edge_profile<Surface_mesh>& profile, const boost::optional< SMS::Edge_profile<Surface_mesh>::FT >& cost) {
 			start_collapse = std::chrono::system_clock::now();
 			i_collecte++;
 			if (i_collecte%1000 == 0) {
@@ -1004,31 +1005,34 @@ std::vector<std::list<Surface_mesh::Face_index>> compute_path(Surface_mesh &mesh
 	return paths;
 }
 
+template<typename Face_handle>
+CGAL::Polygon_with_holes_2<typename Face_handle::value_type::Vertex::Point::R> polygon(Face_handle face) {
 
-Polygon_with_holes polygon(Arrangement_2::Face_handle face) {
-	Polygon border;
+	typedef typename Face_handle::value_type::Vertex::Point::R Kernel;
+
+	CGAL::Polygon_2<Kernel> border;
 	auto curr = face->outer_ccb();
 	do {
 		auto p = curr->target()->point();
-		border.push_back(Point_2((float) p.x(), (float) p.y()));
+		border.push_back(p);
 	} while (++curr != face->outer_ccb());
 
-	std::list<Polygon> holes;
+	std::list<CGAL::Polygon_2<Kernel>> holes;
 	for(auto hole = face->holes_begin(); hole != face->holes_end(); hole++) {
 		auto curr = *hole;
-		Polygon hole_polygon;
+		CGAL::Polygon_2<Kernel> hole_polygon;
 		do {
 			auto p = curr->target()->point();
-			hole_polygon.push_back(Point_2((float) p.x(), (float) p.y()));
+			hole_polygon.push_back(p);
 		} while (++curr != *hole);
 		holes.push_back(hole_polygon);
 	} 
 
-	return Polygon_with_holes(border, holes.begin(), holes.end());
+	return CGAL::Polygon_with_holes_2<Kernel>(border, holes.begin(), holes.end());
 }
 
 
-std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<Arr_Kernel>>> compute_medial_axes(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const Raster &raster) {
+std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_axes(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const Raster &raster) {
 	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
 	bool has_path;
 	boost::tie(path, has_path) = mesh.property_map<Surface_mesh::Face_index, int>("path");
@@ -1039,7 +1043,7 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<Arr_Kernel>>> compute_
 	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
 	assert(has_label);
 
-	std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<Arr_Kernel>>> medial_axes;
+	std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> medial_axes;
 
 	typedef CGAL::Face_filtered_graph<Surface_mesh> Filtered_graph;
 	for (int i = 0; i < paths.size(); i++) {
@@ -1057,11 +1061,11 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<Arr_Kernel>>> compute_
 					if (CGAL::is_border (edge, filtered_sm)) {
 						auto p0 = mesh.point(CGAL::source(edge, filtered_sm));
 						auto p1 = mesh.point(CGAL::target(edge, filtered_sm));
-						insert_non_intersecting_curve(arr, Traits_2::X_monotone_curve_2(Arr_Kernel::Point_2(p0.x(), p0.y()), Arr_Kernel::Point_2(p1.x(), p1.y())));
+						insert_non_intersecting_curve(arr, Traits_2::X_monotone_curve_2(Exact_predicates_kernel::Point_2(p0.x(), p0.y()), Exact_predicates_kernel::Point_2(p1.x(), p1.y())));
 					}
 				}
 
-				Polygon_with_holes poly = polygon((*(arr.unbounded_face()->holes_begin()))->twin()->face());
+				auto poly = polygon((*(arr.unbounded_face()->holes_begin()))->twin()->face());
 
 				poly = CGAL::Polyline_simplification_2::simplify(
 					poly,
@@ -1069,8 +1073,8 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<Arr_Kernel>>> compute_
 					CGAL::Polyline_simplification_2::Stop_above_cost_threshold(pow(raster.coord_distance_to_grid_distance(1.5),2))
 				);
 
-				auto iss = CGAL::create_interior_straight_skeleton_2(poly, Arr_Kernel());
-				medial_axes[i] = iss;
+				auto iss = CGAL::create_interior_straight_skeleton_2(poly, Exact_predicates_kernel());
+				medial_axes[i] = CGAL::convert_straight_skeleton_2<CGAL::Straight_skeleton_2<K>>(*iss);
 
 				{ // Arrangement
 					Surface_mesh skeleton;
@@ -1212,20 +1216,20 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<Arr_Kernel>>> compute_
 
 struct skeletonPoint {
 	int path;
-	Arr_Kernel::Point_2 point;
-	CGAL::Straight_skeleton_2<Arr_Kernel>::Vertex_handle vertex;
-	CGAL::Straight_skeleton_2<Arr_Kernel>::Halfedge_handle halfedge;
+	Point_2 point;
+	CGAL::Straight_skeleton_2<K>::Vertex_handle vertex;
+	CGAL::Straight_skeleton_2<K>::Halfedge_handle halfedge;
 
 	skeletonPoint () {}
 
-	skeletonPoint (int _path, CGAL::Straight_skeleton_2<Arr_Kernel>::Vertex_handle _vertex) {
+	skeletonPoint (int _path, CGAL::Straight_skeleton_2<K>::Vertex_handle _vertex) {
 		path = _path;
 		vertex = _vertex;
 		point = _vertex->point();
 		halfedge = nullptr;
 	}
 
-	skeletonPoint (int _path, CGAL::Straight_skeleton_2<Arr_Kernel>::Halfedge_handle _halfedge, Arr_Kernel::Point_2 _point) {
+	skeletonPoint (int _path, CGAL::Straight_skeleton_2<K>::Halfedge_handle _halfedge, K::Point_2 _point) {
 		path = _path;
 		halfedge = _halfedge;
 		point = _point;
@@ -1241,7 +1245,7 @@ struct skeletonPoint {
 	}
 };
 
-std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<Arr_Kernel>>> &medial_axes, const Raster &raster) {
+std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> &medial_axes, const Raster &raster) {
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool has_label;
@@ -1269,7 +1273,7 @@ std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &
 						if (point1->is_skeleton()) {
 							skeletonPoint source(path1, point1);
 							skeletonPoint nearest;
-							Arr_Kernel::FT min_distance = -1;
+							K::FT min_distance = -1;
 
 							for (auto point2: medial_axes.at(path2)->vertex_handles()) {
 								if (point2->is_skeleton()) {
@@ -1284,8 +1288,8 @@ std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &
 									if(edge2->is_inner_bisector() && edge2->opposite()->is_inner_bisector()) {
 										auto target = edge2->vertex()->point();
 										auto source = edge2->opposite()->vertex()->point();
-										auto proj = Arr_Kernel::Line_2(source, target).projection(point1->point());
-										if (Arr_Kernel::Segment_2(source, target).collinear_has_on(proj)) {
+										auto proj = K::Line_2(source, target).projection(point1->point());
+										if (K::Segment_2(source, target).collinear_has_on(proj)) {
 											if (CGAL::squared_distance(point1->point(), proj) < min_distance) {
 												min_distance = CGAL::squared_distance(point1->point(), proj);
 												nearest = skeletonPoint(path2, edge2, proj);
@@ -1303,7 +1307,7 @@ std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &
 						if (point2->is_skeleton()) {
 							skeletonPoint source(path2, point2);
 							skeletonPoint nearest;
-							Arr_Kernel::FT min_distance = -1;
+							K::FT min_distance = -1;
 
 							for (auto point1: medial_axes.at(path1)->vertex_handles()) {
 								if (point1->is_skeleton()) {
@@ -1318,8 +1322,8 @@ std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &
 									if(edge1->is_inner_bisector() && edge1->opposite()->is_inner_bisector()) {
 										auto target = edge1->vertex()->point();
 										auto source = edge1->opposite()->vertex()->point();
-										auto proj = Arr_Kernel::Line_2(source, target).projection(point2->point());
-										if (Arr_Kernel::Segment_2(source, target).collinear_has_on(proj)) {
+										auto proj = K::Line_2(source, target).projection(point2->point());
+										if (K::Segment_2(source, target).collinear_has_on(proj)) {
 											if (CGAL::squared_distance(point2->point(), proj) < min_distance) {
 												min_distance = CGAL::squared_distance(point2->point(), proj);
 												nearest = skeletonPoint(path1, edge1, proj);
@@ -1336,7 +1340,7 @@ std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &
 					for (auto points1: nearests1) {
 						if (nearests2.count(points1.second) == 0) {
 							skeletonPoint nearest = points1.first;
-							Arr_Kernel::FT min_distance = CGAL::squared_distance(points1.first.point, points1.second.point);
+							K::FT min_distance = CGAL::squared_distance(points1.first.point, points1.second.point);
 
 							for (auto point1: medial_axes.at(path1)->vertex_handles()) {
 								if (point1->is_skeleton()) {
@@ -1351,8 +1355,8 @@ std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &
 									if(edge1->is_inner_bisector() && edge1->opposite()->is_inner_bisector()) {
 										auto target = edge1->vertex()->point();
 										auto source = edge1->opposite()->vertex()->point();
-										auto proj = Arr_Kernel::Line_2(source, target).projection(points1.second.point);
-										if (Arr_Kernel::Segment_2(source, target).collinear_has_on(proj)) {
+										auto proj = K::Line_2(source, target).projection(points1.second.point);
+										if (K::Segment_2(source, target).collinear_has_on(proj)) {
 											if (CGAL::squared_distance(points1.second.point, proj) < min_distance) {
 												min_distance = CGAL::squared_distance(points1.second.point, proj);
 												nearest = skeletonPoint(path1, edge1, proj);
@@ -1371,7 +1375,7 @@ std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &
 					for (auto points2: nearests2) {
 						if (nearests1.count(points2.second) == 0) {
 							skeletonPoint nearest = points2.first;
-							Arr_Kernel::FT min_distance = CGAL::squared_distance(points2.first.point, points2.second.point);
+							K::FT min_distance = CGAL::squared_distance(points2.first.point, points2.second.point);
 
 							for (auto point2: medial_axes.at(path2)->vertex_handles()) {
 								if (point2->is_skeleton()) {
@@ -1386,8 +1390,8 @@ std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &
 									if(edge2->is_inner_bisector() && edge2->opposite()->is_inner_bisector()) {
 										auto target = edge2->vertex()->point();
 										auto source = edge2->opposite()->vertex()->point();
-										auto proj = Arr_Kernel::Line_2(source, target).projection(points2.second.point);
-										if (Arr_Kernel::Segment_2(source, target).collinear_has_on(proj)) {
+										auto proj = K::Line_2(source, target).projection(points2.second.point);
+										if (K::Segment_2(source, target).collinear_has_on(proj)) {
 											if (CGAL::squared_distance(points2.second.point, proj) < min_distance) {
 												min_distance = CGAL::squared_distance(points2.second.point, proj);
 												nearest = skeletonPoint(path2, edge2, proj);
@@ -1505,7 +1509,7 @@ std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &
 						if (point1->is_skeleton()) {
 							skeletonPoint source(path1, point1);
 							skeletonPoint nearest;
-							Arr_Kernel::FT min_distance = -1;
+							K::FT min_distance = -1;
 							bool nearest_point = false;
 
 							auto he = point1->halfedge_around_vertex_begin();
@@ -1533,8 +1537,8 @@ std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &
 									if(edge2->is_inner_bisector() && edge2->opposite()->is_inner_bisector()) {
 										auto target = edge2->vertex()->point();
 										auto source = edge2->opposite()->vertex()->point();
-										auto proj = Arr_Kernel::Line_2(source, target).projection(point1->point());
-										if (Arr_Kernel::Segment_2(source, target).collinear_has_on(proj)) {
+										auto proj = K::Line_2(source, target).projection(point1->point());
+										if (K::Segment_2(source, target).collinear_has_on(proj)) {
 											if (CGAL::squared_distance(point1->point(), proj) < min_distance) {
 												min_distance = CGAL::squared_distance(point1->point(), proj);
 												nearest = skeletonPoint(path2, edge2, proj);
