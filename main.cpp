@@ -31,6 +31,7 @@
 #include <CGAL/Polyline_simplification_2/simplify.h>
 #include <CGAL/create_straight_skeleton_from_polygon_with_holes_2.h>
 #include <CGAL/Straight_skeleton_converter_2.h>
+#include <CGAL/Polygon_mesh_processing/locate.h>
 
 #include "label.cpp"
 
@@ -39,13 +40,14 @@ typedef K::Point_2                                          Point_2;
 typedef K::Point_3                                          Point_3;
 typedef CGAL::Surface_mesh<Point_3>                         Surface_mesh;
 typedef CGAL::Polygon_2<K>                                  Polygon;
-typedef CGAL::Polygon_with_holes_2<K>                       Polygon_with_holes;
 
 namespace SMS = CGAL::Surface_mesh_simplification;
 
 typedef CGAL::Exact_predicates_inexact_constructions_kernel Exact_predicates_kernel;
 typedef CGAL::Arr_segment_traits_2<Exact_predicates_kernel> Traits_2;
 typedef CGAL::Arrangement_2<Traits_2>                       Arrangement_2;
+
+namespace PMP = CGAL::Polygon_mesh_processing;
 
 class Raster {
 	public:
@@ -1694,15 +1696,15 @@ std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &
 }
 
 void add_road(
-		std::list<std::pair<Arr_Kernel::Vector_2, Arr_Kernel::FT>> &roads,
-		CGAL::Straight_skeleton_2<Arr_Kernel>::Vertex_handle vertex,
-		CGAL::Straight_skeleton_2<Arr_Kernel>::Vertex_handle previous_vertex) {
+		std::list<std::pair<K::Vector_2, K::FT>> &roads,
+		CGAL::Straight_skeleton_2<K>::Vertex_handle vertex,
+		CGAL::Straight_skeleton_2<K>::Vertex_handle previous_vertex) {
 	auto he = vertex->halfedge_around_vertex_begin();
 	do {
 		auto vertex2 = (*he)->opposite()->vertex();
 		if (vertex2->is_skeleton() && vertex2 != previous_vertex) {
 			if (abs(vertex2->time() - vertex->time()) / sqrt(CGAL::squared_distance(vertex->point(), vertex2->point())) < 0.1) {
-				roads.push_back(std::pair<Arr_Kernel::Vector_2, Arr_Kernel::FT>(Arr_Kernel::Vector_2(vertex2->point(), vertex->point()), vertex2->time() + vertex->time()));
+				roads.push_back(std::pair<K::Vector_2, K::FT>(K::Vector_2(vertex2->point(), vertex->point()), vertex2->time() + vertex->time()));
 			} else {
 				add_road(roads, vertex2, vertex);
 			}
@@ -1711,11 +1713,11 @@ void add_road(
 
 }
 
-Arr_Kernel::FT diameter (std::pair<skeletonPoint,skeletonPoint> link, const Raster &raster) {
-	Arr_Kernel::Vector_2 vector(link.first.point, link.second.point);
+std::pair<K::FT, K::FT> road_width (std::pair<skeletonPoint,skeletonPoint> link) {
+	K::Vector_2 vector(link.first.point, link.second.point);
 
-	std::list<std::pair<Arr_Kernel::Vector_2, Arr_Kernel::FT>> roads1;
-	std::list<std::pair<Arr_Kernel::Vector_2, Arr_Kernel::FT>> roads2;
+	std::list<std::pair<K::Vector_2, K::FT>> roads1;
+	std::list<std::pair<K::Vector_2, K::FT>> roads2;
 
 	if (link.first.vertex != nullptr) {
 		add_road(roads1, link.first.vertex, nullptr);
@@ -1723,7 +1725,7 @@ Arr_Kernel::FT diameter (std::pair<skeletonPoint,skeletonPoint> link, const Rast
 		add_road(roads1, link.first.halfedge->vertex(), link.first.halfedge->opposite()->vertex());
 		add_road(roads1, link.first.halfedge->opposite()->vertex(), link.first.halfedge->vertex());
 		if (abs(link.first.halfedge->opposite()->vertex()->time() - link.first.halfedge->vertex()->time()) / sqrt(CGAL::squared_distance(link.first.halfedge->vertex()->point(), link.first.halfedge->opposite()->vertex()->point())) < 0.1) {
-			roads1.push_back(std::pair<Arr_Kernel::Vector_2, Arr_Kernel::FT>(Arr_Kernel::Vector_2(link.first.halfedge->opposite()->vertex()->point(), link.first.halfedge->vertex()->point()), link.first.halfedge->opposite()->vertex()->time() + link.first.halfedge->vertex()->time()));
+			roads1.push_back(std::pair<K::Vector_2, K::FT>(K::Vector_2(link.first.halfedge->opposite()->vertex()->point(), link.first.halfedge->vertex()->point()), link.first.halfedge->opposite()->vertex()->time() + link.first.halfedge->vertex()->time()));
 		}
 	}
 
@@ -1733,28 +1735,116 @@ Arr_Kernel::FT diameter (std::pair<skeletonPoint,skeletonPoint> link, const Rast
 		add_road(roads2, link.second.halfedge->vertex(), link.second.halfedge->opposite()->vertex());
 		add_road(roads2, link.second.halfedge->opposite()->vertex(), link.second.halfedge->vertex());
 		if (abs(link.second.halfedge->opposite()->vertex()->time() - link.second.halfedge->vertex()->time()) / sqrt(CGAL::squared_distance(link.second.halfedge->vertex()->point(), link.second.halfedge->opposite()->vertex()->point())) < 0.1) {
-			roads2.push_back(std::pair<Arr_Kernel::Vector_2, Arr_Kernel::FT>(Arr_Kernel::Vector_2(link.second.halfedge->opposite()->vertex()->point(), link.second.halfedge->vertex()->point()), link.second.halfedge->opposite()->vertex()->time() + link.second.halfedge->vertex()->time()));
+			roads2.push_back(std::pair<K::Vector_2, K::FT>(K::Vector_2(link.second.halfedge->opposite()->vertex()->point(), link.second.halfedge->vertex()->point()), link.second.halfedge->opposite()->vertex()->time() + link.second.halfedge->vertex()->time()));
 		}
 	}
 
-	Arr_Kernel::FT diameter = 0;
-	Arr_Kernel::FT sum = 0;
-
+	K::FT road_width1 = 0;
+	K::FT sum1 = 0;
 	for (auto road: roads1) {
 		auto angle = abs(CGAL::scalar_product(road.first, vector) / sqrt(road.first.squared_length()));
-		diameter += road.second * angle;
-		sum += angle;
+		road_width1 += road.second * angle;
+		sum1 += angle;
 	}
 
+	K::FT road_width2 = 0;
+	K::FT sum2 = 0;
 	for (auto road: roads2) {
 		auto angle = abs(CGAL::scalar_product(road.first, vector) / sqrt(road.first.squared_length()));
-		diameter += road.second * angle;
-		sum += angle;
+		road_width2 += road.second * angle;
+		sum2 += angle;
 	}
 
-	return diameter/sum;
+	return std::pair<K::FT, K::FT>(road_width1/sum1, road_width2/sum2);
 
 }
+
+
+void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &mesh, const Raster &raster) {
+	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
+	bool has_path;
+	boost::tie(path, has_path) = mesh.property_map<Surface_mesh::Face_index, int>("path");
+	assert(has_path);
+
+	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
+	bool has_label;
+	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+	assert(has_label);
+
+	typedef CGAL::Face_filtered_graph<Surface_mesh> Filtered_graph;
+	Filtered_graph filtered_sm1(mesh, link.first.path, path);
+	Filtered_graph filtered_sm2(mesh, link.second.path, path);
+
+	typedef CGAL::dynamic_vertex_property_t<Point_2>               Point_2_property;
+	auto projection_pmap = CGAL::get(Point_2_property(), mesh);
+	
+	for(auto v : CGAL::vertices(mesh)) {
+		const Point_3& p = mesh.point(v);
+		put(projection_pmap, v, Point_2(p.x(), p.y()));
+	}
+
+	auto location1 = PMP::locate(link.first.point, filtered_sm1, CGAL::parameters::vertex_point_map(projection_pmap));
+	auto location2 = PMP::locate(link.second.point, filtered_sm2, CGAL::parameters::vertex_point_map(projection_pmap));
+	
+	K::Vector_2 link_vector(link.first.point, link.second.point);
+	auto left = link_vector.perpendicular(CGAL::CLOCKWISE);
+
+	left /= sqrt(left.squared_length());
+
+	auto width = road_width(link);
+
+	Point_2 left1 = link.first.point + left*width.first/2;
+	Point_2 right1 = link.first.point - left*width.first/2;
+	Point_2 left2 = link.second.point + left*width.second/2;
+	Point_2 right2 = link.second.point - left*width.second/2;
+
+	auto point1 = PMP::construct_point(location1, mesh);
+	auto point2 = PMP::construct_point(location2, mesh);
+
+	{ // Skeleton
+		Surface_mesh skeleton;
+
+		auto v1 = skeleton.add_vertex(point1);
+		auto v2 = skeleton.add_vertex(point2);
+		skeleton.add_edge(v1, v2);
+
+		v1 = skeleton.add_vertex(Point_3(left1.x(), left1.y(), point1.z()));
+		v2 = skeleton.add_vertex(Point_3(left2.x(), left2.y(), point2.z()));
+		skeleton.add_edge(v1, v2);
+
+		v1 = skeleton.add_vertex(Point_3(right1.x(), right1.y(), point1.z()));
+		v2 = skeleton.add_vertex(Point_3(right2.x(), right2.y(), point2.z()));
+		skeleton.add_edge(v1, v2);
+
+		Surface_mesh::Property_map<Surface_mesh::Edge_index, int> edge_prop;
+		bool created;
+		boost::tie(edge_prop, created) = skeleton.add_property_map<Surface_mesh::Edge_index, int>("prop",0);
+		assert(created);
+
+		double min_x, min_y;
+		raster.grid_to_coord(0, 0, min_x, min_y);
+
+		for(auto vertex : skeleton.vertices()) {
+			auto point = skeleton.point(vertex);
+			double x, y;
+			raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
+			skeleton.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
+		}
+
+		std::cout << location1.first << "\n";
+		std::cout << ((int) label[location1.first]) << "\n";
+		std::cout << location2.first << "\n";
+		std::cout << ((int) label[location2.first]) << "\n";
+
+		std::stringstream skeleton_name;
+		skeleton_name << "bridge_" << ((int) label[location1.first]) << "_" << link.first.path << "_" << link.second.path << ".ply";
+		std::ofstream mesh_ofile (skeleton_name.str().c_str());
+		CGAL::IO::write_PLY (mesh_ofile, skeleton);
+		mesh_ofile.close();
+	}
+
+}
+
 
 int main(int argc, char **argv) {
 	int opt;
@@ -1872,12 +1962,12 @@ int main(int argc, char **argv) {
 	std::vector<std::list<Surface_mesh::Face_index>> paths = compute_path(mesh);
 	save_mesh(mesh, raster, "final-mesh-with-path.ply");
 
-	std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<Arr_Kernel>>> medial_axes = compute_medial_axes(mesh, paths, raster);
+	std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> medial_axes = compute_medial_axes(mesh, paths, raster);
 
 	std::set<std::pair<skeletonPoint,skeletonPoint>> links = link_paths(mesh, paths, medial_axes, raster);
 
 	for (auto link: links) {
-		std::cout << diameter(link, raster) << "\n";
+		bridge(link, mesh, raster);
 	}
 
 	return EXIT_SUCCESS;
