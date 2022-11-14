@@ -1237,10 +1237,15 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_ax
 
 }
 
+/// A point on a skeleton
 struct skeletonPoint {
+	/// The skeleton id
 	int path;
+	/// The point coordinate
 	Point_2 point;
+	/// A handle to the vertex if the point is a vertex
 	CGAL::Straight_skeleton_2<K>::Vertex_handle vertex;
+	/// Or a handle to the edge otherwise
 	CGAL::Straight_skeleton_2<K>::Halfedge_handle halfedge;
 
 	skeletonPoint () {}
@@ -1260,11 +1265,12 @@ struct skeletonPoint {
 	}
 
 	friend bool operator<(const skeletonPoint& l, const skeletonPoint& r) {
-		return l.point < r.point;
+		if (l.path == r.path) return l.point < r.point;
+		return l.path < r.path;
 	}
 
 	friend bool operator==(const skeletonPoint& l, const skeletonPoint& r) {
-		return l.point == r.point;
+		return (l.path == r.path && l.point == r.point);
 	}
 };
 
