@@ -951,17 +951,13 @@ void change_vertical_faces(Surface_mesh &mesh, const Raster &raster) {
 			}
 
 			if (new_label[face] != 4 && new_label[face] != 5) {
-				remove_face.push_back(face);
+				new_label[face] = 0;
 			}
 		}
 	}
 
 	for (auto &face_label: new_label) {
 		label[face_label.first] = face_label.second;
-	}
-
-	for(auto &face: remove_face) {
-		CGAL::Euler::remove_face(mesh.halfedge(face), mesh);
 	}
 
 }
