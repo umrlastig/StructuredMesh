@@ -1274,8 +1274,9 @@ struct skeletonPoint {
 	}
 };
 
-std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> &medial_axes, const Raster &raster) {
+std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> &medial_axes, const Raster &raster) {
 
+	// Get label property
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool has_label;
 	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
@@ -1284,8 +1285,8 @@ std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &
 	std::set<std::pair<skeletonPoint,skeletonPoint>> result;
 
 	for (int selected_label:  {3, 8, 9}) {
+		// List path with selected label
 		std::list<int> same_label_paths;
-
 		for (int i = 0; i < paths.size(); i++) {
 			if (label[paths[i].front()] == selected_label && medial_axes.count(i) == 1) {
 				same_label_paths.push_back(i);
@@ -1295,7 +1296,157 @@ std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &
 		for (int path1: same_label_paths) {
 			for (int path2: same_label_paths) {
 				if (path1 < path2) {
-					std::map<skeletonPoint, skeletonPoint> nearests1, nearests2;
+
+					std::map<std::pair<CGAL::Straight_skeleton_2<K>::Vertex_handle, CGAL::Straight_skeleton_2<K>::Vertex_handle>, K::FT> distance_v1v2;
+					std::map<std::pair<CGAL::Straight_skeleton_2<K>::Vertex_handle, CGAL::Straight_skeleton_2<K>::Halfedge_handle>, std::pair<K::FT, K::Point_2>> distance_v1h2;
+					std::map<std::pair<CGAL::Straight_skeleton_2<K>::Vertex_handle, CGAL::Straight_skeleton_2<K>::Halfedge_handle>, std::pair<K::FT, K::Point_2>> distance_v2h1;
+
+					// For vertices pairs
+					for (auto v1: medial_axes.at(path1)->vertex_handles()) {
+						if (v1->is_skeleton()) {
+							for (auto v2: medial_axes.at(path2)->vertex_handles()) {
+								if (v2->is_skeleton()) {
+									distance_v1v2[std::make_pair(v1, v2)] = CGAL::squared_distance(v1->point(), v2->point());
+								}
+							}
+						}
+					}
+
+					// For vertex on path1 and edge on path2
+					for (auto v1: medial_axes.at(path1)->vertex_handles()) {
+						if (v1->is_skeleton()) {
+							for (auto edge2: medial_axes.at(path2)->halfedge_handles()) {
+								if (edge2->vertex()->id() < edge2->opposite()->vertex()->id() && edge2->is_inner_bisector() && edge2->opposite()->is_inner_bisector()) {
+									auto segment = K::Segment_2(edge2->opposite()->vertex()->point(), edge2->vertex()->point());
+									auto proj = segment.supporting_line().projection(v1->point());
+									if (segment.collinear_has_on(proj)) {
+										distance_v1h2[std::make_pair(v1, edge2)] = std::make_pair(CGAL::squared_distance(v1->point(), proj), proj);
+									}
+								}
+							}
+						}
+					}
+
+					// For vertex on path2 and edge on path1
+					for (auto v2: medial_axes.at(path2)->vertex_handles()) {
+						if (v2->is_skeleton()) {
+							for (auto edge1: medial_axes.at(path1)->halfedge_handles()) {
+								if (edge1->vertex()->id() < edge1->opposite()->vertex()->id() && edge1->is_inner_bisector() && edge1->opposite()->is_inner_bisector()) {
+									auto segment = K::Segment_2(edge1->opposite()->vertex()->point(), edge1->vertex()->point());
+									auto proj = segment.supporting_line().projection(v2->point());
+									if (segment.collinear_has_on(proj)) {
+										distance_v2h1[std::make_pair(v2, edge1)] = std::make_pair(CGAL::squared_distance(v2->point(), proj), proj);
+									}
+								}
+							}
+						}
+					}
+
+					// For vertices pairs
+					for (auto it = distance_v1v2.begin(); it != distance_v1v2.end(); ++it) {
+						auto v1 = it->first.first;
+						auto v2 = it->first.second;
+						auto d = it->second;
+
+						auto he = v1->halfedge_around_vertex_begin();
+						do {
+							auto v = (*he)->opposite()->vertex();
+							if (v->is_skeleton()) {
+								if (distance_v1v2[std::make_pair(v, v2)] < d) {
+									goto exit1;
+								}
+								if ((*he)->vertex()->id() < (*he)->opposite()->vertex()->id()) {
+									if (distance_v2h1.count(std::make_pair(v2, *he)) > 0 && distance_v2h1[std::make_pair(v2, *he)].first < d) {
+										goto exit1;
+									}
+								} else {
+									if (distance_v2h1.count(std::make_pair(v2, (*he)->opposite())) > 0 && distance_v2h1[std::make_pair(v2, (*he)->opposite())].first < d) {
+										goto exit1;
+									}
+								}
+							}
+						} while (++he != v1->halfedge_around_vertex_begin());
+
+						he = v2->halfedge_around_vertex_begin();
+						do {
+							auto v = (*he)->opposite()->vertex();
+							if (v->is_skeleton()) {
+								if (distance_v1v2[std::make_pair(v1, v)] < d) {
+									goto exit1;
+								}
+								if ((*he)->vertex()->id() < (*he)->opposite()->vertex()->id()) {
+									if (distance_v1h2.count(std::make_pair(v1, *he)) > 0 && distance_v1h2[std::make_pair(v1, *he)].first < d) {
+										goto exit1;
+									}
+								} else {
+									if (distance_v1h2.count(std::make_pair(v1, (*he)->opposite())) > 0 && distance_v1h2[std::make_pair(v1, (*he)->opposite())].first < d) {
+										goto exit1;
+									}
+								}
+							}
+						} while (++he != v2->halfedge_around_vertex_begin());
+
+						result.insert(std::make_pair(skeletonPoint(path1, v1), skeletonPoint(path2, v2)));
+						exit1:
+							continue;
+					}
+
+					// For vertex on path1 and edge on path2
+					for (auto it = distance_v1h2.begin(); it != distance_v1h2.end(); ++it) {
+						auto v1 = it->first.first;
+						auto e2 = it->first.second;
+						auto d = it->second.first;
+						auto p2 = it->second.second;
+									
+						auto he = v1->halfedge_around_vertex_begin();
+						do {
+							auto v = (*he)->opposite()->vertex();
+							if (v->is_skeleton()) {
+								if (CGAL::squared_distance(v->point(), p2) < d) {
+									goto exit2;
+								}
+								auto segment = K::Segment_2((*he)->opposite()->vertex()->point(), (*he)->vertex()->point());
+								auto proj = segment.supporting_line().projection(p2);
+								if (segment.collinear_has_on(proj)) {
+									goto exit2;
+								}
+							}
+						} while (++he != v1->halfedge_around_vertex_begin());
+
+						result.insert(std::make_pair(skeletonPoint(path1, v1), skeletonPoint(path2, e2, p2)));
+						exit2:
+							continue;
+					}
+
+					// For vertex on path2 and edge on path1
+					for (auto it = distance_v2h1.begin(); it != distance_v2h1.end(); ++it) {
+						auto v2 = it->first.first;
+						auto e1 = it->first.second;
+						auto d = it->second.first;
+						auto p1 = it->second.second;
+									
+						auto he = v2->halfedge_around_vertex_begin();
+						do {
+							auto v = (*he)->opposite()->vertex();
+							if (v->is_skeleton()) {
+								if (CGAL::squared_distance(v->point(), p1) < d) {
+									goto exit3;
+								}
+								auto segment = K::Segment_2((*he)->opposite()->vertex()->point(), (*he)->vertex()->point());
+								auto proj = segment.supporting_line().projection(p1);
+								if (segment.collinear_has_on(proj)) {
+									goto exit3;
+								}
+							}	
+						} while (++he != v2->halfedge_around_vertex_begin());
+
+						result.insert(std::make_pair(skeletonPoint(path2, v2), skeletonPoint(path1, e1, p1)));
+						exit3:
+							continue;
+					}
+
+
+					/*std::map<skeletonPoint, skeletonPoint> nearests1, nearests2;
 
 					//for each vertex of path1 compute nearest point on path2
 					for (auto point1: medial_axes.at(path1)->vertex_handles()) {
@@ -1528,10 +1679,149 @@ std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &
 								}
 							}
 						}
-					}
+					}*/
 
 				} else if (path1 == path2) {
-					std::map<skeletonPoint, skeletonPoint> nearests1;
+
+					std::map<std::pair<CGAL::Straight_skeleton_2<K>::Vertex_handle, CGAL::Straight_skeleton_2<K>::Vertex_handle>, K::FT> distance_vv;
+					std::map<std::pair<CGAL::Straight_skeleton_2<K>::Vertex_handle, CGAL::Straight_skeleton_2<K>::Halfedge_handle>, std::pair<K::FT, K::Point_2>> distance_vh;
+
+					for (auto v1: medial_axes.at(path1)->vertex_handles()) {
+						if (v1->is_skeleton()) {
+							// For vertices pairs
+							for (auto v2: medial_axes.at(path1)->vertex_handles()) {
+								if (v2->is_skeleton()) {
+									distance_vv[std::make_pair(v1, v2)] = CGAL::squared_distance(v1->point(), v2->point());
+								}
+							}
+							// For vertex and edge
+							for (auto edge2: medial_axes.at(path1)->halfedge_handles()) {
+								if (edge2->vertex()->id() < edge2->opposite()->vertex()->id() && edge2->is_inner_bisector() && edge2->opposite()->is_inner_bisector()) {
+									auto segment = K::Segment_2(edge2->opposite()->vertex()->point(), edge2->vertex()->point());
+									auto proj = segment.supporting_line().projection(v1->point());
+									if (segment.collinear_has_on(proj)) {
+										distance_vh[std::make_pair(v1, edge2)] = std::make_pair(CGAL::squared_distance(v1->point(), proj), proj);
+									}
+								}
+							}
+						}
+					}
+
+					// For vertices pairs
+					for (auto it = distance_vv.begin(); it != distance_vv.end(); ++it) {
+						auto v1 = it->first.first;
+						auto v2 = it->first.second;
+						auto d = it->second;
+
+						if (v1->id() == v2->id()) continue;
+
+						// Exit link
+						Exact_predicates_kernel::Segment_2 segment(Exact_predicates_kernel::Point_2(v1->point().x(), v1->point().y()), Exact_predicates_kernel::Point_2(v2->point().x(), v2->point().y()));
+						bool intersect = false;
+						for (auto edge = path_polygon.at(path1).outer_boundary().edges_begin(); !intersect && edge != path_polygon.at(path1).outer_boundary().edges_end(); edge++) {
+							if (CGAL::do_intersect(*edge, segment)) {
+								intersect = true;
+							}
+						}
+						for (auto hole: path_polygon.at(path1).holes()) {
+							for (auto edge = hole.edges_begin(); !intersect && edge != hole.edges_end(); edge++) {
+								if (CGAL::do_intersect(*edge, segment)) {
+									intersect = true;
+								}
+							}
+						}
+						if (!intersect) continue;
+
+						auto he = v1->halfedge_around_vertex_begin();
+						do {
+							auto v = (*he)->opposite()->vertex();
+							if (v->is_skeleton()) {
+								if (distance_vv[std::make_pair(v, v2)] < d) {
+									goto exit4;
+								}
+								if ((*he)->vertex()->id() < (*he)->opposite()->vertex()->id()) {
+									if (distance_vh.count(std::make_pair(v2, *he)) > 0 && distance_vh[std::make_pair(v2, *he)].first < d) {
+										goto exit4;
+									}
+								} else {
+									if (distance_vh.count(std::make_pair(v2, (*he)->opposite())) > 0 && distance_vh[std::make_pair(v2, (*he)->opposite())].first < d) {
+										goto exit4;
+									}
+								}
+							}
+						} while (++he != v1->halfedge_around_vertex_begin());
+
+						he = v2->halfedge_around_vertex_begin();
+						do {
+							auto v = (*he)->opposite()->vertex();
+							if (v->is_skeleton()) {
+								if (distance_vv[std::make_pair(v1, v)] < d) {
+									goto exit4;
+								}
+								if ((*he)->vertex()->id() < (*he)->opposite()->vertex()->id()) {
+									if (distance_vh.count(std::make_pair(v1, *he)) > 0 && distance_vh[std::make_pair(v1, *he)].first < d) {
+										goto exit4;
+									}
+								} else {
+									if (distance_vh.count(std::make_pair(v1, (*he)->opposite())) > 0 && distance_vh[std::make_pair(v1, (*he)->opposite())].first < d) {
+										goto exit4;
+									}
+								}
+							}
+						} while (++he != v2->halfedge_around_vertex_begin());
+
+						result.insert(std::make_pair(skeletonPoint(path1, v1), skeletonPoint(path1, v2)));
+						exit4:
+							continue;
+					}
+
+					// For vertex on path1 and edge on path2
+					for (auto it = distance_vh.begin(); it != distance_vh.end(); ++it) {
+						auto v1 = it->first.first;
+						auto e2 = it->first.second;
+						auto d = it->second.first;
+						auto p2 = it->second.second;
+
+						if (v1->id() == e2->vertex()->id() || v1->id() == e2->opposite()->vertex()->id()) continue;
+
+						// Exit link
+						Exact_predicates_kernel::Segment_2 segment(Exact_predicates_kernel::Point_2(v1->point().x(), v1->point().y()), Exact_predicates_kernel::Point_2(p2.x(), p2.y()));
+						bool intersect = false;
+						for (auto edge = path_polygon.at(path1).outer_boundary().edges_begin(); !intersect && edge != path_polygon.at(path1).outer_boundary().edges_end(); edge++) {
+							if (CGAL::do_intersect(*edge, segment)) {
+								intersect = true;
+							}
+						}
+						for (auto hole: path_polygon.at(path1).holes()) {
+							for (auto edge = hole.edges_begin(); !intersect && edge != hole.edges_end(); edge++) {
+								if (CGAL::do_intersect(*edge, segment)) {
+									intersect = true;
+								}
+							}
+						}
+						if (!intersect) continue;
+									
+						auto he = v1->halfedge_around_vertex_begin();
+						do {
+							auto v = (*he)->opposite()->vertex();
+							if (v->is_skeleton()) {
+								if (CGAL::squared_distance(v->point(), p2) < d) {
+									goto exit5;
+								}
+								auto segment = K::Segment_2((*he)->opposite()->vertex()->point(), (*he)->vertex()->point());
+								auto proj = segment.supporting_line().projection(p2);
+								if (segment.collinear_has_on(proj)) {
+									goto exit5;
+								}
+							}
+						} while (++he != v1->halfedge_around_vertex_begin());
+
+						result.insert(std::make_pair(skeletonPoint(path1, v1), skeletonPoint(path1, e2, p2)));
+						exit5:
+							continue;
+					}
+
+					/*std::map<skeletonPoint, skeletonPoint> nearests1;
 
 					//for each vertex of path1 compute nearest point on path2
 					for (auto point1: medial_axes.at(path1)->vertex_handles()) {
@@ -1683,7 +1973,7 @@ std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &
 								result.insert(std::pair<skeletonPoint,skeletonPoint>(points1.first, points1.second));
 							}
 						}
-					}
+					}*/
 				}
 			}
 		}
@@ -2006,7 +2296,7 @@ int main(int argc, char **argv) {
 	std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> path_polygon = compute_path_polygon(mesh, paths, raster);
 	std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> medial_axes = compute_medial_axes(mesh, paths, path_polygon, raster);
 
-	std::set<std::pair<skeletonPoint,skeletonPoint>> links = link_paths(mesh, paths, medial_axes, raster);
+	std::set<std::pair<skeletonPoint,skeletonPoint>> links = link_paths(mesh, paths, path_polygon, medial_axes, raster);
 
 	for (auto link: links) {
 		bridge(link, mesh, raster);
