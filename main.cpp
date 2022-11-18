@@ -1701,6 +1701,58 @@ std::pair<K::FT, K::FT> road_width (std::pair<skeletonPoint,skeletonPoint> link)
 }
 
 
+typedef std::pair<Surface_mesh::Halfedge_index, std::array<K::FT, 2>> Halfedge_location;
+
+
+Halfedge_location point_on_path_border(const Surface_mesh &mesh, Surface_mesh::Face_index face, K::Segment_2 segment) {
+	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
+	bool has_path;
+	boost::tie(path, has_path) = mesh.property_map<Surface_mesh::Face_index, int>("path");
+	assert(has_path);
+
+	typedef CGAL::Face_filtered_graph<Surface_mesh> Filtered_graph;
+	Filtered_graph filtered_mesh(mesh, path[face], path);
+
+	auto he = CGAL::halfedge(face, filtered_mesh);
+	auto source = mesh.point(CGAL::source(he, filtered_mesh));
+	auto target = mesh.point(CGAL::target(he, filtered_mesh));
+	while(! CGAL::do_intersect(segment, K::Segment_2(Point_2(source.x(), source.y()), Point_2(target.x(), target.y()))) && he != CGAL::prev(CGAL::halfedge(face, filtered_mesh), filtered_mesh)) {
+		he = CGAL::next(he, mesh);
+		source = mesh.point(CGAL::source(he, mesh));
+		target = mesh.point(CGAL::target(he, mesh));
+	}
+	if (! CGAL::do_intersect(segment, K::Segment_2(Point_2(source.x(), source.y()), Point_2(target.x(), target.y())))) {
+		return Halfedge_location(Surface_mesh::null_halfedge(), {0,0});
+	}
+	while(face != Surface_mesh::null_face()) {
+		he = CGAL::next(CGAL::opposite(he, filtered_mesh), filtered_mesh);
+		source = mesh.point(CGAL::source(he, filtered_mesh));
+		target = mesh.point(CGAL::target(he, filtered_mesh));
+		if (! CGAL::do_intersect(segment, K::Segment_2(Point_2(source.x(), source.y()), Point_2(target.x(), target.y())))) {
+			he = CGAL::next(he, filtered_mesh);
+			source = mesh.point(CGAL::source(he, filtered_mesh));
+			target = mesh.point(CGAL::target(he, filtered_mesh));
+		}
+		if (! CGAL::do_intersect(segment, K::Segment_2(Point_2(source.x(), source.y()), Point_2(target.x(), target.y())))) {
+			return Halfedge_location(Surface_mesh::null_halfedge(), {0,0});
+		}
+		face = CGAL::face(he, filtered_mesh);
+	}
+	auto result = CGAL::intersection(segment, K::Segment_2(Point_2(source.x(), source.y()), Point_2(target.x(), target.y())));
+	assert(result);
+	if (const K::Segment_2* s = boost::get<K::Segment_2>(&*result)) {
+		if (CGAL::squared_distance(Point_2(source.x(), source.y()), segment.source()) < CGAL::squared_distance(Point_2(target.x(), target.y()), segment.source())) {
+			return Halfedge_location(he, {1, 0});
+		} else {
+			return Halfedge_location(he, {0, 1});
+		}
+	} else {
+		const Point_2* p = boost::get<Point_2 >(&*result);
+		return Halfedge_location(he, {(target.y() * p->x() - target.x() * p->y())/(source.x()*target.y() - source.y()*target.x()),(- source.y() * p->x() + source.x() * p->y())/(source.x()*target.y() - source.y()*target.x())});
+	}
+}
+
+
 void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &mesh, const Raster &raster) {
 	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
 	bool has_path;
