@@ -1048,7 +1048,7 @@ std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_
 
 		Filtered_graph filtered_sm(mesh, i, path);
 
-		if (filtered_sm.number_of_faces() > 1) {
+		if (filtered_sm.number_of_faces() > 3) {
 
 			int lab = label[*(CGAL::faces(filtered_sm).first)];
 			if (lab == 3 || lab == 8 || lab == 9) {
@@ -1700,11 +1700,9 @@ std::pair<K::FT, K::FT> road_width (std::pair<skeletonPoint,skeletonPoint> link)
 
 }
 
+std::pair<Surface_mesh::Face_index, Point_2> point_on_path_border(const Surface_mesh &mesh, Surface_mesh::Face_index face, std::list<K::Segment_2> segments) {
+	assert(face != Surface_mesh::null_face());
 
-typedef std::pair<Surface_mesh::Halfedge_index, std::array<K::FT, 2>> Halfedge_location;
-
-
-Halfedge_location point_on_path_border(const Surface_mesh &mesh, Surface_mesh::Face_index face, K::Segment_2 segment) {
 	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
 	bool has_path;
 	boost::tie(path, has_path) = mesh.property_map<Surface_mesh::Face_index, int>("path");
@@ -1713,42 +1711,71 @@ Halfedge_location point_on_path_border(const Surface_mesh &mesh, Surface_mesh::F
 	typedef CGAL::Face_filtered_graph<Surface_mesh> Filtered_graph;
 	Filtered_graph filtered_mesh(mesh, path[face], path);
 
+	// find first intersecting edge
+	K::Segment_2 segment;
 	auto he = CGAL::halfedge(face, filtered_mesh);
-	auto source = mesh.point(CGAL::source(he, filtered_mesh));
-	auto target = mesh.point(CGAL::target(he, filtered_mesh));
-	while(! CGAL::do_intersect(segment, K::Segment_2(Point_2(source.x(), source.y()), Point_2(target.x(), target.y()))) && he != CGAL::prev(CGAL::halfedge(face, filtered_mesh), filtered_mesh)) {
-		he = CGAL::next(he, mesh);
-		source = mesh.point(CGAL::source(he, mesh));
-		target = mesh.point(CGAL::target(he, mesh));
+	while (!segments.empty()) {
+		segment = segments.front();
+		segments.pop_front();
+		do {
+			auto source = mesh.point(CGAL::source(he, filtered_mesh));
+			auto target = mesh.point(CGAL::target(he, filtered_mesh));
+			if (CGAL::do_intersect(segment, K::Segment_2(Point_2(source.x(), source.y()), Point_2(target.x(), target.y())))) {
+				goto goto1_point_on_path_border;
+			}
+			he = CGAL::next(he, mesh);
+		} while (he != CGAL::halfedge(face, filtered_mesh));
 	}
-	if (! CGAL::do_intersect(segment, K::Segment_2(Point_2(source.x(), source.y()), Point_2(target.x(), target.y())))) {
-		return Halfedge_location(Surface_mesh::null_halfedge(), {0,0});
-	}
+	return std::make_pair(face, segment.target());
+	goto1_point_on_path_border:
+	face = CGAL::face(CGAL::opposite(he, filtered_mesh), filtered_mesh);
 	while(face != Surface_mesh::null_face()) {
 		he = CGAL::next(CGAL::opposite(he, filtered_mesh), filtered_mesh);
+		auto source = mesh.point(CGAL::source(he, filtered_mesh));
+		auto target = mesh.point(CGAL::target(he, filtered_mesh));
+		if (CGAL::do_intersect(segment, K::Segment_2(Point_2(source.x(), source.y()), Point_2(target.x(), target.y())))) {
+			face = CGAL::face(CGAL::opposite(he, filtered_mesh), filtered_mesh);
+			continue;
+		}
+		he = CGAL::next(he, filtered_mesh);
 		source = mesh.point(CGAL::source(he, filtered_mesh));
 		target = mesh.point(CGAL::target(he, filtered_mesh));
-		if (! CGAL::do_intersect(segment, K::Segment_2(Point_2(source.x(), source.y()), Point_2(target.x(), target.y())))) {
-			he = CGAL::next(he, filtered_mesh);
-			source = mesh.point(CGAL::source(he, filtered_mesh));
-			target = mesh.point(CGAL::target(he, filtered_mesh));
+		if (CGAL::do_intersect(segment, K::Segment_2(Point_2(source.x(), source.y()), Point_2(target.x(), target.y())))) {
+			face = CGAL::face(CGAL::opposite(he, filtered_mesh), filtered_mesh);
+			continue;
 		}
-		if (! CGAL::do_intersect(segment, K::Segment_2(Point_2(source.x(), source.y()), Point_2(target.x(), target.y())))) {
-			return Halfedge_location(Surface_mesh::null_halfedge(), {0,0});
+
+		he = CGAL::halfedge(face, filtered_mesh);
+		while (!segments.empty()) {
+			segment = segments.front();
+			segments.pop_front();
+			do {
+				auto source = mesh.point(CGAL::source(he, filtered_mesh));
+				auto target = mesh.point(CGAL::target(he, filtered_mesh));
+				if (CGAL::do_intersect(segment, K::Segment_2(Point_2(source.x(), source.y()), Point_2(target.x(), target.y())))) {
+					goto goto2_point_on_path_border;
+				}
+				he = CGAL::next(he, mesh);
+			} while (he != CGAL::halfedge(face, filtered_mesh));
 		}
-		face = CGAL::face(he, filtered_mesh);
+		return std::make_pair(face, segment.target());
+		goto2_point_on_path_border:
+		face = CGAL::face(CGAL::opposite(he, filtered_mesh), filtered_mesh);
 	}
+	face = CGAL::face(he, filtered_mesh);
+	auto source = mesh.point(CGAL::source(he, filtered_mesh));
+	auto target = mesh.point(CGAL::target(he, filtered_mesh));
 	auto result = CGAL::intersection(segment, K::Segment_2(Point_2(source.x(), source.y()), Point_2(target.x(), target.y())));
 	assert(result);
 	if (const K::Segment_2* s = boost::get<K::Segment_2>(&*result)) {
 		if (CGAL::squared_distance(Point_2(source.x(), source.y()), segment.source()) < CGAL::squared_distance(Point_2(target.x(), target.y()), segment.source())) {
-			return Halfedge_location(he, {1, 0});
+			return std::make_pair(face, Point_2(source.x(), source.y()));
 		} else {
-			return Halfedge_location(he, {0, 1});
+			return std::make_pair(face, Point_2(target.x(), target.y()));
 		}
 	} else {
 		const Point_2* p = boost::get<Point_2 >(&*result);
-		return Halfedge_location(he, {(target.y() * p->x() - target.x() * p->y())/(source.x()*target.y() - source.y()*target.x()),(- source.y() * p->x() + source.x() * p->y())/(source.x()*target.y() - source.y()*target.x())});
+		return std::make_pair(face, *p);
 	}
 }
 
@@ -1778,7 +1805,7 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 
 	auto location1 = PMP::locate(link.first.point, filtered_sm1, CGAL::parameters::vertex_point_map(projection_pmap));
 	auto location2 = PMP::locate(link.second.point, filtered_sm2, CGAL::parameters::vertex_point_map(projection_pmap));
-	
+
 	K::Vector_2 link_vector(link.first.point, link.second.point);
 	auto left = link_vector.perpendicular(CGAL::CLOCKWISE);
 
@@ -1791,6 +1818,11 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 	Point_2 left2 = link.second.point + left*width.second/2;
 	Point_2 right2 = link.second.point - left*width.second/2;
 
+	auto left1_border = point_on_path_border(mesh, location1.first, {K::Segment_2(link.first.point, left1)});
+	auto right1_border = point_on_path_border(mesh, location1.first, {K::Segment_2(link.first.point, right1)});
+	auto left2_border = point_on_path_border(mesh, location2.first, {K::Segment_2(link.second.point, left2)});
+	auto right2_border = point_on_path_border(mesh, location2.first, {K::Segment_2(link.second.point, right2)});
+
 	auto point1 = PMP::construct_point(location1, mesh);
 	auto point2 = PMP::construct_point(location2, mesh);
 
@@ -1801,11 +1833,19 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 		auto v2 = skeleton.add_vertex(point2);
 		skeleton.add_edge(v1, v2);
 
-		v1 = skeleton.add_vertex(Point_3(left1.x(), left1.y(), point1.z()));
-		v2 = skeleton.add_vertex(Point_3(left2.x(), left2.y(), point2.z()));
+		v1 = skeleton.add_vertex(Point_3(left1_border.second.x(), left1_border.second.y(), point1.z()));
+		v2 = skeleton.add_vertex(Point_3(left2_border.second.x(), left2_border.second.y(), point2.z()));
 		skeleton.add_edge(v1, v2);
 
-		v1 = skeleton.add_vertex(Point_3(right1.x(), right1.y(), point1.z()));
+		v1 = skeleton.add_vertex(Point_3(right1_border.second.x(), right1_border.second.y(), point1.z()));
+		v2 = skeleton.add_vertex(Point_3(right2_border.second.x(), right2_border.second.y(), point2.z()));
+		skeleton.add_edge(v1, v2);
+
+		v1 = skeleton.add_vertex(Point_3(left1.x(), left1.y(), point1.z()));
+		v2 = skeleton.add_vertex(Point_3(right1.x(), right1.y(), point1.z()));
+		skeleton.add_edge(v1, v2);
+
+		v1 = skeleton.add_vertex(Point_3(left2.x(), left2.y(), point2.z()));
 		v2 = skeleton.add_vertex(Point_3(right2.x(), right2.y(), point2.z()));
 		skeleton.add_edge(v1, v2);
 
@@ -1824,13 +1864,8 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 			skeleton.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
 		}
 
-		std::cout << location1.first << "\n";
-		std::cout << ((int) label[location1.first]) << "\n";
-		std::cout << location2.first << "\n";
-		std::cout << ((int) label[location2.first]) << "\n";
-
 		std::stringstream skeleton_name;
-		skeleton_name << "bridge_" << ((int) label[location1.first]) << "_" << link.first.path << "_" << link.second.path << ".ply";
+		skeleton_name << "bridge_" << ((int) label[location1.first]) << "_" << link.first.path << "_" << link.second.path << "_" << link.first.point << "_" << link.second.point << ".ply";
 		std::ofstream mesh_ofile (skeleton_name.str().c_str());
 		CGAL::IO::write_PLY (mesh_ofile, skeleton);
 		mesh_ofile.close();
