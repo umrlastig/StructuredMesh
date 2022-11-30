@@ -1854,7 +1854,9 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 	}
 
 	std::vector<std::vector<float>> z_surface(raster.ySize, std::vector<float>(raster.xSize, -1));
-	std::vector<std::vector<bool>> on_z_surface(raster.ySize, std::vector<bool>(raster.xSize, false));
+	std::vector<std::vector<int>> index_z_surface(raster.ySize, std::vector<int>(raster.xSize, -1));
+
+	std::vector<std::pair<int,int>> pixel_on_z_surface;
 
 	auto bbox = surface.bbox();
 	for (int P = std::max({0.0,bbox.xmin()}); P <= bbox.xmax() && P < raster.xSize; P++) {
@@ -1863,7 +1865,8 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 				float d1 = sqrt(CGAL::squared_distance(Point_2(0.5 + P, 0.5 + L), link.first.point));
 				float d2 = sqrt(CGAL::squared_distance(Point_2(0.5 + P, 0.5 + L), link.second.point));
 				z_surface[L][P] = (1/d1 * point1.z() + 1/d2 * point2.z()) / (1/d1 + 1/d2);
-				on_z_surface[L][P] = true;
+				index_z_surface[L][P] = pixel_on_z_surface.size();
+				pixel_on_z_surface.push_back(std::make_pair(P,L));
 			}
 		}
 	}
@@ -1876,32 +1879,28 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 
 		// Add points
 		std::vector<std::vector<Surface_mesh::Vertex_index>> vertex_index(raster.ySize, std::vector<Surface_mesh::Vertex_index>(raster.xSize, Surface_mesh::Vertex_index()));
-		for (int L = 0; L < raster.ySize; L++) {
-			for (int P = 0; P < raster.xSize; P++) {
-				if (on_z_surface[L][P]) {
-					vertex_index[L][P] = bridge_mesh.add_vertex(Point_3(0.5 + P, 0.5 + L, z_surface[L][P]));
-				}
-			}
+		for(auto pixel: pixel_on_z_surface) {
+			vertex_index[pixel.second][pixel.first] = bridge_mesh.add_vertex(Point_3(0.5 + pixel.first, 0.5 + pixel.second, z_surface[pixel.second][pixel.first]));
 		}
 
 		for (int P = 0; P < raster.xSize; P++) {
-			if (on_z_surface[0][P]) {
+			if (index_z_surface[0][P] > -1) {
 				triangulation2mesh[triangulation.insert(Point_2(0.5 + P, 0.5))] = vertex_index[0][P];
 			}
-			if (on_z_surface[raster.ySize-1][P]) {
+			if (index_z_surface[raster.ySize-1][P] > -1) {
 				triangulation2mesh[triangulation.insert(Point_2(0.5 + P, 0.5 + raster.ySize-1))] = vertex_index[raster.ySize-1][P];
 			}
 		}
 
 		for (int L = 1; L < raster.ySize-1; L++) {
-			if (on_z_surface[L][0]) {
+			if (index_z_surface[L][0] > -1) {
 				triangulation2mesh[triangulation.insert(Point_2(0.5, 0.5 + L))] = vertex_index[L][0];
 			}
-			if (on_z_surface[L][raster.xSize-1]) {
+			if (index_z_surface[L][raster.xSize-1] > -1) {
 				triangulation2mesh[triangulation.insert(Point_2(0.5 + raster.xSize-1, 0.5 + L))] = vertex_index[L][raster.xSize-1];
 			}
 			for (int P = 1; P < raster.xSize-1; P++) {
-				if (on_z_surface[L][P]) {
+				if (index_z_surface[L][P] > -1 && (index_z_surface[L-1][P] == -1 || index_z_surface[L+1][P] == -1 || index_z_surface[L][P-1] == -1 || index_z_surface[L][P+1] == -1)) {
 					triangulation2mesh[triangulation.insert(Point_2(0.5 + P, 0.5 + L))] = vertex_index[L][P];
 				}
 			}
@@ -1910,7 +1909,7 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 		// Add faces
 		for (int L = 0; L < raster.ySize-1; L++) {
 			for (int P = 0; P < raster.xSize-1; P++) {
-				if (on_z_surface[L][P] && on_z_surface[L+1][P] && on_z_surface[L][P+1] && on_z_surface[L+1][P+1]) {
+				if (index_z_surface[L][P] > -1 && index_z_surface[L+1][P] > -1 && index_z_surface[L][P+1] > -1 && index_z_surface[L+1][P+1] > -1) {
 					if (pow(z_surface[L][P]-z_surface[L+1][P+1], 2) < pow(z_surface[L+1][P]-z_surface[L][P+1], 2)) {
 						bridge_mesh.add_face(vertex_index[L][P], vertex_index[L+1][P+1], vertex_index[L+1][P]);
 						bridge_mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P+1]);
@@ -1919,13 +1918,13 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 						bridge_mesh.add_face(vertex_index[L][P+1], vertex_index[L+1][P+1], vertex_index[L+1][P]);
 					}
 				} else {
-					if (on_z_surface[L][P] && on_z_surface[L+1][P+1] && on_z_surface[L+1][P]) {
+					if (index_z_surface[L][P] > -1 && index_z_surface[L+1][P+1] > -1 && index_z_surface[L+1][P] > -1) {
 						bridge_mesh.add_face(vertex_index[L][P], vertex_index[L+1][P+1], vertex_index[L+1][P]);
-					} else if (on_z_surface[L][P] && on_z_surface[L][P+1] && on_z_surface[L+1][P+1]) {
+					} else if (index_z_surface[L][P] > -1 && index_z_surface[L][P+1] > -1 && index_z_surface[L+1][P+1] > -1) {
 						bridge_mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P+1]);
-					} else if (on_z_surface[L][P] && on_z_surface[L][P+1] && on_z_surface[L+1][P]) {
+					} else if (index_z_surface[L][P] > -1 && index_z_surface[L][P+1] > -1 && index_z_surface[L+1][P] > -1) {
 						bridge_mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P]);
-					} else if (on_z_surface[L][P+1] && on_z_surface[L+1][P+1] && on_z_surface[L+1][P]) {
+					} else if (index_z_surface[L][P+1] > -1 && index_z_surface[L+1][P+1] > -1 && index_z_surface[L+1][P] > -1) {
 						bridge_mesh.add_face(vertex_index[L][P+1], vertex_index[L+1][P+1], vertex_index[L+1][P]);
 					}
 				}
@@ -1938,12 +1937,12 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 			auto pr = Xr[i] - n;
 			auto vhl = triangulation.insert(Xl[i]);
 			auto vhr = triangulation.insert(Xr[i]);
-			if (on_z_surface[pl.y()][pl.x()]) {
+			if (index_z_surface[pl.y()][pl.x()] > -1) {
 				triangulation2mesh[vhl] = bridge_mesh.add_vertex(Point_3(Xl[i].x(), Xl[i].y(), z_surface[pl.y()][pl.x()]));
 			} else {
 				triangulation2mesh[vhl] = bridge_mesh.add_vertex(Point_3(Xl[i].x(), Xl[i].y(), raster.dsm[pl.y()][pl.x()]));
 			}
-			if (on_z_surface[pr.y()][pr.x()]) {
+			if (index_z_surface[pr.y()][pr.x()] > -1) {
 				triangulation2mesh[vhr] = bridge_mesh.add_vertex(Point_3(Xr[i].x(), Xr[i].y(), z_surface[pr.y()][pr.x()]));
 			} else {
 				triangulation2mesh[vhr] = bridge_mesh.add_vertex(Point_3(Xr[i].x(), Xr[i].y(), raster.dsm[pr.y()][pr.x()]));
