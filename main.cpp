@@ -32,6 +32,7 @@
 #include <CGAL/create_straight_skeleton_from_polygon_with_holes_2.h>
 #include <CGAL/Straight_skeleton_converter_2.h>
 #include <CGAL/Polygon_mesh_processing/locate.h>
+#include <CGAL/Delaunay_triangulation_2.h>
 
 #include "label.cpp"
 
@@ -1805,31 +1806,184 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 
 	auto location1 = PMP::locate(link.first.point, filtered_sm1, CGAL::parameters::vertex_point_map(projection_pmap));
 	auto location2 = PMP::locate(link.second.point, filtered_sm2, CGAL::parameters::vertex_point_map(projection_pmap));
+	auto point1 = PMP::construct_point(location1, mesh);
+	auto point2 = PMP::construct_point(location2, mesh);
 
 	K::Vector_2 link_vector(link.first.point, link.second.point);
-	auto left = link_vector.perpendicular(CGAL::CLOCKWISE);
-
-	left /= sqrt(left.squared_length());
+	auto l = link_vector / sqrt(link_vector.squared_length());
+	auto n = l.perpendicular(CGAL::COUNTERCLOCKWISE);
 
 	auto width = road_width(link);
 
-	Point_2 left1 = link.first.point + left*width.first/2;
-	Point_2 right1 = link.first.point - left*width.first/2;
-	Point_2 left2 = link.second.point + left*width.second/2;
-	Point_2 right2 = link.second.point - left*width.second/2;
+	Point_2 left1 = link.first.point - n*width.first/2;
+	Point_2 right1 = link.first.point + n*width.first/2;
+	Point_2 left2 = link.second.point - n*width.second/2;
+	Point_2 right2 = link.second.point + n*width.second/2;
 
 	auto left1_border = point_on_path_border(mesh, location1.first, {K::Segment_2(link.first.point, left1)});
 	auto right1_border = point_on_path_border(mesh, location1.first, {K::Segment_2(link.first.point, right1)});
 	auto left2_border = point_on_path_border(mesh, location2.first, {K::Segment_2(link.second.point, left2)});
 	auto right2_border = point_on_path_border(mesh, location2.first, {K::Segment_2(link.second.point, right2)});
 
-	auto point1 = PMP::construct_point(location1, mesh);
-	auto point2 = PMP::construct_point(location2, mesh);
+	float dl0 = sqrt(CGAL::squared_distance(link.first.point, left1_border.second));
+	float dr0 = sqrt(CGAL::squared_distance(link.first.point, right1_border.second));
+	float dlN = sqrt(CGAL::squared_distance(link.second.point, left2_border.second));
+	float drN = sqrt(CGAL::squared_distance(link.second.point, right2_border.second));
+
+	int N = int(sqrt(link_vector.squared_length ()));
+	float xl[N+1];
+	float xr[N+1];
+	for (int i = 0; i <= N; i++) {
+		xl[i] = dl0 + ((float) i)/N*(dlN-dl0);
+		xr[i] = dr0 + ((float) i)/N*(drN-dr0);
+	}
+
+	Point_2 Xl[N+1];
+	Point_2 Xr[N+1];
+	for (int i = 0; i <= N; i++) {
+		Xl[i] = link.first.point + ((float) i)/N*link_vector - xl[i] * n;
+		Xr[i] = link.first.point + ((float) i)/N*link_vector + xr[i] * n;
+	}
+
+	Polygon surface;
+	for (int i = 0; i <= N; i++) {
+		surface.push_back(Xr[i]);
+	}
+	for (int i = N; i >= 0; i--) {
+		surface.push_back(Xl[i]);
+	}
+
+	std::vector<std::vector<float>> z_surface(raster.ySize, std::vector<float>(raster.xSize, -1));
+	std::vector<std::vector<bool>> on_z_surface(raster.ySize, std::vector<bool>(raster.xSize, false));
+
+	auto bbox = surface.bbox();
+	for (int P = std::max({0.0,bbox.xmin()}); P <= bbox.xmax() && P < raster.xSize; P++) {
+		for (int L = std::max({0.0,bbox.ymin()}); L <= bbox.ymax() && L < raster.ySize; L++) {
+			if (surface.bounded_side(Point_2(0.5 + P, 0.5 + L)) != CGAL::ON_UNBOUNDED_SIDE) {
+				float d1 = sqrt(CGAL::squared_distance(Point_2(0.5 + P, 0.5 + L), link.first.point));
+				float d2 = sqrt(CGAL::squared_distance(Point_2(0.5 + P, 0.5 + L), link.second.point));
+				z_surface[L][P] = (1/d1 * point1.z() + 1/d2 * point2.z()) / (1/d1 + 1/d2);
+				on_z_surface[L][P] = true;
+			}
+		}
+	}
+
+	{ // Surface
+
+		Surface_mesh bridge_mesh;
+		CGAL::Delaunay_triangulation_2<K> triangulation;
+		std::map<CGAL::Delaunay_triangulation_2<K>::Vertex_handle, Surface_mesh::vertex_index> triangulation2mesh;
+
+		// Add points
+		std::vector<std::vector<Surface_mesh::Vertex_index>> vertex_index(raster.ySize, std::vector<Surface_mesh::Vertex_index>(raster.xSize, Surface_mesh::Vertex_index()));
+		for (int L = 0; L < raster.ySize; L++) {
+			for (int P = 0; P < raster.xSize; P++) {
+				if (on_z_surface[L][P]) {
+					vertex_index[L][P] = bridge_mesh.add_vertex(Point_3(0.5 + P, 0.5 + L, z_surface[L][P]));
+				}
+			}
+		}
+
+		for (int P = 0; P < raster.xSize; P++) {
+			if (on_z_surface[0][P]) {
+				triangulation2mesh[triangulation.insert(Point_2(0.5 + P, 0.5))] = vertex_index[0][P];
+			}
+			if (on_z_surface[raster.ySize-1][P]) {
+				triangulation2mesh[triangulation.insert(Point_2(0.5 + P, 0.5 + raster.ySize-1))] = vertex_index[raster.ySize-1][P];
+			}
+		}
+
+		for (int L = 1; L < raster.ySize-1; L++) {
+			if (on_z_surface[L][0]) {
+				triangulation2mesh[triangulation.insert(Point_2(0.5, 0.5 + L))] = vertex_index[L][0];
+			}
+			if (on_z_surface[L][raster.xSize-1]) {
+				triangulation2mesh[triangulation.insert(Point_2(0.5 + raster.xSize-1, 0.5 + L))] = vertex_index[L][raster.xSize-1];
+			}
+			for (int P = 1; P < raster.xSize-1; P++) {
+				if (on_z_surface[L][P]) {
+					triangulation2mesh[triangulation.insert(Point_2(0.5 + P, 0.5 + L))] = vertex_index[L][P];
+				}
+			}
+		}
+
+		// Add faces
+		for (int L = 0; L < raster.ySize-1; L++) {
+			for (int P = 0; P < raster.xSize-1; P++) {
+				if (on_z_surface[L][P] && on_z_surface[L+1][P] && on_z_surface[L][P+1] && on_z_surface[L+1][P+1]) {
+					if (pow(z_surface[L][P]-z_surface[L+1][P+1], 2) < pow(z_surface[L+1][P]-z_surface[L][P+1], 2)) {
+						bridge_mesh.add_face(vertex_index[L][P], vertex_index[L+1][P+1], vertex_index[L+1][P]);
+						bridge_mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P+1]);
+					} else {
+						bridge_mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P]);
+						bridge_mesh.add_face(vertex_index[L][P+1], vertex_index[L+1][P+1], vertex_index[L+1][P]);
+					}
+				} else {
+					if (on_z_surface[L][P] && on_z_surface[L+1][P+1] && on_z_surface[L+1][P]) {
+						bridge_mesh.add_face(vertex_index[L][P], vertex_index[L+1][P+1], vertex_index[L+1][P]);
+					} else if (on_z_surface[L][P] && on_z_surface[L][P+1] && on_z_surface[L+1][P+1]) {
+						bridge_mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P+1]);
+					} else if (on_z_surface[L][P] && on_z_surface[L][P+1] && on_z_surface[L+1][P]) {
+						bridge_mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P]);
+					} else if (on_z_surface[L][P+1] && on_z_surface[L+1][P+1] && on_z_surface[L+1][P]) {
+						bridge_mesh.add_face(vertex_index[L][P+1], vertex_index[L+1][P+1], vertex_index[L+1][P]);
+					}
+				}
+			}
+		}
+
+		std::set<CGAL::Delaunay_triangulation_2<K>::Vertex_handle> border;
+		for (int i = 0; i <= N; i++) {
+			auto pl = Xl[i] + n;
+			auto pr = Xr[i] - n;
+			auto vhl = triangulation.insert(Xl[i]);
+			auto vhr = triangulation.insert(Xr[i]);
+			if (on_z_surface[pl.y()][pl.x()]) {
+				triangulation2mesh[vhl] = bridge_mesh.add_vertex(Point_3(Xl[i].x(), Xl[i].y(), z_surface[pl.y()][pl.x()]));
+			} else {
+				triangulation2mesh[vhl] = bridge_mesh.add_vertex(Point_3(Xl[i].x(), Xl[i].y(), raster.dsm[pl.y()][pl.x()]));
+			}
+			if (on_z_surface[pr.y()][pr.x()]) {
+				triangulation2mesh[vhr] = bridge_mesh.add_vertex(Point_3(Xr[i].x(), Xr[i].y(), z_surface[pr.y()][pr.x()]));
+			} else {
+				triangulation2mesh[vhr] = bridge_mesh.add_vertex(Point_3(Xr[i].x(), Xr[i].y(), raster.dsm[pr.y()][pr.x()]));
+			}
+			border.insert({vhl, vhr});
+		}
+
+		for (auto f: triangulation.all_face_handles()) {
+			if (!triangulation.is_infinite(f)) {
+				if (border.count(f->vertex(0)) > 0 || border.count(f->vertex(1)) > 0 || border.count(f->vertex(2)) > 0) {
+					if (border.count(f->vertex(0)) == 0 || border.count(f->vertex(1)) == 0 || border.count(f->vertex(2)) == 0) {
+						bridge_mesh.add_face(triangulation2mesh[f->vertex(0)], triangulation2mesh[f->vertex(1)], triangulation2mesh[f->vertex(2)]);
+					}
+				}
+			}
+		}
+
+		double min_x, min_y;
+		raster.grid_to_coord(0, 0, min_x, min_y);
+
+		for(auto vertex : bridge_mesh.vertices()) {
+			auto point = bridge_mesh.point(vertex);
+			double x, y;
+			raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
+			bridge_mesh.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
+		}
+
+		std::stringstream bridge_mesh_name;
+		bridge_mesh_name << "bridge_mesh_" << ((int) label[location1.first]) << "_" << link.first.path << "_" << link.second.path << "_" << link.first.point << "_" << link.second.point << ".ply";
+		std::ofstream mesh_ofile (bridge_mesh_name.str().c_str());
+		CGAL::IO::write_PLY (mesh_ofile, bridge_mesh);
+		mesh_ofile.close();
+
+	}
+
 
 	{ // Skeleton
 		Surface_mesh skeleton;
 
-		auto v1 = skeleton.add_vertex(point1);
+		/*auto v1 = skeleton.add_vertex(point1);
 		auto v2 = skeleton.add_vertex(point2);
 		skeleton.add_edge(v1, v2);
 
@@ -1847,7 +2001,21 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 
 		v1 = skeleton.add_vertex(Point_3(left2.x(), left2.y(), point2.z()));
 		v2 = skeleton.add_vertex(Point_3(right2.x(), right2.y(), point2.z()));
-		skeleton.add_edge(v1, v2);
+		skeleton.add_edge(v1, v2);*/
+
+		auto init = skeleton.add_vertex(Point_3(Xr[0].x(), Xr[0].y(), point1.z()));
+		auto temp1 = CGAL::SM_Vertex_index(init);
+		for (int i = 1; i <= N; i++) {
+			auto temp2 = skeleton.add_vertex(Point_3(Xr[i].x(), Xr[i].y(), point1.z()));
+			skeleton.add_edge(temp1, temp2);
+			temp1 = temp2;
+		}
+		for (int i = N; i >= 0; i--) {
+			auto temp2 = skeleton.add_vertex(Point_3(Xl[i].x(), Xl[i].y(), point1.z()));
+			skeleton.add_edge(temp1, temp2);
+			temp1 = temp2;
+		}
+		skeleton.add_edge(temp1, init);
 
 		Surface_mesh::Property_map<Surface_mesh::Edge_index, int> edge_prop;
 		bool created;
