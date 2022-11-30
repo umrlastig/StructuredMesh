@@ -1810,7 +1810,8 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 	auto point2 = PMP::construct_point(location2, mesh);
 
 	K::Vector_2 link_vector(link.first.point, link.second.point);
-	auto l = link_vector / sqrt(link_vector.squared_length());
+	float length = sqrt(link_vector.squared_length());
+	auto l = link_vector / length;
 	auto n = l.perpendicular(CGAL::COUNTERCLOCKWISE);
 
 	auto width = road_width(link);
@@ -1862,9 +1863,8 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 	for (int P = std::max({0.0,bbox.xmin()}); P <= bbox.xmax() && P < raster.xSize; P++) {
 		for (int L = std::max({0.0,bbox.ymin()}); L <= bbox.ymax() && L < raster.ySize; L++) {
 			if (surface.bounded_side(Point_2(0.5 + P, 0.5 + L)) != CGAL::ON_UNBOUNDED_SIDE) {
-				float d1 = sqrt(CGAL::squared_distance(Point_2(0.5 + P, 0.5 + L), link.first.point));
-				float d2 = sqrt(CGAL::squared_distance(Point_2(0.5 + P, 0.5 + L), link.second.point));
-				z_surface[L][P] = (1/d1 * point1.z() + 1/d2 * point2.z()) / (1/d1 + 1/d2);
+				float size = CGAL::scalar_product(l, K::Vector_2(link.first.point, Point_2(0.5 + P, 0.5 + L)));
+				z_surface[L][P] = point1.z() + (point2.z() - point1.z())*size/length;
 				index_z_surface[L][P] = pixel_on_z_surface.size();
 				pixel_on_z_surface.push_back(std::make_pair(P,L));
 			}
