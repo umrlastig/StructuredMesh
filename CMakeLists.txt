@@ -30,6 +30,18 @@ if ( NOT GDAL_FOUND )
 endif()
 
 
+# Eigen and its components
+find_package (Eigen3 3.3 REQUIRED NO_MODULE)
+
+if ( NOT Eigen3_FOUND )
+
+  message(STATUS "This project requires the Eigen3 library, and will not be compiled.")
+
+  return()  
+
+endif()
+
+
 # include for local directory
 
 # include for local package
@@ -43,4 +55,4 @@ add_executable( compute-LOD2  main.cpp )
 add_to_cached_list( CGAL_EXECUTABLE_TARGETS compute-LOD2 )
 
 # Link the executable to CGAL and third-party libraries
-target_link_libraries(compute-LOD2 PRIVATE CGAL::CGAL GDAL::GDAL)
+target_link_libraries(compute-LOD2 PRIVATE CGAL::CGAL GDAL::GDAL Eigen3::Eigen)
