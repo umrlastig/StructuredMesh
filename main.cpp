@@ -1872,65 +1872,159 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 		}
 	}
 
-	//Solveur surface
-	std::vector<Eigen::Triplet<float>> tripletList;
-	tripletList.reserve(5*pixel_on_z_surface.size());
-	std::vector<float> temp_b;
-	temp_b.reserve(3*pixel_on_z_surface.size());
-	int i = 0;
-	
-	// regularity of the surface
-	float alpha = 3;
-	for (int L = 1; L < raster.ySize-1; L++) {
-		for (int P = 1; P < raster.xSize-1; P++) {
-			if (index_z_surface[L-1][P] > -1 && index_z_surface[L+1][P] > -1) {
-				tripletList.push_back(Eigen::Triplet<float>(i,index_z_surface[L-1][P],alpha/2));
-				tripletList.push_back(Eigen::Triplet<float>(i,index_z_surface[L+1][P],-alpha/2));
-				temp_b.push_back(0);
-				i++;
+	// Surface solver
+	{
+		std::vector<Eigen::Triplet<float>> tripletList;
+		tripletList.reserve(5*pixel_on_z_surface.size());
+		std::vector<float> temp_b;
+		temp_b.reserve(3*pixel_on_z_surface.size());
+		int i = 0;
+
+		// regularity of the surface
+		float alpha = 3;
+		for (int L = 1; L < raster.ySize-1; L++) {
+			for (int P = 1; P < raster.xSize-1; P++) {
+				if (index_z_surface[L-1][P] > -1 && index_z_surface[L+1][P] > -1) {
+					tripletList.push_back(Eigen::Triplet<float>(i,index_z_surface[L-1][P],alpha/2));
+					tripletList.push_back(Eigen::Triplet<float>(i,index_z_surface[L+1][P],-alpha/2));
+					temp_b.push_back(0);
+					i++;
+				}
+				if (index_z_surface[L][P-1] > -1 && index_z_surface[L][P+1] > -1) {
+					tripletList.push_back(Eigen::Triplet<float>(i,index_z_surface[L][P-1],alpha/2));
+					tripletList.push_back(Eigen::Triplet<float>(i,index_z_surface[L][P+1],-alpha/2));
+					temp_b.push_back(0);
+					i++;
+				}
 			}
-			if (index_z_surface[L][P-1] > -1 && index_z_surface[L][P+1] > -1) {
-				tripletList.push_back(Eigen::Triplet<float>(i,index_z_surface[L][P-1],alpha/2));
-				tripletList.push_back(Eigen::Triplet<float>(i,index_z_surface[L][P+1],-alpha/2));
-				temp_b.push_back(0);
+		}
+
+		// attachment to DSM data
+		float beta = 1;
+		float tunnel_height = 3; // in meter
+		for (auto pixel: pixel_on_z_surface) {
+			if (z_surface[pixel.second][pixel.first] > raster.dsm[pixel.second][pixel.first] - tunnel_height / 2) {
+				tripletList.push_back(Eigen::Triplet<float>(i,index_z_surface[pixel.second][pixel.first],beta));
+				temp_b.push_back(raster.dsm[pixel.second][pixel.first]);
+				i++;
+			} else if (z_surface[pixel.second][pixel.first] > raster.dsm[pixel.second][pixel.first] - tunnel_height) {
+				tripletList.push_back(Eigen::Triplet<float>(i,index_z_surface[pixel.second][pixel.first],beta));
+				temp_b.push_back(raster.dsm[pixel.second][pixel.first] - tunnel_height);
 				i++;
 			}
 		}
-	}
 
-	// attachment to DSM data
-	float beta = 1;
-	float tunnel_height = 3; // in meter
-	for (auto pixel: pixel_on_z_surface) {
-		if (z_surface[pixel.second][pixel.first] > raster.dsm[pixel.second][pixel.first] - tunnel_height / 2) {
-			tripletList.push_back(Eigen::Triplet<float>(i,index_z_surface[pixel.second][pixel.first],beta));
-			temp_b.push_back(raster.dsm[pixel.second][pixel.first]);
-			i++;
-		} else if (z_surface[pixel.second][pixel.first] > raster.dsm[pixel.second][pixel.first] - tunnel_height) {
-			tripletList.push_back(Eigen::Triplet<float>(i,index_z_surface[pixel.second][pixel.first],beta));
-			temp_b.push_back(raster.dsm[pixel.second][pixel.first] - tunnel_height);
-			i++;
+		// solving
+		Eigen::SparseMatrix<float> A(temp_b.size(),pixel_on_z_surface.size());
+		A.setFromTriplets(tripletList.begin(), tripletList.end());
+		Eigen::VectorXf b = Eigen::Map<Eigen::VectorXf, Eigen::Unaligned>(temp_b.data(), temp_b.size());
+
+		Eigen::SparseQR<Eigen::SparseMatrix<float>, Eigen::COLAMDOrdering<int>> solver;
+		solver.compute(A);
+		if(solver.info()!=Eigen::Success) {
+			std::cout << "decomposition failed\n";
+			return;
+		}
+		Eigen::VectorXf x = solver.solve(b);
+		if(solver.info()!=Eigen::Success) {
+			std::cout << "solving failed\n";
+			return;
+		}
+		for (int i = 0; i < pixel_on_z_surface.size(); i++) {
+			auto pixel = pixel_on_z_surface.at(i);
+			z_surface[pixel.second][pixel.first] = x(i);
 		}
 	}
 
-	Eigen::SparseMatrix<float> A(temp_b.size(),pixel_on_z_surface.size());
-	A.setFromTriplets(tripletList.begin(), tripletList.end());
-	Eigen::VectorXf b = Eigen::Map<Eigen::VectorXf, Eigen::Unaligned>(temp_b.data(), temp_b.size());
-	
-	Eigen::SparseQR<Eigen::SparseMatrix<float>, Eigen::COLAMDOrdering<int>> solver;
-	solver.compute(A);
-	if(solver.info()!=Eigen::Success) {
-		std::cout << "decomposition failed\n";
-		return;
-	}
-	Eigen::VectorXf x = solver.solve(b);
-	if(solver.info()!=Eigen::Success) {
-		std::cout << "solving failed\n";
-		return;
-	}
-	for (int i = 0; i < pixel_on_z_surface.size(); i++) {
-		auto pixel = pixel_on_z_surface.at(i);
-		z_surface[pixel.second][pixel.first] = x(i);
+	// Contour solver
+	{
+		std::vector<Eigen::Triplet<float>> tripletList;
+		tripletList.reserve(2*N + N+1 + 4 + 4);
+		std::vector<float> temp_b;
+		temp_b.reserve(2*N + N+1 + 4 + 4);
+		int i = 0;
+
+		//regularity of the contour
+		float gamma = 1;
+		for (int j = 0; j < N; j++) {
+			// x^l_j − x^l_{j+1}
+			tripletList.push_back(Eigen::Triplet<float>(i,j,gamma));
+			tripletList.push_back(Eigen::Triplet<float>(i,j+1,-gamma));
+			temp_b.push_back(0);
+			i++;
+		}
+		for (int j = N+1; j < 2*N+1; j++) {
+			// x^r_{j-N-1} − x^r_{j+1-N-1}
+			tripletList.push_back(Eigen::Triplet<float>(i,j,gamma));
+			tripletList.push_back(Eigen::Triplet<float>(i,j+1,-gamma));
+			temp_b.push_back(0);
+			i++;
+		}
+
+		//width of the reconstructed surface
+		float delta = 1;
+		for (int j = 0; j <= N; j++) {
+			// x^l_j − x^l_{j+1}
+			tripletList.push_back(Eigen::Triplet<float>(i,j,delta)); //x^l_j
+			tripletList.push_back(Eigen::Triplet<float>(i,j+N+1,delta)); //x^r_j
+			temp_b.push_back(delta * (width.first + j*(width.second - width.first)/N));
+			i++;
+		}
+
+		//centering of the surface on the link vertices
+		float epsilon = 1;
+		tripletList.push_back(Eigen::Triplet<float>(i,0,epsilon)); //x^l_0
+		tripletList.push_back(Eigen::Triplet<float>(i,N+1,-epsilon)); //x^r_0
+		temp_b.push_back(0);
+		i++;
+		tripletList.push_back(Eigen::Triplet<float>(i,N,epsilon)); //x^l_N
+		tripletList.push_back(Eigen::Triplet<float>(i,2*N+1,-epsilon)); //x^r_N
+		temp_b.push_back(0);
+		i++;
+
+		// fix border
+		tripletList.push_back(Eigen::Triplet<float>(i,0,100)); //x^l_0
+		temp_b.push_back(100*dl0);
+		i++;
+		tripletList.push_back(Eigen::Triplet<float>(i,N,100)); //x^l_N
+		temp_b.push_back(100*dlN);
+		i++;
+		tripletList.push_back(Eigen::Triplet<float>(i,N+1,100)); //x^r_0
+		temp_b.push_back(100*dr0);
+		i++;
+		tripletList.push_back(Eigen::Triplet<float>(i,2*N+1,100)); //x^r_N
+		temp_b.push_back(100*drN);
+		i++;
+		
+
+		// solving
+		Eigen::SparseMatrix<float> A(temp_b.size(),2*N+2);
+		A.setFromTriplets(tripletList.begin(), tripletList.end());
+		Eigen::VectorXf b = Eigen::Map<Eigen::VectorXf, Eigen::Unaligned>(temp_b.data(), temp_b.size());
+		
+		Eigen::SparseQR<Eigen::SparseMatrix<float>, Eigen::COLAMDOrdering<int>> solver;
+		solver.compute(A);
+		if(solver.info()!=Eigen::Success) {
+			std::cout << "decomposition failed\n";
+			return;
+		}
+		Eigen::VectorXf x = solver.solve(b);
+		if(solver.info()!=Eigen::Success) {
+			std::cout << "solving failed\n";
+			return;
+		}
+		for (int j = 0; j < N; j++) {
+			// x^l_j
+			xl[j] = x[j];
+			// x^r_j
+			xr[j] = x[j+N+1];
+		}
+
+		/*for (int i = 0; i <= N; i++) {
+			Xl[i] = link.first.point + ((float) i)/N*link_vector - xl[i] * n;
+			Xr[i] = link.first.point + ((float) i)/N*link_vector + xr[i] * n;
+		}*/
+
 	}
 
 	{ // Surface
