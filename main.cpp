@@ -12,6 +12,7 @@
 #include <chrono>
 #include <regex>
 #include <unordered_map>
+#include <limits>
 
 #include "ogrsf_frmts.h"
 #include <CGAL/Simple_cartesian.h>
@@ -1783,6 +1784,9 @@ std::pair<Surface_mesh::Face_index, Point_2> point_on_path_border(const Surface_
 
 
 void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &mesh, const Raster &raster) {
+	std::cout << "Bridge " << link.first.path << " (" << link.first.point << ") -> " << link.second.path << " (" << link.second.point << ")\n";
+
+
 	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
 	bool has_path;
 	boost::tie(path, has_path) = mesh.property_map<Surface_mesh::Face_index, int>("path");
@@ -1810,6 +1814,8 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 	auto point1 = PMP::construct_point(location1, mesh);
 	auto point2 = PMP::construct_point(location2, mesh);
 
+	unsigned char bridge_label = label[location1.first];
+
 	K::Vector_2 link_vector(link.first.point, link.second.point);
 	float length = sqrt(link_vector.squared_length());
 	auto l = link_vector / length;
@@ -1835,285 +1841,323 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 	int N = int(sqrt(link_vector.squared_length ()));
 	float xl[N+1];
 	float xr[N+1];
+	float z_segment[N+1];
 	for (int i = 0; i <= N; i++) {
 		xl[i] = dl0 + ((float) i)/N*(dlN-dl0);
 		xr[i] = dr0 + ((float) i)/N*(drN-dr0);
+		z_segment[i] = point1.z() + (point2.z() - point1.z())*((float) i)/N;
 	}
 
-	Point_2 Xl[N+1];
-	Point_2 Xr[N+1];
-	for (int i = 0; i <= N; i++) {
-		Xl[i] = link.first.point + ((float) i)/N*link_vector - xl[i] * n;
-		Xr[i] = link.first.point + ((float) i)/N*link_vector + xr[i] * n;
-	}
+	float tunnel_height = 3; // in meter
 
-	Polygon surface;
-	for (int i = 0; i <= N; i++) {
-		surface.push_back(Xr[i]);
-	}
-	for (int i = N; i >= 0; i--) {
-		surface.push_back(Xl[i]);
-	}
+	for(int loop = 0; loop < 10; loop++) {
 
-	std::vector<std::vector<float>> z_surface(raster.ySize, std::vector<float>(raster.xSize, -1));
-	std::vector<std::vector<int>> index_z_surface(raster.ySize, std::vector<int>(raster.xSize, -1));
+		std::cout << "Solve surface\n";
 
-	std::vector<std::pair<int,int>> pixel_on_z_surface;
+		// Surface solver
+		{
+			std::vector<Eigen::Triplet<float>> tripletList;
+			tripletList.reserve(10*N+2);
+			std::vector<float> temp_b;
+			temp_b.reserve(9*N+2);
 
-	auto bbox = surface.bbox();
-	for (int P = std::max({0.0,bbox.xmin()}); P <= bbox.xmax() && P < raster.xSize; P++) {
-		for (int L = std::max({0.0,bbox.ymin()}); L <= bbox.ymax() && L < raster.ySize; L++) {
-			if (surface.bounded_side(Point_2(0.5 + P, 0.5 + L)) != CGAL::ON_UNBOUNDED_SIDE) {
-				float size = CGAL::scalar_product(l, K::Vector_2(link.first.point, Point_2(0.5 + P, 0.5 + L)));
-				z_surface[L][P] = point1.z() + (point2.z() - point1.z())*size/length;
-				index_z_surface[L][P] = pixel_on_z_surface.size();
-				pixel_on_z_surface.push_back(std::make_pair(P,L));
+			// regularity of the surface
+			float alpha = 10;
+			for (int i = 0; i < N; i++) {
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i, alpha));
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i+1, -alpha));
+				temp_b.push_back(0);
 			}
-		}
-	}
 
-	// Surface solver
-	{
-		std::vector<Eigen::Triplet<float>> tripletList;
-		tripletList.reserve(5*pixel_on_z_surface.size());
-		std::vector<float> temp_b;
-		temp_b.reserve(3*pixel_on_z_surface.size());
-		int i = 0;
-
-		// regularity of the surface
-		float alpha = 3;
-		for (int L = 1; L < raster.ySize-1; L++) {
-			for (int P = 1; P < raster.xSize-1; P++) {
-				if (index_z_surface[L-1][P] > -1 && index_z_surface[L+1][P] > -1) {
-					tripletList.push_back(Eigen::Triplet<float>(i,index_z_surface[L-1][P],alpha/2));
-					tripletList.push_back(Eigen::Triplet<float>(i,index_z_surface[L+1][P],-alpha/2));
-					temp_b.push_back(0);
-					i++;
+			// attachment to DSM data
+			float beta = 1;
+			for (int i = 0; i <= N; i++) {
+				int j = std::max({0, ((int) (- xl[i]))});
+				while(j <= xr[i]) {
+					auto p = link.first.point + ((float) i)/N*link_vector + j * n;
+					if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
+						if (z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height / 2) {
+							tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i, beta));
+							temp_b.push_back(raster.dsm[p.y()][p.x()]);
+						} else if (z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height) {
+							tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i, beta));
+							temp_b.push_back(raster.dsm[p.y()][p.x()] - tunnel_height);
+						}
+					}
+					j++;
 				}
-				if (index_z_surface[L][P-1] > -1 && index_z_surface[L][P+1] > -1) {
-					tripletList.push_back(Eigen::Triplet<float>(i,index_z_surface[L][P-1],alpha/2));
-					tripletList.push_back(Eigen::Triplet<float>(i,index_z_surface[L][P+1],-alpha/2));
-					temp_b.push_back(0);
-					i++;
+				j = std::max({1, ((int) (- xr[i]))});
+				while(j <= xl[i]) {
+					auto p = link.first.point + ((float) i)/N*link_vector - j * n;
+					if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
+						if (z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height / 2) {
+							tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i, beta));
+							temp_b.push_back(raster.dsm[p.y()][p.x()]);
+						} else if (z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height) {
+							tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i, beta));
+							temp_b.push_back(raster.dsm[p.y()][p.x()] - tunnel_height);
+						}
+					}
+					j++;
 				}
 			}
-		}
 
-		// attachment to DSM data
-		float beta = 1;
-		float tunnel_height = 3; // in meter
-		for (auto pixel: pixel_on_z_surface) {
-			if (z_surface[pixel.second][pixel.first] > raster.dsm[pixel.second][pixel.first] - tunnel_height / 2) {
-				tripletList.push_back(Eigen::Triplet<float>(i,index_z_surface[pixel.second][pixel.first],beta));
-				temp_b.push_back(raster.dsm[pixel.second][pixel.first]);
-				i++;
-			} else if (z_surface[pixel.second][pixel.first] > raster.dsm[pixel.second][pixel.first] - tunnel_height) {
-				tripletList.push_back(Eigen::Triplet<float>(i,index_z_surface[pixel.second][pixel.first],beta));
-				temp_b.push_back(raster.dsm[pixel.second][pixel.first] - tunnel_height);
-				i++;
+			// border
+			float zeta = 10;
+			tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), 0, zeta));
+			temp_b.push_back(zeta * point1.z());
+			tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), N, zeta));
+			temp_b.push_back(zeta * point2.z());
+
+			// solving
+			Eigen::SparseMatrix<float> A(temp_b.size(), N+1);
+			A.setFromTriplets(tripletList.begin(), tripletList.end());
+			Eigen::VectorXf b = Eigen::Map<Eigen::VectorXf, Eigen::Unaligned>(temp_b.data(), temp_b.size());
+
+			Eigen::SparseQR<Eigen::SparseMatrix<float>, Eigen::COLAMDOrdering<int>> solver;
+			solver.compute(A);
+			if(solver.info()!=Eigen::Success) {
+				std::cout << "decomposition failed\n";
+				return;
+			}
+			Eigen::VectorXf x = solver.solve(b);
+			if(solver.info()!=Eigen::Success) {
+				std::cout << "solving failed\n";
+				return;
+			}
+			for (int i = 0; i <= N; i++) {
+				z_segment[i] = x[i];
 			}
 		}
 
-		// solving
-		Eigen::SparseMatrix<float> A(temp_b.size(),pixel_on_z_surface.size());
-		A.setFromTriplets(tripletList.begin(), tripletList.end());
-		Eigen::VectorXf b = Eigen::Map<Eigen::VectorXf, Eigen::Unaligned>(temp_b.data(), temp_b.size());
+		std::cout << "Solve contour\n";
 
-		Eigen::SparseQR<Eigen::SparseMatrix<float>, Eigen::COLAMDOrdering<int>> solver;
-		solver.compute(A);
-		if(solver.info()!=Eigen::Success) {
-			std::cout << "decomposition failed\n";
-			return;
-		}
-		Eigen::VectorXf x = solver.solve(b);
-		if(solver.info()!=Eigen::Success) {
-			std::cout << "solving failed\n";
-			return;
-		}
-		for (int i = 0; i < pixel_on_z_surface.size(); i++) {
-			auto pixel = pixel_on_z_surface.at(i);
-			z_surface[pixel.second][pixel.first] = x(i);
+		// Contour solver
+		{
+			std::vector<Eigen::Triplet<float>> tripletList;
+			tripletList.reserve(2*N + N+1 + 4 + 4);
+			std::vector<float> temp_b;
+			temp_b.reserve(2*N + N+1 + 4 + 4);
+
+			//regularity of the contour
+			float gamma = 5;
+			for (int j = 0; j < N; j++) {
+				// x^l_j − x^l_{j+1}
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j,gamma));
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j+1,-gamma));
+				temp_b.push_back(0);
+			}
+			for (int j = N+1; j < 2*N+1; j++) {
+				// x^r_{j-N-1} − x^r_{j+1-N-1}
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j,gamma));
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j+1,-gamma));
+				temp_b.push_back(0);
+			}
+
+			//width of the reconstructed surface
+			float delta = 10;
+			for (int j = 0; j <= N; j++) {
+				// x^l_j − x^l_{j+1}
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j,delta)); //x^l_j
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j+N+1,delta)); //x^r_j
+				temp_b.push_back(delta * (width.first + j*(width.second - width.first)/N));
+			}
+
+			//centering of the surface on the link vertices
+			float epsilon = 1;
+			tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), 0,epsilon)); //x^l_0
+			tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), N+1,-epsilon)); //x^r_0
+			temp_b.push_back(0);
+			tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), N,epsilon)); //x^l_N
+			tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), 2*N+1,-epsilon)); //x^r_N
+			temp_b.push_back(0);
+
+			//keeping surface where cost is low
+			float theta = 1;
+			float iota  = 10;
+			// left contour
+			for (int i = 0; i <= N; i++) {
+				float j = xl[i];
+				float j_min = j;
+				float v_min;
+				auto p = link.first.point + ((float) i)/N*link_vector + j * n;
+				if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
+					if (z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height) {
+						continue;
+					} else if (z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height/2) {
+						v_min = pow(z_segment[i] - raster.dsm[p.y()][p.x()] + tunnel_height, 2);
+					} else {
+						v_min = pow(z_segment[i] - raster.dsm[p.y()][p.x()], 2);
+						if (raster.land_cover[p.y()][p.x()] != bridge_label) {
+							if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge_label != 8 && bridge_label != 9)) {
+								v_min += theta;
+							}
+						}
+					}
+				} else {
+					continue;
+				}
+
+				j--;
+				while(j > -xr[i]) {
+					auto p = link.first.point + ((float) i)/N*link_vector + j * n;
+					if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
+						if (z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height) {
+							j_min = j;
+							break;
+						} else if (z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height/2) {
+							float v = pow(z_segment[i] - raster.dsm[p.y()][p.x()] + tunnel_height, 2);
+							if (v < v_min) {
+								j_min = j;
+								v_min = v;
+							}
+						} else {
+							float v = pow(z_segment[i] - raster.dsm[p.y()][p.x()], 2);
+							if (raster.land_cover[p.y()][p.x()] != bridge_label) {
+								if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge_label != 8 && bridge_label != 9)) {
+									v += theta;
+								}
+							}
+							if (v < v_min) {
+								j_min = j;
+								v_min = v;
+							}
+						}
+					} else {
+						break;
+					}
+					j--;
+				}
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i, iota));
+				temp_b.push_back(iota * j_min);
+			}
+			// right contour
+			for (int i = 0; i <= N; i++) {
+				float j = xr[i];
+				float j_min = j;
+				float v_min;
+				auto p = link.first.point + ((float) i)/N*link_vector + j * n;
+				if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
+					if (z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height) {
+						continue;
+					} else if (z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height/2) {
+						v_min = pow(z_segment[i] - raster.dsm[p.y()][p.x()] + tunnel_height, 2);
+					} else {
+						v_min = pow(z_segment[i] - raster.dsm[p.y()][p.x()], 2);
+						if (raster.land_cover[p.y()][p.x()] != bridge_label) {
+							if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge_label != 8 && bridge_label != 9)) {
+								v_min += theta;
+							}
+						}
+					}
+				} else {
+					continue;
+				}
+
+				j--;
+				while(j > -xl[i]) {
+					auto p = link.first.point + ((float) i)/N*link_vector + j * n;
+					if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
+						if (z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height) {
+							j_min = j;
+							break;
+						} else if (z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height/2) {
+							float v = pow(z_segment[i] - raster.dsm[p.y()][p.x()] + tunnel_height, 2);
+							if (v < v_min) {
+								j_min = j;
+								v_min = v;
+							}
+						} else {
+							float v = pow(z_segment[i] - raster.dsm[p.y()][p.x()], 2);
+							if (raster.land_cover[p.y()][p.x()] != bridge_label) {
+								if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge_label != 8 && bridge_label != 9)) {
+									v += theta;
+								}
+							}
+							if (v < v_min) {
+								j_min = j;
+								v_min = v;
+							}
+						}
+					} else {
+						break;
+					}
+					j--;
+				}
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i + N+1, iota));
+				temp_b.push_back(iota * j_min);
+			}
+
+			// fix border
+			float eta = 100;
+			if (xl[0] > dl0) {
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), 0, eta)); //x^l_0
+				temp_b.push_back(eta*dl0);
+			}
+			if (xl[N] > dlN) {
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), N, eta)); //x^l_N
+				temp_b.push_back(eta*dlN);
+			}
+			if (xr[0] > dr0) {
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), N+1, eta)); //x^r_0
+				temp_b.push_back(eta*dr0);
+			}
+			if (xr[N] > drN) {
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), 2*N+1, eta)); //x^r_N
+				temp_b.push_back(eta*drN);
+			}
+
+			// solving
+			Eigen::SparseMatrix<float> A(temp_b.size(),2*N+2);
+			A.setFromTriplets(tripletList.begin(), tripletList.end());
+			Eigen::VectorXf b = Eigen::Map<Eigen::VectorXf, Eigen::Unaligned>(temp_b.data(), temp_b.size());
+			
+			Eigen::SparseQR<Eigen::SparseMatrix<float>, Eigen::COLAMDOrdering<int>> solver;
+			solver.compute(A);
+			if(solver.info()!=Eigen::Success) {
+				std::cout << "decomposition failed\n";
+				return;
+			}
+			Eigen::VectorXf x = solver.solve(b);
+			if(solver.info()!=Eigen::Success) {
+				std::cout << "solving failed\n";
+				return;
+			}
+			for (int j = 0; j < N; j++) {
+				// x^l_j
+				xl[j] = x[j];
+				// x^r_j
+				xr[j] = x[j+N+1];
+			}
+
 		}
 	}
+	
+	if (xl[0] > dl0) xl[0] = dl0;
+	if (xl[N] > dlN) xl[N] = dlN;
+	if (xr[0] > dr0) xr[0] = dr0;
+	if (xr[N] > drN) xr[N] = drN;
 
-	// Contour solver
-	{
-		std::vector<Eigen::Triplet<float>> tripletList;
-		tripletList.reserve(2*N + N+1 + 4 + 4);
-		std::vector<float> temp_b;
-		temp_b.reserve(2*N + N+1 + 4 + 4);
-		int i = 0;
-
-		//regularity of the contour
-		float gamma = 1;
-		for (int j = 0; j < N; j++) {
-			// x^l_j − x^l_{j+1}
-			tripletList.push_back(Eigen::Triplet<float>(i,j,gamma));
-			tripletList.push_back(Eigen::Triplet<float>(i,j+1,-gamma));
-			temp_b.push_back(0);
-			i++;
-		}
-		for (int j = N+1; j < 2*N+1; j++) {
-			// x^r_{j-N-1} − x^r_{j+1-N-1}
-			tripletList.push_back(Eigen::Triplet<float>(i,j,gamma));
-			tripletList.push_back(Eigen::Triplet<float>(i,j+1,-gamma));
-			temp_b.push_back(0);
-			i++;
-		}
-
-		//width of the reconstructed surface
-		float delta = 1;
-		for (int j = 0; j <= N; j++) {
-			// x^l_j − x^l_{j+1}
-			tripletList.push_back(Eigen::Triplet<float>(i,j,delta)); //x^l_j
-			tripletList.push_back(Eigen::Triplet<float>(i,j+N+1,delta)); //x^r_j
-			temp_b.push_back(delta * (width.first + j*(width.second - width.first)/N));
-			i++;
-		}
-
-		//centering of the surface on the link vertices
-		float epsilon = 1;
-		tripletList.push_back(Eigen::Triplet<float>(i,0,epsilon)); //x^l_0
-		tripletList.push_back(Eigen::Triplet<float>(i,N+1,-epsilon)); //x^r_0
-		temp_b.push_back(0);
-		i++;
-		tripletList.push_back(Eigen::Triplet<float>(i,N,epsilon)); //x^l_N
-		tripletList.push_back(Eigen::Triplet<float>(i,2*N+1,-epsilon)); //x^r_N
-		temp_b.push_back(0);
-		i++;
-
-		// fix border
-		tripletList.push_back(Eigen::Triplet<float>(i,0,100)); //x^l_0
-		temp_b.push_back(100*dl0);
-		i++;
-		tripletList.push_back(Eigen::Triplet<float>(i,N,100)); //x^l_N
-		temp_b.push_back(100*dlN);
-		i++;
-		tripletList.push_back(Eigen::Triplet<float>(i,N+1,100)); //x^r_0
-		temp_b.push_back(100*dr0);
-		i++;
-		tripletList.push_back(Eigen::Triplet<float>(i,2*N+1,100)); //x^r_N
-		temp_b.push_back(100*drN);
-		i++;
-		
-
-		// solving
-		Eigen::SparseMatrix<float> A(temp_b.size(),2*N+2);
-		A.setFromTriplets(tripletList.begin(), tripletList.end());
-		Eigen::VectorXf b = Eigen::Map<Eigen::VectorXf, Eigen::Unaligned>(temp_b.data(), temp_b.size());
-		
-		Eigen::SparseQR<Eigen::SparseMatrix<float>, Eigen::COLAMDOrdering<int>> solver;
-		solver.compute(A);
-		if(solver.info()!=Eigen::Success) {
-			std::cout << "decomposition failed\n";
-			return;
-		}
-		Eigen::VectorXf x = solver.solve(b);
-		if(solver.info()!=Eigen::Success) {
-			std::cout << "solving failed\n";
-			return;
-		}
-		for (int j = 0; j < N; j++) {
-			// x^l_j
-			xl[j] = x[j];
-			// x^r_j
-			xr[j] = x[j+N+1];
-		}
-
-		/*for (int i = 0; i <= N; i++) {
-			Xl[i] = link.first.point + ((float) i)/N*link_vector - xl[i] * n;
-			Xr[i] = link.first.point + ((float) i)/N*link_vector + xr[i] * n;
-		}*/
-
-	}
+	std::cout << "Save\n";
 
 	{ // Surface
 
 		Surface_mesh bridge_mesh;
-		CGAL::Delaunay_triangulation_2<K> triangulation;
-		std::map<CGAL::Delaunay_triangulation_2<K>::Vertex_handle, Surface_mesh::vertex_index> triangulation2mesh;
+		Surface_mesh::Vertex_index Xl[N+1];
+		Surface_mesh::Vertex_index Xr[N+1];
 
 		// Add points
-		std::vector<std::vector<Surface_mesh::Vertex_index>> vertex_index(raster.ySize, std::vector<Surface_mesh::Vertex_index>(raster.xSize, Surface_mesh::Vertex_index()));
-		for(auto pixel: pixel_on_z_surface) {
-			vertex_index[pixel.second][pixel.first] = bridge_mesh.add_vertex(Point_3(0.5 + pixel.first, 0.5 + pixel.second, z_surface[pixel.second][pixel.first]));
-		}
-
-		for (int P = 0; P < raster.xSize; P++) {
-			if (index_z_surface[0][P] > -1) {
-				triangulation2mesh[triangulation.insert(Point_2(0.5 + P, 0.5))] = vertex_index[0][P];
-			}
-			if (index_z_surface[raster.ySize-1][P] > -1) {
-				triangulation2mesh[triangulation.insert(Point_2(0.5 + P, 0.5 + raster.ySize-1))] = vertex_index[raster.ySize-1][P];
-			}
-		}
-
-		for (int L = 1; L < raster.ySize-1; L++) {
-			if (index_z_surface[L][0] > -1) {
-				triangulation2mesh[triangulation.insert(Point_2(0.5, 0.5 + L))] = vertex_index[L][0];
-			}
-			if (index_z_surface[L][raster.xSize-1] > -1) {
-				triangulation2mesh[triangulation.insert(Point_2(0.5 + raster.xSize-1, 0.5 + L))] = vertex_index[L][raster.xSize-1];
-			}
-			for (int P = 1; P < raster.xSize-1; P++) {
-				if (index_z_surface[L][P] > -1 && (index_z_surface[L-1][P] == -1 || index_z_surface[L+1][P] == -1 || index_z_surface[L][P-1] == -1 || index_z_surface[L][P+1] == -1)) {
-					triangulation2mesh[triangulation.insert(Point_2(0.5 + P, 0.5 + L))] = vertex_index[L][P];
-				}
-			}
+		for (int i = 0; i <= N; i++) {
+			auto p1 = link.first.point + ((float) i)/N*link_vector - xl[i] * n;
+			auto p2 = link.first.point + ((float) i)/N*link_vector + xr[i] * n;
+			Xl[i] = bridge_mesh.add_vertex(Point_3(p1.x(), p1.y(), z_segment[i]));
+			Xr[i] = bridge_mesh.add_vertex(Point_3(p2.x(), p2.y(), z_segment[i]));
 		}
 
 		// Add faces
-		for (int L = 0; L < raster.ySize-1; L++) {
-			for (int P = 0; P < raster.xSize-1; P++) {
-				if (index_z_surface[L][P] > -1 && index_z_surface[L+1][P] > -1 && index_z_surface[L][P+1] > -1 && index_z_surface[L+1][P+1] > -1) {
-					if (pow(z_surface[L][P]-z_surface[L+1][P+1], 2) < pow(z_surface[L+1][P]-z_surface[L][P+1], 2)) {
-						bridge_mesh.add_face(vertex_index[L][P], vertex_index[L+1][P+1], vertex_index[L+1][P]);
-						bridge_mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P+1]);
-					} else {
-						bridge_mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P]);
-						bridge_mesh.add_face(vertex_index[L][P+1], vertex_index[L+1][P+1], vertex_index[L+1][P]);
-					}
-				} else {
-					if (index_z_surface[L][P] > -1 && index_z_surface[L+1][P+1] > -1 && index_z_surface[L+1][P] > -1) {
-						bridge_mesh.add_face(vertex_index[L][P], vertex_index[L+1][P+1], vertex_index[L+1][P]);
-					} else if (index_z_surface[L][P] > -1 && index_z_surface[L][P+1] > -1 && index_z_surface[L+1][P+1] > -1) {
-						bridge_mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P+1]);
-					} else if (index_z_surface[L][P] > -1 && index_z_surface[L][P+1] > -1 && index_z_surface[L+1][P] > -1) {
-						bridge_mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P]);
-					} else if (index_z_surface[L][P+1] > -1 && index_z_surface[L+1][P+1] > -1 && index_z_surface[L+1][P] > -1) {
-						bridge_mesh.add_face(vertex_index[L][P+1], vertex_index[L+1][P+1], vertex_index[L+1][P]);
-					}
-				}
-			}
-		}
-
-		std::set<CGAL::Delaunay_triangulation_2<K>::Vertex_handle> border;
-		for (int i = 0; i <= N; i++) {
-			auto pl = Xl[i] + n;
-			auto pr = Xr[i] - n;
-			auto vhl = triangulation.insert(Xl[i]);
-			auto vhr = triangulation.insert(Xr[i]);
-			if (index_z_surface[pl.y()][pl.x()] > -1) {
-				triangulation2mesh[vhl] = bridge_mesh.add_vertex(Point_3(Xl[i].x(), Xl[i].y(), z_surface[pl.y()][pl.x()]));
-			} else {
-				triangulation2mesh[vhl] = bridge_mesh.add_vertex(Point_3(Xl[i].x(), Xl[i].y(), raster.dsm[pl.y()][pl.x()]));
-			}
-			if (index_z_surface[pr.y()][pr.x()] > -1) {
-				triangulation2mesh[vhr] = bridge_mesh.add_vertex(Point_3(Xr[i].x(), Xr[i].y(), z_surface[pr.y()][pr.x()]));
-			} else {
-				triangulation2mesh[vhr] = bridge_mesh.add_vertex(Point_3(Xr[i].x(), Xr[i].y(), raster.dsm[pr.y()][pr.x()]));
-			}
-			border.insert({vhl, vhr});
-		}
-
-		for (auto f: triangulation.all_face_handles()) {
-			if (!triangulation.is_infinite(f)) {
-				if (border.count(f->vertex(0)) > 0 || border.count(f->vertex(1)) > 0 || border.count(f->vertex(2)) > 0) {
-					if (border.count(f->vertex(0)) == 0 || border.count(f->vertex(1)) == 0 || border.count(f->vertex(2)) == 0) {
-						bridge_mesh.add_face(triangulation2mesh[f->vertex(0)], triangulation2mesh[f->vertex(1)], triangulation2mesh[f->vertex(2)]);
-					}
-				}
-			}
+		for (int i = 0; i < N; i++) {
+			bridge_mesh.add_face(Xl[i], Xr[i], Xr[i+1]);
+			bridge_mesh.add_face(Xl[i], Xr[i+1], Xl[i+1]);
 		}
 
 		double min_x, min_y;
@@ -2127,7 +2171,7 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 		}
 
 		std::stringstream bridge_mesh_name;
-		bridge_mesh_name << "bridge_mesh_" << ((int) label[location1.first]) << "_" << link.first.path << "_" << link.second.path << "_" << link.first.point << "_" << link.second.point << ".ply";
+		bridge_mesh_name << "bridge_mesh_" << ((int) bridge_label) << "_" << link.first.path << "_" << link.second.path << "_" << link.first.point << "_" << link.second.point << ".ply";
 		std::ofstream mesh_ofile (bridge_mesh_name.str().c_str());
 		CGAL::IO::write_PLY (mesh_ofile, bridge_mesh);
 		mesh_ofile.close();
@@ -2140,7 +2184,7 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 	{ // Skeleton
 		Surface_mesh skeleton;
 
-		/*auto v1 = skeleton.add_vertex(point1);
+		auto v1 = skeleton.add_vertex(point1);
 		auto v2 = skeleton.add_vertex(point2);
 		skeleton.add_edge(v1, v2);
 
@@ -2158,9 +2202,9 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 
 		v1 = skeleton.add_vertex(Point_3(left2.x(), left2.y(), point2.z()));
 		v2 = skeleton.add_vertex(Point_3(right2.x(), right2.y(), point2.z()));
-		skeleton.add_edge(v1, v2);*/
+		skeleton.add_edge(v1, v2);
 
-		auto init = skeleton.add_vertex(Point_3(Xr[0].x(), Xr[0].y(), point1.z()));
+		/*auto init = skeleton.add_vertex(Point_3(Xr[0].x(), Xr[0].y(), point1.z()));
 		auto temp1 = CGAL::SM_Vertex_index(init);
 		for (int i = 1; i <= N; i++) {
 			auto temp2 = skeleton.add_vertex(Point_3(Xr[i].x(), Xr[i].y(), point1.z()));
@@ -2172,7 +2216,7 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 			skeleton.add_edge(temp1, temp2);
 			temp1 = temp2;
 		}
-		skeleton.add_edge(temp1, init);
+		skeleton.add_edge(temp1, init);*/
 
 		Surface_mesh::Property_map<Surface_mesh::Edge_index, int> edge_prop;
 		bool created;
@@ -2190,7 +2234,7 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 		}
 
 		std::stringstream skeleton_name;
-		skeleton_name << "bridge_" << ((int) label[location1.first]) << "_" << link.first.path << "_" << link.second.path << "_" << link.first.point << "_" << link.second.point << ".ply";
+		skeleton_name << "bridge_" << ((int) bridge_label) << "_" << link.first.path << "_" << link.second.path << "_" << link.first.point << "_" << link.second.point << ".ply";
 		std::ofstream mesh_ofile (skeleton_name.str().c_str());
 		CGAL::IO::write_PLY (mesh_ofile, skeleton);
 		mesh_ofile.close();
@@ -2321,7 +2365,9 @@ int main(int argc, char **argv) {
 	std::set<std::pair<skeletonPoint,skeletonPoint>> links = link_paths(mesh, paths, path_polygon, medial_axes, raster);
 
 	for (auto link: links) {
+		if (link.first.path == 2 && link.second.path == 75 || link.first.path == 53 && link.second.path == 94) {
 		bridge(link, mesh, raster);
+		}
 	}
 
 	return EXIT_SUCCESS;
