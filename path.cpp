@@ -2,9 +2,15 @@
 #include "raster.hpp"
 
 #include <CGAL/boost/graph/copy_face_graph.h>
+#include <CGAL/boost/graph/Face_filtered_graph.h>
 #include <CGAL/Polyline_simplification_2/simplify.h>
 #include <CGAL/create_straight_skeleton_from_polygon_with_holes_2.h>
 #include <CGAL/Straight_skeleton_converter_2.h>
+#include <CGAL/Arr_segment_traits_2.h>
+#include <CGAL/Arrangement_2.h>
+
+typedef CGAL::Arr_segment_traits_2<Exact_predicates_kernel> Traits_2;
+typedef CGAL::Arrangement_2<Traits_2>                       Arrangement_2;
 
 void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filename);
 

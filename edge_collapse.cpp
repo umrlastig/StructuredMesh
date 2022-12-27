@@ -1,6 +1,8 @@
 #include "header.hpp"
 #include "raster.hpp"
 
+#include <chrono>
+
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Edge_profile.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Count_stop_predicate.h>

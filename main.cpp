@@ -1,6 +1,8 @@
 #include "header.hpp"
 #include "raster.hpp"
 
+#include <getopt.h>
+
 void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filename);
 
 std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster);

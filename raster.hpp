@@ -2,6 +2,7 @@
 #define RASTER_H_
 
 #include "header.hpp"
+#include <ogr_spatialref.h>
 
 class Raster {
 	public:

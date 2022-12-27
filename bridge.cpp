@@ -1,6 +1,7 @@
 #include "header.hpp"
 #include "raster.hpp"
 
+#include <CGAL/boost/graph/Face_filtered_graph.h>
 #include <CGAL/Polygon_mesh_processing/locate.h>
 #include <Eigen/SparseQR>
 

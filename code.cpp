@@ -1,6 +1,10 @@
 #include "header.hpp"
 #include "raster.hpp"
 
+#include <regex>
+#include <unordered_map>
+
+#include <ogrsf_frmts.h>
 #include <CGAL/IO/WKT.h>
 #include <CGAL/boost/graph/copy_face_graph.h>
 
