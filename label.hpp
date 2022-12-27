@@ -1,3 +1,6 @@
+#ifndef LABEL_H_
+#define LABEL_H_
+
 #include <string>
 #include <array>
 
@@ -12,7 +15,7 @@ struct Label {
     Label(int value, std::string label, unsigned char red, unsigned char green, unsigned char blue): value(value), label(label), red(red), green(green), blue(blue) {}
 };
 
-std::array<Label, 11> LABELS {
+static std::array<Label, 11> LABELS {
     Label(0, "other", 255, 255, 255),
     Label(1, "bare ground", 100, 50, 0),
     Label(2, "low vegetation", 0, 250, 50),
@@ -25,3 +28,5 @@ std::array<Label, 11> LABELS {
     Label(9, "railways", 200, 100, 200),
     Label(10, "swimming pool", 50, 150, 250)
 };
+
+#endif  /* !LABEL_H_ */
