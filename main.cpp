@@ -141,9 +141,7 @@ int main(int argc, char **argv) {
 	std::set<std::pair<skeletonPoint,skeletonPoint>> links = link_paths(mesh, paths, path_polygon, medial_axes, raster);
 
 	for (auto link: links) {
-		if (link.first.path == 2 && link.second.path == 75 || link.first.path == 53 && link.second.path == 94) {
 		bridge(link, mesh, raster);
-		}
 	}
 
 	return EXIT_SUCCESS;
