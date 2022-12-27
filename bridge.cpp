@@ -546,7 +546,6 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 			//width of the reconstructed surface
 			float delta = 1;
 			for (int j = 0; j <= N; j++) {
-				// x^l_j − x^l_{j+1}
 				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j, delta)); //x^l_j
 				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j+N+1, delta)); //x^r_j
 				temp_b.push_back(delta * (width.first + j*(width.second - width.first)/N));
@@ -758,6 +757,88 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 	if (xr[0] > dr0) xr[0] = dr0;
 	if (xr[N] > drN) xr[N] = drN;
 
+	// Compute cost
+	float cost = 0;
+
+	//regularity of the contour
+	float gamma = 1;
+	for (int j = 1; j < N; j++) {
+		cost += pow(gamma * (xl[j-1]+xl[j+1]-2*xl[j]),2);
+		cost += pow(gamma * (xr[j-1]+xr[j+1]-2*xr[j]),2);
+	}
+	/*for (int j = 0; j < N; j++) {
+		// x^l_j − x^l_{j+1}
+		cost += pow(gamma * (xl[j]-xl[j+1]),2);
+		cost += pow(gamma * (xr[j]-xr[j+1]),2);
+	}*/
+
+	//width of the reconstructed surface
+	float delta = 1;
+	for (int j = 0; j <= N; j++) {
+		// x^l_j − x^l_{j+1}
+		cost += pow(delta * ((xl[j] + xr[j]) - (width.first + j*(width.second - width.first)/N)),2);
+	}
+
+	//centering of the surface on the link vertices
+	float epsilon = 1;
+	cost += pow(epsilon * (xl[0] - xr[0]),2);
+	cost += pow(epsilon * (xl[N] - xr[N]),2);
+
+	// regularity of the surface
+	float alpha = 10;
+	for (int i = 0; i < N; i++) {
+		cost += pow(alpha * (z_segment[i] - z_segment[i+1]),2);
+	}
+
+	// attachment to DSM data
+	float beta = 1;
+	float theta = 1;
+	for (int i = 0; i <= N; i++) {
+		int j = std::max({0, ((int) (- xl[i]))});
+		while(j <= xr[i]) {
+			auto p = link.first.point + ((float) i)/N*link_vector + j * n;
+			if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
+				if (z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height / 2) {
+					cost += pow(beta * (z_segment[i] - raster.dsm[p.y()][p.x()]),2);
+					if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge_label) {
+						if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge_label != 8 && bridge_label != 9)) {
+							cost += pow(theta,2);
+						}
+					}
+				} else if (z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height) {
+					cost += pow(beta * (z_segment[i] - (raster.dsm[p.y()][p.x()] - tunnel_height)),2);
+				}
+			}
+			j++;
+		}
+		j = std::max({1, ((int) (- xr[i]))});
+		while(j <= xl[i]) {
+			auto p = link.first.point + ((float) i)/N*link_vector - j * n;
+			if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
+				if (z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height / 2) {
+					cost += pow(beta * (z_segment[i] - raster.dsm[p.y()][p.x()]),2);
+					if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge_label) {
+						if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge_label != 8 && bridge_label != 9)) {
+							cost += pow(theta,2);
+						}
+					}
+				} else if (z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height) {
+					cost += pow(beta * (z_segment[i] - (raster.dsm[p.y()][p.x()] - tunnel_height)),2);
+				}
+			}
+			j++;
+		}
+	}
+
+	// border
+	float zeta = 10;
+	cost += pow(zeta * (z_segment[0] - point1.z()),2);
+	cost += pow(zeta * (z_segment[N] - point2.z()),2);
+
+	/*if (cost > 5) {
+		return;
+	}*/
+
 	std::cout << "Save\n";
 
 	{ // Surface
@@ -791,7 +872,7 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 		}
 
 		std::stringstream bridge_mesh_name;
-		bridge_mesh_name << "bridge_mesh_" << ((int) bridge_label) << "_" << link.first.path << "_" << link.second.path << "_" << link.first.point << "_" << link.second.point << ".ply";
+		bridge_mesh_name << "bridge_mesh_" << ((int) bridge_label) << "_" << link.first.path << "_" << link.second.path << "_" << link.first.point << "_" << link.second.point << "(" << cost << ").ply";
 		std::ofstream mesh_ofile (bridge_mesh_name.str().c_str());
 		CGAL::IO::write_PLY (mesh_ofile, bridge_mesh);
 		mesh_ofile.close();
