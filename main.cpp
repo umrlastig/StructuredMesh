@@ -1,6 +1,11 @@
 #include "header.hpp"
 #include "raster.hpp"
 
+#include <CGAL/Polygon_mesh_processing/locate.h>
+#include <Eigen/SparseQR>
+
+namespace PMP = CGAL::Polygon_mesh_processing;
+
 void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filename);
 
 std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster);
