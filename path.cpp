@@ -100,7 +100,7 @@ std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_
 
 		Filtered_graph filtered_sm(mesh, i, path);
 
-		if (filtered_sm.number_of_faces() > 3) {
+		if (filtered_sm.number_of_faces() > 0) {
 
 			int lab = label[*(CGAL::faces(filtered_sm).first)];
 			if (lab == 3 || lab == 8 || lab == 9) {
