@@ -17,9 +17,7 @@ std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_
 
 std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_axes(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const Raster &raster);
 
-std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> &medial_axes, const Raster &raster);
-
-void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &mesh, const Raster &raster);
+#include "bridge.hpp"
 
 int main(int argc, char **argv) {
 	int opt;
@@ -140,10 +138,15 @@ int main(int argc, char **argv) {
 	std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> path_polygon = compute_path_polygon(mesh, paths, raster);
 	std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> medial_axes = compute_medial_axes(mesh, paths, path_polygon, raster);
 
-	std::set<std::pair<skeletonPoint,skeletonPoint>> links = link_paths(mesh, paths, path_polygon, medial_axes, raster);
+	std::set<pathLink> links = link_paths(mesh, paths, path_polygon, medial_axes, raster);
 
 	for (auto link: links) {
 		bridge(link, mesh, raster);
+		std::cout << "Bridge " << link.first.path << " (" << link.first.point << ") -> " << link.second.path << " (" << link.second.point << ")\n";
+		pathBridge bridge_result = bridge(link, mesh, raster);
+		if (bridge_result.cost < 5) {
+			std::cout << "cost: " << bridge_result.cost << "\n";
+		}
 	}
 
 	return EXIT_SUCCESS;

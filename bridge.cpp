@@ -1,5 +1,4 @@
-#include "header.hpp"
-#include "raster.hpp"
+#include "bridge.hpp"
 
 #include <CGAL/boost/graph/Face_filtered_graph.h>
 #include <CGAL/Polygon_mesh_processing/locate.h>
@@ -7,10 +6,10 @@
 
 namespace PMP = CGAL::Polygon_mesh_processing;
 
-std::pair<K::FT, K::FT> road_width (std::pair<skeletonPoint,skeletonPoint> link);
+std::pair<K::FT, K::FT> road_width (pathLink link);
 std::pair<Surface_mesh::Face_index, Point_2> point_on_path_border(const Surface_mesh &mesh, Surface_mesh::Face_index face, std::list<K::Segment_2> segments);
 
-std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> &medial_axes, const Raster &raster) {
+std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> &medial_axes, const Raster &raster) {
 
 	// Get label property
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
@@ -18,7 +17,7 @@ std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &
 	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
 	assert(has_label);
 
-	std::set<std::pair<skeletonPoint,skeletonPoint>> result;
+	std::set<pathLink> result;
 
 	for (int selected_label:  {3, 8, 9}) {
 		// List path with selected label
@@ -358,9 +357,21 @@ std::set<std::pair<skeletonPoint,skeletonPoint>> link_paths(const Surface_mesh &
 
 }
 
-void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &mesh, const Raster &raster) {
-	std::cout << "Bridge " << link.first.path << " (" << link.first.point << ") -> " << link.second.path << " (" << link.second.point << ")\n";
+pathBridge::pathBridge(pathLink link): cost(0) {
+	N = int(sqrt(CGAL::squared_distance(link.first.point, link.second.point)));
+	xl = new float[N+1];
+	xr = new float[N+1];
+	z_segment = new float[N+1];
+}
 
+pathBridge::~pathBridge() {
+	delete xl;
+	delete xr;
+	delete z_segment;
+}
+
+
+pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster) {
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
 	bool has_path;
@@ -414,31 +425,27 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 	float drN = sqrt(CGAL::squared_distance(link.second.point, right2_border.second));
 
 	int N = int(sqrt(link_vector.squared_length ()));
-	float xl[N+1];
-	float xr[N+1];
-	float z_segment[N+1];
-	for (int i = 0; i <= N; i++) {
-		xl[i] = dl0 + ((float) i)/N*(dlN-dl0);
-		xr[i] = dr0 + ((float) i)/N*(drN-dr0);
-		z_segment[i] = point1.z() + (point2.z() - point1.z())*((float) i)/N;
+	pathBridge bridge(link);
+	for (int i = 0; i <= bridge.N; i++) {
+		bridge.xl[i] = dl0 + ((float) i)/bridge.N*(dlN-dl0);
+		bridge.xr[i] = dr0 + ((float) i)/bridge.N*(drN-dr0);
+		bridge.z_segment[i] = point1.z() + (point2.z() - point1.z())*((float) i)/bridge.N;
 	}
 
 	float tunnel_height = 3; // in meter
 
 	for(int loop = 0; loop < 10; loop++) {
 
-		std::cout << "Solve surface\n";
-
 		// Surface solver
 		{
 			std::vector<Eigen::Triplet<float>> tripletList;
-			tripletList.reserve(10*N+2);
+			tripletList.reserve(10*bridge.N+2);
 			std::vector<float> temp_b;
-			temp_b.reserve(9*N+2);
+			temp_b.reserve(9*bridge.N+2);
 
 			// regularity of the surface
 			float alpha = 10;
-			for (int i = 0; i < N; i++) {
+			for (int i = 0; i < bridge.N; i++) {
 				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i, alpha));
 				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i+1, -alpha));
 				temp_b.push_back(0);
@@ -446,29 +453,29 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 
 			// attachment to DSM data
 			float beta = 1;
-			for (int i = 0; i <= N; i++) {
-				int j = std::max({0, ((int) (- xl[i]))});
-				while(j <= xr[i]) {
-					auto p = link.first.point + ((float) i)/N*link_vector + j * n;
+			for (int i = 0; i <= bridge.N; i++) {
+				int j = std::max({0, ((int) (- bridge.xl[i]))});
+				while(j <= bridge.xr[i]) {
+					auto p = link.first.point + ((float) i)/bridge.N*link_vector + j * n;
 					if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
-						if (z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height / 2) {
+						if (bridge.z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height / 2) {
 							tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i, beta));
 							temp_b.push_back(raster.dsm[p.y()][p.x()]);
-						} else if (z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height) {
+						} else if (bridge.z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height) {
 							tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i, beta));
 							temp_b.push_back(raster.dsm[p.y()][p.x()] - tunnel_height);
 						}
 					}
 					j++;
 				}
-				j = std::max({1, ((int) (- xr[i]))});
-				while(j <= xl[i]) {
-					auto p = link.first.point + ((float) i)/N*link_vector - j * n;
+				j = std::max({1, ((int) (- bridge.xr[i]))});
+				while(j <= bridge.xl[i]) {
+					auto p = link.first.point + ((float) i)/bridge.N*link_vector - j * n;
 					if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
-						if (z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height / 2) {
+						if (bridge.z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height / 2) {
 							tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i, beta));
 							temp_b.push_back(raster.dsm[p.y()][p.x()]);
-						} else if (z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height) {
+						} else if (bridge.z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height) {
 							tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i, beta));
 							temp_b.push_back(raster.dsm[p.y()][p.x()] - tunnel_height);
 						}
@@ -481,11 +488,11 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 			float zeta = 10;
 			tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), 0, zeta));
 			temp_b.push_back(zeta * point1.z());
-			tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), N, zeta));
+			tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), bridge.N, zeta));
 			temp_b.push_back(zeta * point2.z());
 
 			// solving
-			Eigen::SparseMatrix<float> A(temp_b.size(), N+1);
+			Eigen::SparseMatrix<float> A(temp_b.size(), bridge.N+1);
 			A.setFromTriplets(tripletList.begin(), tripletList.end());
 			Eigen::VectorXf b = Eigen::Map<Eigen::VectorXf, Eigen::Unaligned>(temp_b.data(), temp_b.size());
 
@@ -493,51 +500,49 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 			solver.compute(A);
 			if(solver.info()!=Eigen::Success) {
 				std::cout << "decomposition failed\n";
-				return;
+				return bridge;
 			}
 			Eigen::VectorXf x = solver.solve(b);
 			if(solver.info()!=Eigen::Success) {
 				std::cout << "solving failed\n";
-				return;
+				return bridge;
 			}
-			for (int i = 0; i <= N; i++) {
-				z_segment[i] += (x[i] - z_segment[i]) / (loop + 2);
+			for (int i = 0; i <= bridge.N; i++) {
+				bridge.z_segment[i] += (x[i] - bridge.z_segment[i]) / (loop + 2);
 			}
 		}
-
-		std::cout << "Solve contour\n";
 
 		// Contour solver
 		{
 			std::vector<Eigen::Triplet<float>> tripletList;
-			tripletList.reserve(2*N + N+1 + 4 + 4);
+			tripletList.reserve(2*bridge.N + bridge.N+1 + 4 + 4);
 			std::vector<float> temp_b;
-			temp_b.reserve(2*N + N+1 + 4 + 4);
+			temp_b.reserve(2*bridge.N + bridge.N+1 + 4 + 4);
 
 			//regularity of the contour
 			float gamma = 1;
-			for (int j = 1; j < N; j++) {
+			for (int j = 1; j < bridge.N; j++) {
 				// x^l_j − x^l_{j+1}
 				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j-1,gamma));
 				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j+1,gamma));
 				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j,-2*gamma));
 				temp_b.push_back(0);
 			}
-			for (int j = N+2; j < 2*N+1; j++) {
-				// x^r_{j-N-1} − x^r_{j+1-N-1}
+			for (int j = bridge.N+2; j < 2*bridge.N+1; j++) {
+				// x^r_{j-bridge.N-1} − x^r_{j+1-bridge.N-1}
 				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j-1,gamma));
 				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j+1,gamma));
 				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j,-2*gamma));
 				temp_b.push_back(0);
 			}
-			/*for (int j = 0; j < N; j++) {
+			/*for (int j = 0; j < bridge.N; j++) {
 				// x^l_j − x^l_{j+1}
 				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j,gamma));
 				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j+1,-gamma));
 				temp_b.push_back(0);
 			}
-			for (int j = N+1; j < 2*N+1; j++) {
-				// x^r_{j-N-1} − x^r_{j+1-N-1}
+			for (int j = bridge.N+1; j < 2*bridge.N+1; j++) {
+				// x^r_{j-bridge.N-1} − x^r_{j+1-bridge.N-1}
 				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j,gamma));
 				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j+1,-gamma));
 				temp_b.push_back(0);
@@ -545,40 +550,40 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 
 			//width of the reconstructed surface
 			float delta = 1;
-			for (int j = 0; j <= N; j++) {
+			for (int j = 0; j <= bridge.N; j++) {
 				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j, delta)); //x^l_j
-				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j+N+1, delta)); //x^r_j
-				temp_b.push_back(delta * (width.first + j*(width.second - width.first)/N));
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), j+bridge.N+1, delta)); //x^r_j
+				temp_b.push_back(delta * (width.first + j*(width.second - width.first)/bridge.N));
 			}
 
 			//centering of the surface on the link vertices
 			float epsilon = 1;
 			tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), 0,epsilon)); //x^l_0
-			tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), N+1,-epsilon)); //x^r_0
+			tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), bridge.N+1,-epsilon)); //x^r_0
 			temp_b.push_back(0);
-			tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), N,epsilon)); //x^l_N
-			tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), 2*N+1,-epsilon)); //x^r_N
+			tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), bridge.N,epsilon)); //x^l_N
+			tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), 2*bridge.N+1,-epsilon)); //x^r_N
 			temp_b.push_back(0);
 
-			//keeping surface where cost is low
+			//keeping surface where bridge.bridge.cost is low
 			float theta = 1;
 			float iota  = 1;
 			// left contour
-			for (int i = 0; i <= N; i++) {
-				float j = xl[i];
+			for (int i = 0; i <= bridge.N; i++) {
+				float j = bridge.xl[i];
 				float j_min = j;
 				float v_min;
-				auto p = link.first.point + ((float) i)/N*link_vector - j * n;
+				auto p = link.first.point + ((float) i)/bridge.N*link_vector - j * n;
 				if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
-					if (z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height) {
+					if (bridge.z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height) {
 						continue;
-					} else if (z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height/2) {
-						v_min = pow(z_segment[i] - raster.dsm[p.y()][p.x()] + tunnel_height, 2);
+					} else if (bridge.z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height/2) {
+						v_min = pow(bridge.z_segment[i] - raster.dsm[p.y()][p.x()] + tunnel_height, 2);
 						if (v_min < 0.25) {
 							continue;
 						}
 					} else {
-						v_min = pow(z_segment[i] - raster.dsm[p.y()][p.x()], 2);
+						v_min = pow(bridge.z_segment[i] - raster.dsm[p.y()][p.x()], 2);
 						if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge_label) {
 							if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge_label != 8 && bridge_label != 9)) {
 								v_min += theta;
@@ -593,17 +598,17 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 				}
 
 				j--;
-				while(j > -xr[i]) {
+				while(j > -bridge.xr[i]) {
 					if (v_min == 0) {
 						break;
 					}
-					auto p = link.first.point + ((float) i)/N*link_vector - j * n;
+					auto p = link.first.point + ((float) i)/bridge.N*link_vector - j * n;
 					if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
-						if (z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height) {
+						if (bridge.z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height) {
 							j_min = j;
 							break;
-						} else if (z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height/2) {
-							float v = pow(z_segment[i] - raster.dsm[p.y()][p.x()] + tunnel_height, 2);
+						} else if (bridge.z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height/2) {
+							float v = pow(bridge.z_segment[i] - raster.dsm[p.y()][p.x()] + tunnel_height, 2);
 							if (v < 0.25) {
 								v = 0;
 							}
@@ -612,7 +617,7 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 								v_min = v;
 							}
 						} else {
-							float v = pow(z_segment[i] - raster.dsm[p.y()][p.x()], 2);
+							float v = pow(bridge.z_segment[i] - raster.dsm[p.y()][p.x()], 2);
 							if (v < 0.25) {
 								v = 0;
 							}
@@ -631,27 +636,27 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 					}
 					j--;
 				}
-				if (j_min < xl[i]) {
+				if (j_min < bridge.xl[i]) {
 					tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i, iota));
 					temp_b.push_back(iota * j_min);
 				}
 			}
 			// right contour
-			for (int i = 0; i <= N; i++) {
-				float j = xr[i];
+			for (int i = 0; i <= bridge.N; i++) {
+				float j = bridge.xr[i];
 				float j_min = j;
 				float v_min;
-				auto p = link.first.point + ((float) i)/N*link_vector + j * n;
+				auto p = link.first.point + ((float) i)/bridge.N*link_vector + j * n;
 				if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
-					if (z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height) {
+					if (bridge.z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height) {
 						continue;
-					} else if (z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height/2) {
-						v_min = pow(z_segment[i] - raster.dsm[p.y()][p.x()] + tunnel_height, 2);
+					} else if (bridge.z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height/2) {
+						v_min = pow(bridge.z_segment[i] - raster.dsm[p.y()][p.x()] + tunnel_height, 2);
 						if (v_min < 0.25) {
 							continue;
 						}
 					} else {
-						v_min = pow(z_segment[i] - raster.dsm[p.y()][p.x()], 2);
+						v_min = pow(bridge.z_segment[i] - raster.dsm[p.y()][p.x()], 2);
 						if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge_label) {
 							if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge_label != 8 && bridge_label != 9)) {
 								v_min += theta;
@@ -666,17 +671,17 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 				}
 
 				j--;
-				while(j > -xl[i]) {
+				while(j > -bridge.xl[i]) {
 					if (v_min == 0) {
 						break;
 					}
-					auto p = link.first.point + ((float) i)/N*link_vector + j * n;
+					auto p = link.first.point + ((float) i)/bridge.N*link_vector + j * n;
 					if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
-						if (z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height) {
+						if (bridge.z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height) {
 							j_min = j;
 							break;
-						} else if (z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height/2) {
-							float v = pow(z_segment[i] - raster.dsm[p.y()][p.x()] + tunnel_height, 2);
+						} else if (bridge.z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height/2) {
+							float v = pow(bridge.z_segment[i] - raster.dsm[p.y()][p.x()] + tunnel_height, 2);
 							if (v < 0.25) {
 								v = 0;
 							}
@@ -685,7 +690,7 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 								v_min = v;
 							}
 						} else {
-							float v = pow(z_segment[i] - raster.dsm[p.y()][p.x()], 2);
+							float v = pow(bridge.z_segment[i] - raster.dsm[p.y()][p.x()], 2);
 							if (v < 0.25) {
 								v = 0;
 							}
@@ -704,33 +709,33 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 					}
 					j--;
 				}
-				if (j_min < xr[i]) {
-					tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i + N+1, iota));
+				if (j_min < bridge.xr[i]) {
+					tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i + bridge.N+1, iota));
 					temp_b.push_back(iota * j_min);
 				}
 			}
 
 			// fix border
 			float eta = 100;
-			if (xl[0] > dl0) {
+			if (bridge.xl[0] > dl0) {
 				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), 0, eta)); //x^l_0
 				temp_b.push_back(eta*dl0);
 			}
-			if (xl[N] > dlN) {
-				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), N, eta)); //x^l_N
+			if (bridge.xl[bridge.N] > dlN) {
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), bridge.N, eta)); //x^l_N
 				temp_b.push_back(eta*dlN);
 			}
-			if (xr[0] > dr0) {
-				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), N+1, eta)); //x^r_0
+			if (bridge.xr[0] > dr0) {
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), bridge.N+1, eta)); //x^r_0
 				temp_b.push_back(eta*dr0);
 			}
-			if (xr[N] > drN) {
-				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), 2*N+1, eta)); //x^r_N
+			if (bridge.xr[bridge.N] > drN) {
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), 2*bridge.N+1, eta)); //x^r_N
 				temp_b.push_back(eta*drN);
 			}
 
 			// solving
-			Eigen::SparseMatrix<float> A(temp_b.size(),2*N+2);
+			Eigen::SparseMatrix<float> A(temp_b.size(),2*bridge.N+2);
 			A.setFromTriplets(tripletList.begin(), tripletList.end());
 			Eigen::VectorXf b = Eigen::Map<Eigen::VectorXf, Eigen::Unaligned>(temp_b.data(), temp_b.size());
 			
@@ -738,96 +743,95 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 			solver.compute(A);
 			if(solver.info()!=Eigen::Success) {
 				std::cout << "decomposition failed\n";
-				return;
+				return bridge;
 			}
 			Eigen::VectorXf x = solver.solve(b);
 			if(solver.info()!=Eigen::Success) {
 				std::cout << "solving failed\n";
-				return;
+				return bridge;
 			}
-			for (int j = 0; j < N; j++) {
+			for (int j = 0; j < bridge.N; j++) {
 				// x^l_j
-				xl[j] += (x[j] - xl[j]) / (loop + 2);
+				bridge.xl[j] += (x[j] - bridge.xl[j]) / (loop + 2);
 				// x^r_j
-				xr[j] += (x[j+N+1] - xr[j]) / (loop + 2);
+				bridge.xr[j] += (x[j+bridge.N+1] - bridge.xr[j]) / (loop + 2);
 			}
 
 		}
 
 	}
 	
-	if (xl[0] > dl0) xl[0] = dl0;
-	if (xl[N] > dlN) xl[N] = dlN;
-	if (xr[0] > dr0) xr[0] = dr0;
-	if (xr[N] > drN) xr[N] = drN;
+	if (bridge.xl[0] > dl0) bridge.xl[0] = dl0;
+	if (bridge.xl[bridge.N] > dlN) bridge.xl[bridge.N] = dlN;
+	if (bridge.xr[0] > dr0) bridge.xr[0] = dr0;
+	if (bridge.xr[bridge.N] > drN) bridge.xr[bridge.N] = drN;
 
 	// Compute cost
-	float cost = 0;
 
 	//regularity of the contour
 	float gamma = 1;
-	for (int j = 1; j < N; j++) {
-		cost += pow(gamma * (xl[j-1]+xl[j+1]-2*xl[j]),2);
-		cost += pow(gamma * (xr[j-1]+xr[j+1]-2*xr[j]),2);
+	for (int j = 1; j < bridge.N; j++) {
+		bridge.cost += pow(gamma * (bridge.xl[j-1]+bridge.xl[j+1]-2*bridge.xl[j]),2);
+		bridge.cost += pow(gamma * (bridge.xr[j-1]+bridge.xr[j+1]-2*bridge.xr[j]),2);
 	}
-	/*for (int j = 0; j < N; j++) {
+	/*for (int j = 0; j < bridge.N; j++) {
 		// x^l_j − x^l_{j+1}
-		cost += pow(gamma * (xl[j]-xl[j+1]),2);
-		cost += pow(gamma * (xr[j]-xr[j+1]),2);
+		bridge.cost += pow(gamma * (bridge.xl[j]-bridge.xl[j+1]),2);
+		bridge.cost += pow(gamma * (bridge.xr[j]-bridge.xr[j+1]),2);
 	}*/
 
 	//width of the reconstructed surface
 	float delta = 1;
-	for (int j = 0; j <= N; j++) {
+	for (int j = 0; j <= bridge.N; j++) {
 		// x^l_j − x^l_{j+1}
-		cost += pow(delta * ((xl[j] + xr[j]) - (width.first + j*(width.second - width.first)/N)),2);
+		bridge.cost += pow(delta * ((bridge.xl[j] + bridge.xr[j]) - (width.first + j*(width.second - width.first)/bridge.N)),2);
 	}
 
 	//centering of the surface on the link vertices
 	float epsilon = 1;
-	cost += pow(epsilon * (xl[0] - xr[0]),2);
-	cost += pow(epsilon * (xl[N] - xr[N]),2);
+	bridge.cost += pow(epsilon * (bridge.xl[0] - bridge.xr[0]),2);
+	bridge.cost += pow(epsilon * (bridge.xl[bridge.N] - bridge.xr[bridge.N]),2);
 
 	// regularity of the surface
 	float alpha = 10;
-	for (int i = 0; i < N; i++) {
-		cost += pow(alpha * (z_segment[i] - z_segment[i+1]),2);
+	for (int i = 0; i < bridge.N; i++) {
+		bridge.cost += pow(alpha * (bridge.z_segment[i] - bridge.z_segment[i+1]),2);
 	}
 
 	// attachment to DSM data
 	float beta = 1;
 	float theta = 1;
-	for (int i = 0; i <= N; i++) {
-		int j = std::max({0, ((int) (- xl[i]))});
-		while(j <= xr[i]) {
-			auto p = link.first.point + ((float) i)/N*link_vector + j * n;
+	for (int i = 0; i <= bridge.N; i++) {
+		int j = std::max({0, ((int) (- bridge.xl[i]))});
+		while(j <= bridge.xr[i]) {
+			auto p = link.first.point + ((float) i)/bridge.N*link_vector + j * n;
 			if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
-				if (z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height / 2) {
-					cost += pow(beta * (z_segment[i] - raster.dsm[p.y()][p.x()]),2);
+				if (bridge.z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height / 2) {
+					bridge.cost += pow(beta * (bridge.z_segment[i] - raster.dsm[p.y()][p.x()]),2);
 					if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge_label) {
 						if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge_label != 8 && bridge_label != 9)) {
-							cost += pow(theta,2);
+							bridge.cost += pow(theta,2);
 						}
 					}
-				} else if (z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height) {
-					cost += pow(beta * (z_segment[i] - (raster.dsm[p.y()][p.x()] - tunnel_height)),2);
+				} else if (bridge.z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height) {
+					bridge.cost += pow(beta * (bridge.z_segment[i] - (raster.dsm[p.y()][p.x()] - tunnel_height)),2);
 				}
 			}
 			j++;
 		}
-		j = std::max({1, ((int) (- xr[i]))});
-		while(j <= xl[i]) {
-			auto p = link.first.point + ((float) i)/N*link_vector - j * n;
+		j = std::max({1, ((int) (- bridge.xr[i]))});
+		while(j <= bridge.xl[i]) {
+			auto p = link.first.point + ((float) i)/bridge.N*link_vector - j * n;
 			if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
-				if (z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height / 2) {
-					cost += pow(beta * (z_segment[i] - raster.dsm[p.y()][p.x()]),2);
+				if (bridge.z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height / 2) {
+					bridge.cost += pow(beta * (bridge.z_segment[i] - raster.dsm[p.y()][p.x()]),2);
 					if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge_label) {
 						if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge_label != 8 && bridge_label != 9)) {
-							cost += pow(theta,2);
+							bridge.cost += pow(theta,2);
 						}
 					}
-				} else if (z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height) {
-					cost += pow(beta * (z_segment[i] - (raster.dsm[p.y()][p.x()] - tunnel_height)),2);
+				} else if (bridge.z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height) {
+					bridge.cost += pow(beta * (bridge.z_segment[i] - (raster.dsm[p.y()][p.x()] - tunnel_height)),2);
 				}
 			}
 			j++;
@@ -836,31 +840,29 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 
 	// border
 	float zeta = 10;
-	cost += pow(zeta * (z_segment[0] - point1.z()),2);
-	cost += pow(zeta * (z_segment[N] - point2.z()),2);
+	bridge.cost += pow(zeta * (bridge.z_segment[0] - point1.z()),2);
+	bridge.cost += pow(zeta * (bridge.z_segment[bridge.N] - point2.z()),2);
 
-	if (cost > 5) {
-		return;
+	if (bridge.cost > 5) {
+		return bridge;
 	}
-
-	std::cout << "Save\n";
 
 	{ // Surface
 
 		Surface_mesh bridge_mesh;
-		Surface_mesh::Vertex_index Xl[N+1];
-		Surface_mesh::Vertex_index Xr[N+1];
+		Surface_mesh::Vertex_index Xl[bridge.N+1];
+		Surface_mesh::Vertex_index Xr[bridge.N+1];
 
 		// Add points
-		for (int i = 0; i <= N; i++) {
-			auto p1 = link.first.point + ((float) i)/N*link_vector - xl[i] * n;
-			auto p2 = link.first.point + ((float) i)/N*link_vector + xr[i] * n;
-			Xl[i] = bridge_mesh.add_vertex(Point_3(p1.x(), p1.y(), z_segment[i]));
-			Xr[i] = bridge_mesh.add_vertex(Point_3(p2.x(), p2.y(), z_segment[i]));
+		for (int i = 0; i <= bridge.N; i++) {
+			auto p1 = link.first.point + ((float) i)/bridge.N*link_vector - bridge.xl[i] * n;
+			auto p2 = link.first.point + ((float) i)/bridge.N*link_vector + bridge.xr[i] * n;
+			Xl[i] = bridge_mesh.add_vertex(Point_3(p1.x(), p1.y(), bridge.z_segment[i]));
+			Xr[i] = bridge_mesh.add_vertex(Point_3(p2.x(), p2.y(), bridge.z_segment[i]));
 		}
 
 		// Add faces
-		for (int i = 0; i < N; i++) {
+		for (int i = 0; i < bridge.N; i++) {
 			bridge_mesh.add_face(Xl[i], Xr[i], Xr[i+1]);
 			bridge_mesh.add_face(Xl[i], Xr[i+1], Xl[i+1]);
 		}
@@ -876,12 +878,10 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 		}
 
 		std::stringstream bridge_mesh_name;
-		bridge_mesh_name << "bridge_mesh_" << ((int) bridge_label) << "_" << link.first.path << "_" << link.second.path << "_" << link.first.point << "_" << link.second.point << "(" << cost << ").ply";
+		bridge_mesh_name << "bridge_mesh_" << ((int) bridge_label) << "_" << link.first.path << "_" << link.second.path << "_" << link.first.point << "_" << link.second.point << "(" << bridge.cost << ").ply";
 		std::ofstream mesh_ofile (bridge_mesh_name.str().c_str());
 		CGAL::IO::write_PLY (mesh_ofile, bridge_mesh);
 		mesh_ofile.close();
-
-		std::cout << bridge_mesh_name.str() << " saved\n";
 
 	}
 
@@ -911,12 +911,12 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 
 		/*auto init = skeleton.add_vertex(Point_3(Xr[0].x(), Xr[0].y(), point1.z()));
 		auto temp1 = CGAL::SM_Vertex_index(init);
-		for (int i = 1; i <= N; i++) {
+		for (int i = 1; i <= bridge.N; i++) {
 			auto temp2 = skeleton.add_vertex(Point_3(Xr[i].x(), Xr[i].y(), point1.z()));
 			skeleton.add_edge(temp1, temp2);
 			temp1 = temp2;
 		}
-		for (int i = N; i >= 0; i--) {
+		for (int i = bridge.N; i >= 0; i--) {
 			auto temp2 = skeleton.add_vertex(Point_3(Xl[i].x(), Xl[i].y(), point1.z()));
 			skeleton.add_edge(temp1, temp2);
 			temp1 = temp2;
@@ -944,5 +944,7 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 		CGAL::IO::write_PLY (mesh_ofile, skeleton);
 		mesh_ofile.close();
 	}
+
+	return bridge;
 
 }
