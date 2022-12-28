@@ -10,6 +10,7 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 
 struct pathBridge {
 	pathLink link;
+	unsigned char label;
 	int N;
 	float *xl;
 	float *xr;

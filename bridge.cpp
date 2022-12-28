@@ -357,7 +357,7 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 
 }
 
-pathBridge::pathBridge(pathLink link): cost(0) {
+pathBridge::pathBridge(pathLink link): link(link), cost(0) {
 	N = int(sqrt(CGAL::squared_distance(link.first.point, link.second.point)));
 	xl = new float[N+1];
 	xr = new float[N+1];
@@ -400,8 +400,6 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 	auto point1 = PMP::construct_point(location1, mesh);
 	auto point2 = PMP::construct_point(location2, mesh);
 
-	unsigned char bridge_label = label[location1.first];
-
 	K::Vector_2 link_vector(link.first.point, link.second.point);
 	float length = sqrt(link_vector.squared_length());
 	auto l = link_vector / length;
@@ -431,6 +429,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 		bridge.xr[i] = dr0 + ((float) i)/bridge.N*(drN-dr0);
 		bridge.z_segment[i] = point1.z() + (point2.z() - point1.z())*((float) i)/bridge.N;
 	}
+	bridge.label = label[location1.first];
 
 	float tunnel_height = 3; // in meter
 
@@ -584,8 +583,8 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 						}
 					} else {
 						v_min = pow(bridge.z_segment[i] - raster.dsm[p.y()][p.x()], 2);
-						if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge_label) {
-							if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge_label != 8 && bridge_label != 9)) {
+						if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge.label) {
+							if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge.label != 8 && bridge.label != 9)) {
 								v_min += theta;
 							}
 						}
@@ -621,8 +620,8 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 							if (v < 0.25) {
 								v = 0;
 							}
-							if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge_label) {
-								if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge_label != 8 && bridge_label != 9)) {
+							if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge.label) {
+								if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge.label != 8 && bridge.label != 9)) {
 									v += theta;
 								}
 							}
@@ -657,8 +656,8 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 						}
 					} else {
 						v_min = pow(bridge.z_segment[i] - raster.dsm[p.y()][p.x()], 2);
-						if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge_label) {
-							if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge_label != 8 && bridge_label != 9)) {
+						if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge.label) {
+							if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge.label != 8 && bridge.label != 9)) {
 								v_min += theta;
 							}
 						}
@@ -694,8 +693,8 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 							if (v < 0.25) {
 								v = 0;
 							}
-							if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge_label) {
-								if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge_label != 8 && bridge_label != 9)) {
+							if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge.label) {
+								if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge.label != 8 && bridge.label != 9)) {
 									v += theta;
 								}
 							}
@@ -808,8 +807,8 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 			if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
 				if (bridge.z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height / 2) {
 					bridge.cost += pow(beta * (bridge.z_segment[i] - raster.dsm[p.y()][p.x()]),2);
-					if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge_label) {
-						if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge_label != 8 && bridge_label != 9)) {
+					if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge.label) {
+						if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge.label != 8 && bridge.label != 9)) {
 							bridge.cost += pow(theta,2);
 						}
 					}
@@ -825,8 +824,8 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 			if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
 				if (bridge.z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height / 2) {
 					bridge.cost += pow(beta * (bridge.z_segment[i] - raster.dsm[p.y()][p.x()]),2);
-					if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge_label) {
-						if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge_label != 8 && bridge_label != 9)) {
+					if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge.label) {
+						if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge.label != 8 && bridge.label != 9)) {
 							bridge.cost += pow(theta,2);
 						}
 					}
@@ -878,7 +877,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 		}
 
 		std::stringstream bridge_mesh_name;
-		bridge_mesh_name << "bridge_mesh_" << ((int) bridge_label) << "_" << link.first.path << "_" << link.second.path << "_" << link.first.point << "_" << link.second.point << "(" << bridge.cost << ").ply";
+		bridge_mesh_name << "bridge_mesh_" << ((int) bridge.label) << "_" << link.first.path << "_" << link.second.path << "_" << link.first.point << "_" << link.second.point << "(" << bridge.cost << ").ply";
 		std::ofstream mesh_ofile (bridge_mesh_name.str().c_str());
 		CGAL::IO::write_PLY (mesh_ofile, bridge_mesh);
 		mesh_ofile.close();
@@ -939,7 +938,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 		}
 
 		std::stringstream skeleton_name;
-		skeleton_name << "bridge_" << ((int) bridge_label) << "_" << link.first.path << "_" << link.second.path << "_" << link.first.point << "_" << link.second.point << ".ply";
+		skeleton_name << "bridge_" << ((int) bridge.label) << "_" << link.first.path << "_" << link.second.path << "_" << link.first.point << "_" << link.second.point << ".ply";
 		std::ofstream mesh_ofile (skeleton_name.str().c_str());
 		CGAL::IO::write_PLY (mesh_ofile, skeleton);
 		mesh_ofile.close();
