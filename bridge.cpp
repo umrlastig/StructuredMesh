@@ -631,8 +631,10 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 					}
 					j--;
 				}
-				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i, iota));
-				temp_b.push_back(iota * j_min);
+				if (j_min < xl[i]) {
+					tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i, iota));
+					temp_b.push_back(iota * j_min);
+				}
 			}
 			// right contour
 			for (int i = 0; i <= N; i++) {
@@ -702,8 +704,10 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 					}
 					j--;
 				}
-				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i + N+1, iota));
-				temp_b.push_back(iota * j_min);
+				if (j_min < xr[i]) {
+					tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i + N+1, iota));
+					temp_b.push_back(iota * j_min);
+				}
 			}
 
 			// fix border
@@ -835,9 +839,9 @@ void bridge (std::pair<skeletonPoint,skeletonPoint> link, const Surface_mesh &me
 	cost += pow(zeta * (z_segment[0] - point1.z()),2);
 	cost += pow(zeta * (z_segment[N] - point2.z()),2);
 
-	/*if (cost > 5) {
+	if (cost > 5) {
 		return;
-	}*/
+	}
 
 	std::cout << "Save\n";
 
