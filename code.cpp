@@ -7,6 +7,7 @@
 #include <ogrsf_frmts.h>
 #include <CGAL/IO/WKT.h>
 #include <CGAL/boost/graph/copy_face_graph.h>
+#include <CGAL/Polygon_mesh_processing/orientation.h>
 
 std::list<Polygon> get_LOD0_from_shapefile(char *path) {
 	GDALAllRegister();
@@ -166,6 +167,8 @@ void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filen
 		raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
 		output_mesh.point(vertex) = CGAL::Simple_cartesian<double>::Point_3(x-min_x, y-min_y, (double) point.z());
 	}
+
+	CGAL::Polygon_mesh_processing::orient(output_mesh); 	
 
 	std::ofstream mesh_ofile (filename, std::ios_base::binary);
 	CGAL::IO::set_binary_mode (mesh_ofile);
