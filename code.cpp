@@ -6,7 +6,6 @@
 
 #include <ogrsf_frmts.h>
 #include <CGAL/IO/WKT.h>
-#include <CGAL/boost/graph/copy_face_graph.h>
 #include <CGAL/Polygon_mesh_processing/orientation.h>
 
 std::list<Polygon> get_LOD0_from_shapefile(char *path) {
@@ -57,49 +56,36 @@ std::list<Polygon> get_LOD0_from_shapefile(char *path) {
 float single_face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, const Point_3 &p2);
 
 void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filename) {
-	typedef CGAL::Surface_mesh<CGAL::Simple_cartesian<double>::Point_3> OutputMesh;
-	OutputMesh output_mesh;
-
-	std::unordered_map<boost::graph_traits<Surface_mesh>::face_descriptor, boost::graph_traits<OutputMesh>::face_descriptor> f2f;
-	CGAL::copy_face_graph (mesh, output_mesh, CGAL::parameters::face_to_face_output_iterator(std::inserter(f2f, f2f.end())));
-
-	// Label
-	OutputMesh::Property_map<OutputMesh::Face_index, unsigned char> output_label;
-	bool created;
-	boost::tie(output_label, created) = output_mesh.add_property_map<OutputMesh::Face_index, unsigned char>("label",0);
-	assert(created);
+	Surface_mesh output_mesh (mesh);
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool has_label;
-	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
-	if (has_label) {
-		for (auto face : mesh.faces()) {
-			output_label[f2f[face]] = label[face];
-		}
-	}
+	boost::tie(label, has_label) = output_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("label");
+	has_label = !has_label;
 
 	// Color
-	OutputMesh::Property_map<OutputMesh::Face_index, unsigned char> red;
-	OutputMesh::Property_map<OutputMesh::Face_index, unsigned char> green;
-	OutputMesh::Property_map<OutputMesh::Face_index, unsigned char> blue;
-	boost::tie(red, created) = output_mesh.add_property_map<OutputMesh::Face_index, unsigned char>("red",0);
+	bool created;
+	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> red;
+	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> green;
+	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> blue;
+	boost::tie(red, created) = output_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("red",0);
 	assert(created);
-	boost::tie(green, created) = output_mesh.add_property_map<OutputMesh::Face_index, unsigned char>("green",0);
+	boost::tie(green, created) = output_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("green",0);
 	assert(created);
-	boost::tie(blue, created) = output_mesh.add_property_map<OutputMesh::Face_index, unsigned char>("blue",0);
+	boost::tie(blue, created) = output_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("blue",0);
 	assert(created);
 
 	// Entropy
-	OutputMesh::Property_map<OutputMesh::Face_index, float> quality;
-	boost::tie(quality, created) = output_mesh.add_property_map<OutputMesh::Face_index, float>("quality",0);
+	Surface_mesh::Property_map<Surface_mesh::Face_index, float> quality;
+	boost::tie(quality, created) = output_mesh.add_property_map<Surface_mesh::Face_index, float>("quality",0);
 	assert(created);
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
 	bool has_path;
-	boost::tie(path, has_path) = mesh.property_map<Surface_mesh::Face_index, int>("path");
+	boost::tie(path, has_path) = output_mesh.property_map<Surface_mesh::Face_index, int>("path");
 	if (has_path) {
-		for (auto face : mesh.faces()) {
-			quality[f2f[face]] = path[face];
+		for (auto face : output_mesh.faces()) {
+			quality[face] = path[face];
 		}
 	}
 
@@ -107,7 +93,7 @@ void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filen
 		if (!has_label) {
 			int face_label[LABELS.size()] = {0};
 
-			CGAL::Vertex_around_face_iterator<OutputMesh> vbegin, vend;
+			CGAL::Vertex_around_face_iterator<Surface_mesh> vbegin, vend;
 			boost::tie(vbegin, vend) = vertices_around_face(output_mesh.halfedge(face), output_mesh);
 			for (auto pixel : raster.triangle_to_pixel(output_mesh.point(*(vbegin++)), output_mesh.point(*(vbegin++)), output_mesh.point(*(vbegin++)))) {
 				if (raster.land_cover[pixel.second][pixel.first] > -1) {
@@ -116,15 +102,15 @@ void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filen
 			}
 
 			auto argmax = std::max_element(face_label, face_label+LABELS.size());
-			output_label[face] = argmax - face_label;
+			label[face] = argmax - face_label;
 		}
 
-		red[face] = LABELS[output_label[face]].red;
-		green[face] = LABELS[output_label[face]].green;
-		blue[face] = LABELS[output_label[face]].blue;
+		red[face] = LABELS[label[face]].red;
+		green[face] = LABELS[label[face]].green;
+		blue[face] = LABELS[label[face]].blue;
 
 		if (!has_path) {
-			CGAL::Vertex_around_face_iterator<OutputMesh> vbegin, vend;
+			CGAL::Vertex_around_face_iterator<Surface_mesh> vbegin, vend;
 			boost::tie(vbegin, vend) = vertices_around_face(output_mesh.halfedge(face), output_mesh);
 			auto pa = output_mesh.point(*(vbegin++));
 			auto pb = output_mesh.point(*(vbegin++));
@@ -164,11 +150,11 @@ void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filen
 	for(auto vertex : output_mesh.vertices()) {
 		auto point = output_mesh.point(vertex);
 		double x, y;
-		raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
-		output_mesh.point(vertex) = CGAL::Simple_cartesian<double>::Point_3(x-min_x, y-min_y, (double) point.z());
+		raster.grid_to_coord(point.x(), point.y(), x, y);
+		output_mesh.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
 	}
 
-	CGAL::Polygon_mesh_processing::orient(output_mesh); 	
+	CGAL::Polygon_mesh_processing::reverse_face_orientations(output_mesh); 	
 
 	std::ofstream mesh_ofile (filename, std::ios_base::binary);
 	CGAL::IO::set_binary_mode (mesh_ofile);
