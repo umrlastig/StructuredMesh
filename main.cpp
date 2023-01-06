@@ -131,23 +131,37 @@ int main(int argc, char **argv) {
 	add_label(raster, mesh);
 	change_vertical_faces(mesh, raster);
 	save_mesh(mesh, raster, "final-mesh-without-facade.ply");
+	std::cout << "Label set for vertical face" << std::endl;
 
 	std::vector<std::list<Surface_mesh::Face_index>> paths = compute_path(mesh);
 	save_mesh(mesh, raster, "final-mesh-with-path.ply");
+	std::cout << "Path computed" << std::endl;
 
 	std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> path_polygon = compute_path_polygon(mesh, paths, raster);
 	std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> medial_axes = compute_medial_axes(mesh, paths, path_polygon, raster);
+	std::cout << "Medial axes computed" << std::endl;
 
 	std::set<pathLink> links = link_paths(mesh, paths, path_polygon, medial_axes, raster);
+	std::cout << "Links computed" << std::endl;
 
+	close_surface_mesh(mesh);
+
+	save_mesh(mesh, raster, "final-closed-mesh-with-path.ply");
+	std::cout << "Mesh waterthighted" << std::endl;
+
+	std::vector<pathBridge> bridges_to_add;
 	for (auto link: links) {
-		bridge(link, mesh, raster);
-		std::cout << "Bridge " << link.first.path << " (" << link.first.point << ") -> " << link.second.path << " (" << link.second.point << ")\n";
 		pathBridge bridge_result = bridge(link, mesh, raster);
 		if (bridge_result.cost < 5) {
-			std::cout << "cost: " << bridge_result.cost << "\n";
+			bridges_to_add.push_back(bridge_result);
 		}
 	}
+	std::cout << "Bridges computed" << std::endl;
+
+	add_bridge_to_mesh(mesh, bridges_to_add, raster);
+
+	save_mesh(mesh, raster, "final-closed-mesh-with-path-and-bridges.ply");
+	std::cout << "Bridges added to mesh" << std::endl;
 
 	return EXIT_SUCCESS;
 }

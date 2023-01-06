@@ -25,4 +25,8 @@ struct pathBridge {
 
 pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster);
 
+void close_surface_mesh(Surface_mesh &mesh);
+
+void add_bridge_to_mesh(Surface_mesh &mesh, const std::vector<pathBridge> &bridges, const Raster &raster);
+
 #endif  /* !BRIDGE_H_ */
