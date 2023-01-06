@@ -18,6 +18,7 @@ struct pathBridge {
 	float cost;
 
 	pathBridge(pathLink link);
+	pathBridge(const pathBridge& other);
 	~pathBridge();
 
 };

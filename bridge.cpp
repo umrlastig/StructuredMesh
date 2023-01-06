@@ -455,10 +455,20 @@ pathBridge::pathBridge(pathLink link): link(link), cost(0) {
 	z_segment = new float[N+1];
 }
 
+pathBridge::pathBridge(const pathBridge& other) : link(other.link), label(other.label), N(other.N), cost(other.cost) {
+	// Copy all elements from 'other' to 'data'
+	xl = new float[N+1];
+	xr = new float[N+1];
+	z_segment = new float[N+1];
+	std::copy_n(other.xl, N + 1, xl);
+	std::copy_n(other.xr, N + 1, xr);
+	std::copy_n(other.z_segment, N + 1, z_segment);
+}
+
 pathBridge::~pathBridge() {
-	delete xl;
-	delete xr;
-	delete z_segment;
+	delete [] xl;
+	delete [] xr;
+	delete [] z_segment;
 }
 
 
