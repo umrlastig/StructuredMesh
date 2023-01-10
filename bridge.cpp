@@ -1168,6 +1168,12 @@ struct CorefinementVisitor : public CGAL::Polygon_mesh_processing::Corefinement:
 			current_path = path[f_split];
 			current_label = label[f_split];
 			current_true_face = true_face[f_split];
+		} else {			
+			Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> bridge_label;
+			bool has_label;
+			boost::tie(bridge_label, has_label) = tm.property_map<Surface_mesh::Face_index, unsigned char>("label");
+			assert(has_label);
+			current_label = bridge_label[f_split];
 		}
 	}
 
@@ -1176,7 +1182,24 @@ struct CorefinementVisitor : public CGAL::Polygon_mesh_processing::Corefinement:
 			path[f_new] = current_path;
 			label[f_new] = current_label;
 			true_face[f_new] = current_true_face;
+		} else {
+			Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> bridge_label;
+			bool has_label;
+			boost::tie(bridge_label, has_label) = tm.property_map<Surface_mesh::Face_index, unsigned char>("label");
+			assert(has_label);
+			bridge_label[f_new] = current_label;
 		}
+	}
+
+	void after_face_copy (Surface_mesh::Face_index f_src, const Surface_mesh &tm_src, Surface_mesh::Face_index f_tgt, const Surface_mesh &tm_tgt) {
+		assert(&tm_tgt == main_mesh);
+		assert(&tm_src != main_mesh);
+
+		Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> bridge_label;
+		bool has_label;
+		boost::tie(bridge_label, has_label) = tm_src.property_map<Surface_mesh::Face_index, unsigned char>("label");
+		assert(has_label);
+		label[f_tgt] = bridge_label[f_src];
 	}
 
 };
@@ -1205,6 +1228,12 @@ Surface_mesh compute_remove_mesh(const pathBridge &bridge, const Raster &raster)
 		Xrt[i] = bridge_mesh.add_vertex(Point_3(p2.x(), p2.y(), bridge.z_segment[i] + tunnel_height));
 	}
 
+	// Label
+	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
+	bool created_label;
+	boost::tie(label, created_label) = bridge_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("label", 0);
+	assert(created_label);
+
 	// Add faces
 	bridge_mesh.add_face(Xrt[0], Xlt[0], Xlb[0]);
 	bridge_mesh.add_face(Xrt[0], Xlb[0], Xrb[0]);
@@ -1213,8 +1242,10 @@ Surface_mesh compute_remove_mesh(const pathBridge &bridge, const Raster &raster)
 		bridge_mesh.add_face(Xlt[i], Xrt[i], Xlt[i+1]);
 		bridge_mesh.add_face(Xrt[i], Xrt[i+1], Xlt[i+1]);
 
-		bridge_mesh.add_face(Xlb[i], Xrb[i+1], Xrb[i]);
-		bridge_mesh.add_face(Xlb[i], Xlb[i+1], Xrb[i+1]);
+		auto f1 = bridge_mesh.add_face(Xlb[i], Xrb[i+1], Xrb[i]);
+		auto f2 = bridge_mesh.add_face(Xlb[i], Xlb[i+1], Xrb[i+1]);
+		label[f1] = bridge.label;
+		label[f2] = bridge.label;
 
 		bridge_mesh.add_face(Xlt[i], Xlt[i+1], Xlb[i]);
 		bridge_mesh.add_face(Xlt[i+1], Xlb[i+1], Xlb[i]);
@@ -1252,9 +1283,9 @@ Surface_mesh compute_remove_mesh(const pathBridge &bridge, const Raster &raster)
 	CGAL::Cartesian_converter<Surface_mesh::Point::R, CGAL::Exact_predicates_exact_constructions_kernel> to_exact;
 
 	Surface_mesh::Property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3> exact_points;
-	bool created;
-	boost::tie(exact_points, created) = bridge_mesh.add_property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>("v:exact_point");
-	assert(created);
+	bool created_point;
+	boost::tie(exact_points, created_point) = bridge_mesh.add_property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>("v:exact_point");
+	assert(created_point);
 
 	for (auto vertex : bridge_mesh.vertices()) {
 		exact_points[vertex] = to_exact(bridge_mesh.point(vertex));
@@ -1287,13 +1318,21 @@ Surface_mesh compute_support_mesh(const pathBridge &bridge, const Raster &raster
 		Xrb[i] = bridge_mesh.add_vertex(Point_3(p2.x(), p2.y(), bridge.z_segment[i] - tunnel_height/6));
 	}
 
+	// Label
+	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
+	bool created_label;
+	boost::tie(label, created_label) = bridge_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("label", 0);
+	assert(created_label);
+
 	// Add faces
 	bridge_mesh.add_face(Xrt[0], Xlt[0], Xlb[0]);
 	bridge_mesh.add_face(Xrt[0], Xlb[0], Xrb[0]);
 
 	for (int i = 0; i < bridge.N; i++) {
-		bridge_mesh.add_face(Xlt[i], Xrt[i], Xlt[i+1]);
-		bridge_mesh.add_face(Xrt[i], Xrt[i+1], Xlt[i+1]);
+		auto f1 = bridge_mesh.add_face(Xlt[i], Xrt[i], Xlt[i+1]);
+		auto f2 = bridge_mesh.add_face(Xrt[i], Xrt[i+1], Xlt[i+1]);
+		label[f1] = bridge.label;
+		label[f2] = bridge.label;
 
 		bridge_mesh.add_face(Xlb[i], Xrb[i+1], Xrb[i]);
 		bridge_mesh.add_face(Xlb[i], Xlb[i+1], Xrb[i+1]);
@@ -1334,9 +1373,9 @@ Surface_mesh compute_support_mesh(const pathBridge &bridge, const Raster &raster
 	CGAL::Cartesian_converter<Surface_mesh::Point::R, CGAL::Exact_predicates_exact_constructions_kernel> to_exact;
 
 	Surface_mesh::Property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3> exact_points;
-	bool created;
-	boost::tie(exact_points, created) = bridge_mesh.add_property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>("v:exact_point");
-	assert(created);
+	bool created_point;
+	boost::tie(exact_points, created_point) = bridge_mesh.add_property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>("v:exact_point");
+	assert(created_point);
 
 	for (auto vertex : bridge_mesh.vertices()) {
 		exact_points[vertex] = to_exact(bridge_mesh.point(vertex));
