@@ -1139,6 +1139,48 @@ class Cost_stop_predicate {
 		const float cost;
 };
 
+struct CorefinementVisitor : public CGAL::Polygon_mesh_processing::Corefinement::Default_visitor<Surface_mesh> {
+	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
+	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
+	Surface_mesh::Property_map<Surface_mesh::Face_index, bool> true_face;
+
+	int current_path;
+	unsigned char current_label;
+	bool current_true_face;
+	const Surface_mesh *main_mesh;
+
+	CorefinementVisitor (const Surface_mesh &mesh) : main_mesh(&mesh) {
+		bool has_path;
+		boost::tie(path, has_path) = mesh.property_map<Surface_mesh::Face_index, int>("path");
+		assert(has_path);
+
+		bool has_label;
+		boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+		assert(has_label);
+
+		bool has_true_face;
+		boost::tie(true_face, has_true_face) = mesh.property_map<Surface_mesh::Face_index, bool>("true_face");
+		assert(has_true_face);
+	}
+
+	void before_subface_creations (Surface_mesh::Face_index f_split, const Surface_mesh &tm) {
+		if (&tm == main_mesh) {
+			current_path = path[f_split];
+			current_label = label[f_split];
+			current_true_face = true_face[f_split];
+		}
+	}
+
+	void after_subface_created (Surface_mesh::Face_index f_new, const Surface_mesh &tm) {
+		if (&tm == main_mesh) {
+			path[f_new] = current_path;
+			label[f_new] = current_label;
+			true_face[f_new] = current_true_face;
+		}
+	}
+
+};
+
 Surface_mesh compute_remove_mesh(const pathBridge &bridge, const Raster &raster) {
 	float tunnel_height = 3; // in meter
 
@@ -1329,12 +1371,12 @@ void add_bridge_to_mesh(Surface_mesh &mesh, const std::vector<pathBridge> &bridg
 		auto r_b = compute_remove_mesh(bridge, raster);
 		boost::tie(remove_exact_points, has_exact_points) = r_b.property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>("v:exact_point");
 		assert(has_exact_points);
-		std::cout << "Remove bridge: " << CGAL::Polygon_mesh_processing::corefine_and_compute_difference(mesh, r_b, mesh, CGAL::parameters::vertex_point_map(exact_points), CGAL::parameters::vertex_point_map(remove_exact_points), CGAL::parameters::vertex_point_map(exact_points)) << "\n";
+		std::cout << "Remove bridge: " << CGAL::Polygon_mesh_processing::corefine_and_compute_difference(mesh, r_b, mesh, CGAL::parameters::vertex_point_map(exact_points).visitor(CorefinementVisitor(mesh)), CGAL::parameters::vertex_point_map(remove_exact_points), CGAL::parameters::vertex_point_map(exact_points)) << "\n";
 		
 		auto s_b = compute_support_mesh(bridge, raster);
 		boost::tie(support_exact_points, has_exact_points) = s_b.property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>("v:exact_point");
 		assert(has_exact_points);
-		std::cout << "Support bridge: " << CGAL::Polygon_mesh_processing::corefine_and_compute_union(mesh, s_b, mesh, CGAL::parameters::vertex_point_map(exact_points), CGAL::parameters::vertex_point_map(support_exact_points), CGAL::parameters::vertex_point_map(exact_points)) << "\n";
+		std::cout << "Support bridge: " << CGAL::Polygon_mesh_processing::corefine_and_compute_union(mesh, s_b, mesh, CGAL::parameters::vertex_point_map(exact_points).visitor(CorefinementVisitor(mesh)), CGAL::parameters::vertex_point_map(support_exact_points), CGAL::parameters::vertex_point_map(exact_points)) << "\n";
 		
 		assert(!CGAL::Polygon_mesh_processing::does_self_intersect(mesh, CGAL::parameters::vertex_point_map(exact_points)));
 		assert(std::cout << CGAL::Polygon_mesh_processing::does_bound_a_volume(mesh, CGAL::parameters::vertex_point_map(exact_points)));
