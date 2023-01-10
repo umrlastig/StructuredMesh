@@ -4,6 +4,7 @@ Create LOD2 model from DSM, DTM, land use map, LOD0 building footprint and ortho
 # Requirements (test version)
 - CGAL (5.4.1)
 - GDAL (3.5.0)
+- Eigen (3.4.0)
 
 # Compilation
 ```bash

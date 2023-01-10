@@ -8,7 +8,7 @@ project( compute-LOD2 )
 set (CMAKE_CXX_STANDARD 17)
 
 # CGAL and its components
-find_package( CGAL QUIET COMPONENTS  )
+find_package( CGAL 5.4.1 QUIET COMPONENTS  )
 
 if ( NOT CGAL_FOUND )
 
@@ -19,7 +19,7 @@ endif()
 
 
 # GDAL and its components
-find_package( GDAL CONFIG REQUIRED )
+find_package( GDAL 3.5.0 CONFIG REQUIRED )
 
 if ( NOT GDAL_FOUND )
 
@@ -31,7 +31,7 @@ endif()
 
 
 # Eigen and its components
-find_package (Eigen3 3.3 REQUIRED NO_MODULE)
+find_package (Eigen3 3.4.0 REQUIRED NO_MODULE)
 
 if ( NOT Eigen3_FOUND )
 
