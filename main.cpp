@@ -150,13 +150,17 @@ int main(int argc, char **argv) {
 	std::cout << "Mesh waterthighted" << std::endl;
 
 	std::vector<pathBridge> bridges_to_add;
+	int i = 0;
+	std::cout << "Computing " << links.size() << " bridges" << std::endl;
 	for (auto link: links) {
+		std::cout << "\rBridge " << i++ << "/" << links.size() << "               ";
+		std::cout.flush();
 		pathBridge bridge_result = bridge(link, mesh, raster);
 		if (bridge_result.cost < 5) {
 			bridges_to_add.push_back(bridge_result);
 		}
 	}
-	std::cout << "Bridges computed" << std::endl;
+	std::cout << "\rBridges computed               " << std::endl;
 
 	add_bridge_to_mesh(mesh, bridges_to_add, raster);
 
