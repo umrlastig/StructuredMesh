@@ -17,56 +17,69 @@ std::pair<Surface_mesh::Face_index, Point_2> point_on_path_border(const Surface_
 
 
 void add_road(
-		std::list<std::pair<K::Vector_2, K::FT>> &roads,
-		CGAL::Straight_skeleton_2<K>::Vertex_handle vertex,
-		CGAL::Straight_skeleton_2<K>::Vertex_handle previous_vertex) {
-	auto he = vertex->halfedge_around_vertex_begin();
-	do {
-		auto vertex2 = (*he)->opposite()->vertex();
-		if (vertex2->is_skeleton() && vertex2 != previous_vertex) {
-			if (abs(vertex2->time() - vertex->time()) / sqrt(CGAL::squared_distance(vertex->point(), vertex2->point())) < 0.1) {
-				roads.push_back(std::pair<K::Vector_2, K::FT>(K::Vector_2(vertex2->point(), vertex->point()), vertex2->time() + vertex->time()));
-			} else {
-				add_road(roads, vertex2, vertex);
+		std::map<CGAL::Straight_skeleton_2<K>::Halfedge_handle, K::FT> &roads,
+		K::FT distance,
+		CGAL::Straight_skeleton_2<K>::Vertex_handle vertex) {
+
+	if (distance < 50) {
+		auto he = vertex->halfedge_around_vertex_begin();
+		do {
+			if ((*he)->is_inner_bisector() && (*he)->opposite()->is_inner_bisector()) {
+				auto length = sqrt(CGAL::squared_distance(vertex->point(), (*he)->opposite()->vertex()->point()));
+				if (roads.count(*he) == 0 && roads.count((*he)->opposite()) == 0) {
+					roads[*he] = distance;
+					add_road(roads, distance + length, (*he)->opposite()->vertex());
+				} else if (roads.count(*he) == 0) {
+					if (roads[*he] > distance) {
+						roads[*he] = distance;
+						add_road(roads, distance + length, (*he)->opposite()->vertex());
+					}
+				} else {
+					if (roads[(*he)->opposite()] > distance) {
+						roads[(*he)->opposite()] = distance;
+						add_road(roads, distance + length, (*he)->opposite()->vertex());
+					}
+				}
 			}
-		}
-	} while (++he != vertex->halfedge_around_vertex_begin());
+		} while (++he != vertex->halfedge_around_vertex_begin());
+	}
 
 }
 
 std::pair<K::FT, K::FT> road_width (std::pair<skeletonPoint,skeletonPoint> link) {
 	K::Vector_2 vector(link.first.point, link.second.point);
+	vector /= sqrt(vector.squared_length());
 
-	std::list<std::pair<K::Vector_2, K::FT>> roads1;
-	std::list<std::pair<K::Vector_2, K::FT>> roads2;
+	std::map<CGAL::Straight_skeleton_2<K>::Halfedge_handle, K::FT> roads1;
+	std::map<CGAL::Straight_skeleton_2<K>::Halfedge_handle, K::FT> roads2;
 
 	if (link.first.vertex != nullptr) {
-		add_road(roads1, link.first.vertex, nullptr);
+		add_road(roads1, 0, link.first.vertex);
 	} else {
-		add_road(roads1, link.first.halfedge->vertex(), link.first.halfedge->opposite()->vertex());
-		add_road(roads1, link.first.halfedge->opposite()->vertex(), link.first.halfedge->vertex());
-		if (abs(link.first.halfedge->opposite()->vertex()->time() - link.first.halfedge->vertex()->time()) / sqrt(CGAL::squared_distance(link.first.halfedge->vertex()->point(), link.first.halfedge->opposite()->vertex()->point())) < 0.1) {
-			roads1.push_back(std::pair<K::Vector_2, K::FT>(K::Vector_2(link.first.halfedge->opposite()->vertex()->point(), link.first.halfedge->vertex()->point()), link.first.halfedge->opposite()->vertex()->time() + link.first.halfedge->vertex()->time()));
-		}
+		roads1[link.first.halfedge] = 0;
+		add_road(roads1, sqrt(CGAL::squared_distance(link.first.halfedge->vertex()->point(), link.first.point)), link.first.halfedge->vertex());
+		add_road(roads1, sqrt(CGAL::squared_distance(link.first.halfedge->opposite()->vertex()->point(), link.first.point)), link.first.halfedge->opposite()->vertex());
 	}
 
 	if (link.second.vertex != nullptr) {
-		add_road(roads2, link.second.vertex, nullptr);
+		add_road(roads2, 0, link.second.vertex);
 	} else {
-		add_road(roads2, link.second.halfedge->vertex(), link.second.halfedge->opposite()->vertex());
-		add_road(roads2, link.second.halfedge->opposite()->vertex(), link.second.halfedge->vertex());
-		if (abs(link.second.halfedge->opposite()->vertex()->time() - link.second.halfedge->vertex()->time()) / sqrt(CGAL::squared_distance(link.second.halfedge->vertex()->point(), link.second.halfedge->opposite()->vertex()->point())) < 0.1) {
-			roads2.push_back(std::pair<K::Vector_2, K::FT>(K::Vector_2(link.second.halfedge->opposite()->vertex()->point(), link.second.halfedge->vertex()->point()), link.second.halfedge->opposite()->vertex()->time() + link.second.halfedge->vertex()->time()));
-		}
+		roads2[link.second.halfedge] = 0;
+		add_road(roads2, sqrt(CGAL::squared_distance(link.second.halfedge->vertex()->point(), link.second.point)), link.second.halfedge->vertex());
+		add_road(roads2, sqrt(CGAL::squared_distance(link.second.halfedge->opposite()->vertex()->point(), link.second.point)), link.second.halfedge->opposite()->vertex());
 	}
-
+	
 	K::FT road_width1 = 0;
 	if (roads1.size() > 0) {
 		K::FT sum1 = 0;
-		for (auto road: roads1) {
-			auto angle = abs(CGAL::scalar_product(road.first, vector) / sqrt(road.first.squared_length())) + 0.01;
-			road_width1 += road.second * angle;
-			sum1 += angle;
+		for (auto it = roads1.begin(); it != roads1.end(); ++it) {
+			auto width = it->first->vertex()->time() + it->first->opposite()->vertex()->time();
+			auto vec = K::Vector_2(it->first->vertex()->point(), it->first->opposite()->vertex()->point());
+			auto length = sqrt(vec.squared_length());
+			auto cos_angle = abs(CGAL::scalar_product(vec, vector) / sqrt(vec.squared_length()));
+			auto coef = (cos_angle/2+0.6)*length/(it->second+0.1);
+			road_width1 += coef;
+			sum1 += coef/width;
 		}
 		road_width1 /= sum1;
 	} else if (link.first.vertex != nullptr) {
@@ -78,10 +91,14 @@ std::pair<K::FT, K::FT> road_width (std::pair<skeletonPoint,skeletonPoint> link)
 	K::FT road_width2 = 0;
 	if (roads2.size() > 0) {
 		K::FT sum2 = 0;
-		for (auto road: roads2) {
-			auto angle = abs(CGAL::scalar_product(road.first, vector) / sqrt(road.first.squared_length())) + 0.01;
-			road_width2 += road.second * angle;
-			sum2 += angle;
+		for (auto it = roads2.begin(); it != roads2.end(); ++it) {
+			auto width = it->first->vertex()->time() + it->first->opposite()->vertex()->time();
+			auto vec = K::Vector_2(it->first->vertex()->point(), it->first->opposite()->vertex()->point());
+			auto length = sqrt(vec.squared_length());
+			auto cos_angle = abs(CGAL::scalar_product(vec, vector) / sqrt(vec.squared_length()));
+			auto coef = (cos_angle/2+0.6)*length/(it->second+0.1);
+			road_width2 += coef;
+			sum2 += coef/width;
 		}
 		road_width2 /= sum2;
 	} else if (link.second.vertex != nullptr) {
