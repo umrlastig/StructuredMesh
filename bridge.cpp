@@ -137,6 +137,7 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 			for (int path2: same_label_paths) {
 				if (path1 < path2) {
 
+					// Compute pair-distance between vertices and edges.
 					std::map<std::pair<CGAL::Straight_skeleton_2<K>::Vertex_handle, CGAL::Straight_skeleton_2<K>::Vertex_handle>, K::FT> distance_v1v2;
 					std::map<std::pair<CGAL::Straight_skeleton_2<K>::Vertex_handle, CGAL::Straight_skeleton_2<K>::Halfedge_handle>, std::pair<K::FT, K::Point_2>> distance_v1h2;
 					std::map<std::pair<CGAL::Straight_skeleton_2<K>::Vertex_handle, CGAL::Straight_skeleton_2<K>::Halfedge_handle>, std::pair<K::FT, K::Point_2>> distance_v2h1;
@@ -188,6 +189,23 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 						auto v2 = it->first.second;
 						auto d = it->second;
 
+						// Exit link
+						Exact_predicates_kernel::Segment_2 segment(Exact_predicates_kernel::Point_2(v1->point().x(), v1->point().y()), Exact_predicates_kernel::Point_2(v2->point().x(), v2->point().y()));
+						int intersect = 0;
+						for (auto edge = path_polygon.at(path1).outer_boundary().edges_begin(); intersect <= 1 && edge != path_polygon.at(path1).outer_boundary().edges_end(); edge++) {
+							if (CGAL::do_intersect(*edge, segment)) {
+								intersect++;
+							}
+						}
+						for (auto hole: path_polygon.at(path1).holes()) {
+							for (auto edge = hole.edges_begin(); intersect <= 1 && edge != hole.edges_end(); edge++) {
+								if (CGAL::do_intersect(*edge, segment)) {
+									intersect++;
+								}
+							}
+						}
+						if (intersect != 1) continue;
+
 						auto he = v1->halfedge_around_vertex_begin();
 						do {
 							auto v = (*he)->opposite()->vertex();
@@ -237,7 +255,24 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 						auto e2 = it->first.second;
 						auto d = it->second.first;
 						auto p2 = it->second.second;
-									
+
+						// Exit link
+						Exact_predicates_kernel::Segment_2 segment(Exact_predicates_kernel::Point_2(v1->point().x(), v1->point().y()), Exact_predicates_kernel::Point_2(p2.x(), p2.y()));
+						int intersect = 0;
+						for (auto edge = path_polygon.at(path1).outer_boundary().edges_begin(); intersect <= 1 && edge != path_polygon.at(path1).outer_boundary().edges_end(); edge++) {
+							if (CGAL::do_intersect(*edge, segment)) {
+								intersect++;
+							}
+						}
+						for (auto hole: path_polygon.at(path1).holes()) {
+							for (auto edge = hole.edges_begin(); intersect <= 1 && edge != hole.edges_end(); edge++) {
+								if (CGAL::do_intersect(*edge, segment)) {
+									intersect++;
+								}
+							}
+						}
+						if (intersect != 1) continue;
+	
 						auto he = v1->halfedge_around_vertex_begin();
 						do {
 							auto v = (*he)->opposite()->vertex();
@@ -264,7 +299,24 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 						auto e1 = it->first.second;
 						auto d = it->second.first;
 						auto p1 = it->second.second;
-									
+
+						// Exit link
+						Exact_predicates_kernel::Segment_2 segment(Exact_predicates_kernel::Point_2(v2->point().x(), v2->point().y()), Exact_predicates_kernel::Point_2(p1.x(), p1.y()));
+						int intersect = 0;
+						for (auto edge = path_polygon.at(path2).outer_boundary().edges_begin(); intersect <= 1 && edge != path_polygon.at(path2).outer_boundary().edges_end(); edge++) {
+							if (CGAL::do_intersect(*edge, segment)) {
+								intersect++;
+							}
+						}
+						for (auto hole: path_polygon.at(path2).holes()) {
+							for (auto edge = hole.edges_begin(); intersect <= 1 && edge != hole.edges_end(); edge++) {
+								if (CGAL::do_intersect(*edge, segment)) {
+									intersect++;
+								}
+							}
+						}
+						if (intersect != 1) continue;
+
 						auto he = v2->halfedge_around_vertex_begin();
 						do {
 							auto v = (*he)->opposite()->vertex();
@@ -290,6 +342,7 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 					std::map<std::pair<CGAL::Straight_skeleton_2<K>::Vertex_handle, CGAL::Straight_skeleton_2<K>::Vertex_handle>, K::FT> distance_vv;
 					std::map<std::pair<CGAL::Straight_skeleton_2<K>::Vertex_handle, CGAL::Straight_skeleton_2<K>::Halfedge_handle>, std::pair<K::FT, K::Point_2>> distance_vh;
 
+					// Compute pair-distance between vertices and edges.
 					for (auto v1: medial_axes.at(path1)->vertex_handles()) {
 						if (v1->is_skeleton()) {
 							// For vertices pairs
@@ -321,20 +374,20 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 
 						// Exit link
 						Exact_predicates_kernel::Segment_2 segment(Exact_predicates_kernel::Point_2(v1->point().x(), v1->point().y()), Exact_predicates_kernel::Point_2(v2->point().x(), v2->point().y()));
-						bool intersect = false;
-						for (auto edge = path_polygon.at(path1).outer_boundary().edges_begin(); !intersect && edge != path_polygon.at(path1).outer_boundary().edges_end(); edge++) {
+						int intersect = 0;
+						for (auto edge = path_polygon.at(path1).outer_boundary().edges_begin(); intersect <= 2 && edge != path_polygon.at(path1).outer_boundary().edges_end(); edge++) {
 							if (CGAL::do_intersect(*edge, segment)) {
-								intersect = true;
+								intersect++;
 							}
 						}
 						for (auto hole: path_polygon.at(path1).holes()) {
-							for (auto edge = hole.edges_begin(); !intersect && edge != hole.edges_end(); edge++) {
+							for (auto edge = hole.edges_begin(); intersect <= 2 && edge != hole.edges_end(); edge++) {
 								if (CGAL::do_intersect(*edge, segment)) {
-									intersect = true;
+									intersect++;
 								}
 							}
 						}
-						if (!intersect) continue;
+						if (intersect != 2) continue;
 
 						auto he = v1->halfedge_around_vertex_begin();
 						do {
@@ -390,20 +443,20 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 
 						// Exit link
 						Exact_predicates_kernel::Segment_2 segment(Exact_predicates_kernel::Point_2(v1->point().x(), v1->point().y()), Exact_predicates_kernel::Point_2(p2.x(), p2.y()));
-						bool intersect = false;
-						for (auto edge = path_polygon.at(path1).outer_boundary().edges_begin(); !intersect && edge != path_polygon.at(path1).outer_boundary().edges_end(); edge++) {
+						int intersect = 0;
+						for (auto edge = path_polygon.at(path1).outer_boundary().edges_begin(); intersect <= 2 && edge != path_polygon.at(path1).outer_boundary().edges_end(); edge++) {
 							if (CGAL::do_intersect(*edge, segment)) {
-								intersect = true;
+								intersect++;
 							}
 						}
 						for (auto hole: path_polygon.at(path1).holes()) {
-							for (auto edge = hole.edges_begin(); !intersect && edge != hole.edges_end(); edge++) {
+							for (auto edge = hole.edges_begin(); intersect <= 2 && edge != hole.edges_end(); edge++) {
 								if (CGAL::do_intersect(*edge, segment)) {
-									intersect = true;
+									intersect++;
 								}
 							}
 						}
-						if (!intersect) continue;
+						if (intersect != 2) continue;
 									
 						auto he = v1->halfedge_around_vertex_begin();
 						do {
