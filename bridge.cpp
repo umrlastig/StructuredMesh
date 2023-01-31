@@ -10,6 +10,7 @@
 #include <CGAL/Polygon_mesh_processing/corefinement.h>
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
+//#include <cmath>
 
 namespace PMP = CGAL::Polygon_mesh_processing;
 
@@ -549,6 +550,14 @@ pathBridge::~pathBridge() {
 }
 
 
+/*float gaussian(float x, float sigma) {
+	static const float inv_sqrt_2pi = 0.3989422804014327;
+	float a = x / sigma;
+
+	return inv_sqrt_2pi / sigma * std::exp(-0.5f * a * a);
+}*/
+
+
 pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster) {
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
@@ -745,6 +754,86 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 			//keeping surface where bridge.bridge.cost is low
 			float theta = 1;
 			float iota  = 1;
+			/*float sigma = raster.coord_distance_to_grid_distance(0.2);
+
+			// left contour
+			for (int i = 0; i <= bridge.N; i++) {
+				float integrale = 0, v = 0, v_l = 0, v_r = 0;
+
+				for (float t = -bridge.xr[i]; t < bridge.xl[i]+3*sigma+0.1; t+=0.1) {
+					auto p = link.first.point + ((float) i)/bridge.N*link_vector - t * n;
+					float value;
+					if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
+						if (bridge.z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height) {
+							value = 0;
+						} else if (bridge.z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height/2) {
+							value = pow(bridge.z_segment[i] - raster.dsm[p.y()][p.x()] + tunnel_height, 2);
+						} else {
+							value = pow(bridge.z_segment[i] - raster.dsm[p.y()][p.x()], 2);
+							if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge.label) {
+								if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge.label != 8 && bridge.label != 9)) {
+									value += theta;
+								}
+							}
+						}
+					} else {
+						value = 0;
+					}
+
+					integrale += value*0.1;
+					v   += integrale*gaussian(t-bridge.xl[i], sigma);
+					v_r += integrale*gaussian(t-bridge.xl[i]-0.1, sigma);
+					v_l += integrale*gaussian(t-bridge.xl[i]+0.1, sigma);
+				}
+
+				float v_prime = (v_r-v_l)/0.2;
+
+				float a = bridge.xl[i] - 2 * v / v_prime;
+				float lambda = v_prime * 0.5 / sqrt(v);
+
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i, iota * lambda));
+				temp_b.push_back(iota * lambda * a);
+			}
+			// right contour
+			for (int i = 0; i <= bridge.N; i++) {
+				float integrale = 0, v = 0, v_l = 0, v_r = 0;
+
+				for (float t = -bridge.xl[i]; t < bridge.xr[i]+3*sigma+0.1; t+=0.1) {
+					auto p = link.first.point + ((float) i)/bridge.N*link_vector + t * n;
+					float value;
+					if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
+						if (bridge.z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height) {
+							value = 0;
+						} else if (bridge.z_segment[i] <= raster.dsm[p.y()][p.x()] - tunnel_height/2) {
+							value = pow(bridge.z_segment[i] - raster.dsm[p.y()][p.x()] + tunnel_height, 2);
+						} else {
+							value = pow(bridge.z_segment[i] - raster.dsm[p.y()][p.x()], 2);
+							if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge.label) {
+								if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge.label != 8 && bridge.label != 9)) {
+									value += theta;
+								}
+							}
+						}
+					} else {
+						value = 0;
+					}
+
+					integrale += value*0.1;
+					v   += integrale*gaussian(t-bridge.xl[i], sigma);
+					v_r += integrale*gaussian(t-bridge.xl[i]-0.1, sigma);
+					v_l += integrale*gaussian(t-bridge.xl[i]+0.1, sigma);
+				}
+
+				float v_prime = (v_r-v_l)/0.2;
+
+				float a = bridge.xl[i] - 2 * v / v_prime;
+				float lambda = v_prime * 0.5 / sqrt(v);
+
+				tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i + bridge.N+1, iota * lambda));
+				temp_b.push_back(iota * lambda * a);
+			}*/
+
+
 			// left contour
 			for (int i = 0; i <= bridge.N; i++) {
 				float j = bridge.xl[i];
@@ -774,7 +863,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 					continue;
 				}
 
-				j--;
+				j-=0.1;
 				while(j > -bridge.xr[i]) {
 					if (v_min == 0) {
 						break;
@@ -811,7 +900,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 					} else {
 						break;
 					}
-					j--;
+					j-=0.1;
 				}
 				if (j_min < bridge.xl[i]) {
 					tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i, iota));
@@ -847,7 +936,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 					continue;
 				}
 
-				j--;
+				j-=0.1;
 				while(j > -bridge.xl[i]) {
 					if (v_min == 0) {
 						break;
@@ -884,7 +973,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 					} else {
 						break;
 					}
-					j--;
+					j-=0.1;
 				}
 				if (j_min < bridge.xr[i]) {
 					tripletList.push_back(Eigen::Triplet<float>(temp_b.size(), i + bridge.N+1, iota));
@@ -1193,7 +1282,7 @@ void close_surface_mesh(Surface_mesh &mesh) {
 
 	assert(CGAL::Polygon_mesh_processing::does_self_intersect(mesh));
 	assert(CGAL::is_closed(mesh));
-    CGAL::Polygon_mesh_processing::orient_to_bound_a_volume(mesh);
+	CGAL::Polygon_mesh_processing::orient_to_bound_a_volume(mesh);
 }
 
 class Cost_stop_predicate {
