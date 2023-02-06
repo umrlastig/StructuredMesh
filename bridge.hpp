@@ -12,9 +12,9 @@ struct pathBridge {
 	pathLink link;
 	unsigned char label;
 	int N;
-	float *xl;
-	float *xr;
-	float *z_segment;
+	double *xl;
+	double *xr;
+	double *z_segment;
 	float cost;
 
 	pathBridge(pathLink link);

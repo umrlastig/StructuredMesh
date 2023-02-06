@@ -30,12 +30,12 @@ if ( NOT GDAL_FOUND )
 endif()
 
 
-# Eigen and its components
-find_package (Eigen3 3.4.0 REQUIRED NO_MODULE)
+# Ceres and its components
+find_package(Ceres 2.1.0 REQUIRED)
 
-if ( NOT Eigen3_FOUND )
+if ( NOT Ceres_FOUND )
 
-  message(STATUS "This project requires the Eigen3 library, and will not be compiled.")
+  message(STATUS "This project requires the Ceres library, and will not be compiled.")
 
   return()  
 
@@ -55,4 +55,4 @@ add_executable( compute-LOD2  main.cpp raster.cpp code.cpp edge_collapse.cpp pat
 add_to_cached_list( CGAL_EXECUTABLE_TARGETS compute-LOD2 )
 
 # Link the executable to CGAL and third-party libraries
-target_link_libraries(compute-LOD2 PRIVATE CGAL::CGAL GDAL::GDAL Eigen3::Eigen)
+target_link_libraries(compute-LOD2 PRIVATE CGAL::CGAL GDAL::GDAL Ceres::ceres)

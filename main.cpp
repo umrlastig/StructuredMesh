@@ -156,7 +156,7 @@ int main(int argc, char **argv) {
 		std::cout << "\rBridge " << i++ << "/" << links.size() << "               ";
 		std::cout.flush();
 		pathBridge bridge_result = bridge(link, mesh, raster);
-		if (bridge_result.cost < 5) {
+		if (bridge_result.cost < 100) {
 			bridges_to_add.push_back(bridge_result);
 		}
 	}
