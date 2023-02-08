@@ -552,19 +552,21 @@ pathBridge::~pathBridge() {
 
 // regularity of the surface
 struct surface_regularity {
-	double alpha = 10;
+	double coef;
+
+	surface_regularity (double coef) : coef(coef) {}
 
 	template <typename T>
 	bool operator()(const T* const z0, const T* const z1, T* residual) const {
-		residual[0] = (z0[0] - z1[0])*alpha;
+		residual[0] = (z0[0] - z1[0])*coef;
 		return true;
 	}
 };
 
 // attachment to DSM data 
 struct surface_cost {
-	double beta = 1;
-	double theta = 1;
+	double coef;
+	double cost;
 
 	Point_2 start;
 	K::Vector_2 ortho_vect;
@@ -572,11 +574,15 @@ struct surface_cost {
 	double tunnel_height;
 	const Raster *raster;
 
-	surface_cost(Point_2 start,
+	surface_cost (double coef,
+					double cost,
+					Point_2 start,
 					K::Vector_2 ortho_vect,
 					char label,
 					double tunnel_height,
 					const Raster *raster) :
+		coef(coef),
+		cost(cost),
 		start(start),
 		ortho_vect(ortho_vect),
 		label(label),
@@ -594,7 +600,7 @@ struct surface_cost {
 					residual[0] += abs(z[0] - ((double) raster->dsm[p.y()][p.x()]));
 					if (raster->land_cover[p.y()][p.x()] != 0 && raster->land_cover[p.y()][p.x()] != label) {
 						if ((raster->land_cover[p.y()][p.x()] != 8 && raster->land_cover[p.y()][p.x()] != 9) || (label != 8 && label != 9)) {
-							residual[0] += theta;
+							residual[0] += cost;
 						}
 					}
 				} else if (z[0] > raster->dsm[p.y()][p.x()] - tunnel_height) {
@@ -610,7 +616,7 @@ struct surface_cost {
 				residual[0] += (xr[0] - j) * abs(z[0] - ((double) raster->dsm[p.y()][p.x()]));
 				if (raster->land_cover[p.y()][p.x()] != 0 && raster->land_cover[p.y()][p.x()] != label) {
 					if ((raster->land_cover[p.y()][p.x()] != 8 && raster->land_cover[p.y()][p.x()] != 9) || (label != 8 && label != 9)) {
-						residual[0] += (xr[0] - j) * theta;
+						residual[0] += (xr[0] - j) * cost;
 					}
 				}
 			} else if (z[0] > raster->dsm[p.y()][p.x()] - tunnel_height) {
@@ -618,7 +624,7 @@ struct surface_cost {
 			}
 		}
 
-		residual[0] *= beta;
+		residual[0] *= coef;
 
 		return true;
 	}
@@ -626,76 +632,82 @@ struct surface_cost {
 
 // border
 struct surface_border {
-	double zeta = 10;
+	double coef;
 	double border_z;
 
-	surface_border(double border_z) : border_z(border_z) {}
+	surface_border(double coef, double border_z) : coef(coef), border_z(border_z) {}
 
 	template <typename T>
 	bool operator()(const T* const z, T* residual) const {
-		residual[0] = (z[0] - border_z)*zeta;
+		residual[0] = (z[0] - border_z)*coef;
 		return true;
 	}
 };
 
 //regularity of the contour
 struct contour_regularity {
-	double gamma = 1;
+	double coef;
+
+	contour_regularity (double coef) : coef(coef) {}
 
 	template <typename T>
 	bool operator()(const T* const x0, const T* const x1, const T* const x2, T* residual) const {
-		residual[0] = (x0[0] - 2.0 * x1[0] + x2[0])*gamma;
+		residual[0] = (x0[0] - 2.0 * x1[0] + x2[0])*coef;
 		return true;
 	}
 };
 
 /*
 struct contour_regularity {
-	double gamma = 1;
+	double coef;
+
+	contour_regularity (double coef) : coef(coef) {}
 
 	template <typename T>
 	bool operator()(const T* const x0, const T* const x1, T* residual) const {
-		residual[0] = (x0[0] - x1[0])*gamma;
+		residual[0] = (x0[0] - x1[0])*coef;
 		return true;
 	}
 };*/
 
 //width of the reconstructed surface
 struct surface_width {
-	double delta = 1;
+	double coef;
 	double width;
 
-	surface_width(double width) : width(width) {}
+	surface_width(double coef, double width) : coef(coef), width(width) {}
 
 	template <typename T>
 	bool operator()(const T* const xl, const T* const xr, T* residual) const {
-		residual[0] = (xl[0] + xr[0] - width)*delta;
+		residual[0] = (xl[0] + xr[0] - width)*coef;
 		return true;
 	}
 };
 
 //centering of the surface on the link vertices
 struct surface_centering {
-	double epsilon = 1;
+	double coef;
+
+	surface_centering(double coef) : coef(coef) {}
 
 	template <typename T>
 	bool operator()(const T* const xl, const T* const xr, T* residual) const {
-		residual[0] = (xl[0] - xr[0])*epsilon;
+		residual[0] = (xl[0] - xr[0])*coef;
 		return true;
 	}
 };
 
 //constraint border inside path
 struct border_constraint {
-	double eta = 100;
+	double coef;
 	double max_value;
 
-	border_constraint (double max_value) : max_value(max_value) {}
+	border_constraint (double coef, double max_value) : coef(coef), max_value(max_value) {}
 
 	template <typename T>
 	bool operator()(const T* const x, T* residual) const {
 		if (x[0] > max_value) {
-			residual[0] = (x[0] - max_value) * eta;
+			residual[0] = (x[0] - max_value) * coef;
 		} else {
 			residual[0] = ((T) 0.0);
 		}
@@ -767,10 +779,19 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 
 	ceres::Problem problem;
 
+	float alpha = 50; // regularity of the surface
+	float beta = 1; // attachment to DSM data
+	float gamma = 0.5; // regularity of the contour
+	float delta = 10; // width of the reconstructed surface
+	float epsilon = 1; // centering of the surface on the link vertices
+	float zeta = 10; // border elevation
+	float eta = 100; // constraint border inside path
+	float theta = 1; // cost for label error
+
 	// regularity of the surface
 	for (int i = 0; i < bridge.N; i++) {
 		problem.AddResidualBlock(
-			new ceres::AutoDiffCostFunction<surface_regularity, 1, 1, 1>(new surface_regularity),
+			new ceres::AutoDiffCostFunction<surface_regularity, 1, 1, 1>(new surface_regularity(alpha)),
 			nullptr,
 			bridge.z_segment + i, //z_segment[i] 
 			bridge.z_segment + i + 1); // z_segment[i+1]
@@ -779,7 +800,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 	// attachment to DSM data
 	for (int i = 0; i <= bridge.N; i++) {
 		problem.AddResidualBlock(
-			new ceres::NumericDiffCostFunction<surface_cost, ceres::CENTRAL, 1, 1, 1, 1>(new surface_cost(link.first.point + ((float) i)/bridge.N*link_vector, n, bridge.label, tunnel_height, &raster)),
+			new ceres::NumericDiffCostFunction<surface_cost, ceres::CENTRAL, 1, 1, 1, 1>(new surface_cost(beta, theta, link.first.point + ((float) i)/bridge.N*link_vector, n, bridge.label, tunnel_height, &raster)),
 			nullptr,
 			bridge.xl + i, //x^l_{i}
 			bridge.xr + i, //x^r_{i}
@@ -788,18 +809,18 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 
 	// border
 	problem.AddResidualBlock(
-		new ceres::AutoDiffCostFunction<surface_border, 1, 1>(new surface_border(point1.z())),
+		new ceres::AutoDiffCostFunction<surface_border, 1, 1>(new surface_border(zeta, point1.z())),
 		nullptr,
 		bridge.z_segment); //z_segment[0]
 	problem.AddResidualBlock(
-		new ceres::AutoDiffCostFunction<surface_border, 1, 1>(new surface_border(point2.z())),
+		new ceres::AutoDiffCostFunction<surface_border, 1, 1>(new surface_border(zeta, point2.z())),
 		nullptr,
 		bridge.z_segment + bridge.N); //z_segment[bridge.N]
 
 	//regularity of the contour
 	for (int j = 1; j < bridge.N; j++) {
 		problem.AddResidualBlock(
-			new ceres::AutoDiffCostFunction<contour_regularity, 1, 1, 1, 1>(new contour_regularity),
+			new ceres::AutoDiffCostFunction<contour_regularity, 1, 1, 1, 1>(new contour_regularity(gamma)),
 			nullptr,
 			bridge.xl + j - 1, //x^l_{j-1}
 			bridge.xl + j, //x^l_{j}
@@ -807,7 +828,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 	}
 	for (int j = 1; j < bridge.N; j++) {
 		problem.AddResidualBlock(
-			new ceres::AutoDiffCostFunction<contour_regularity, 1, 1, 1, 1>(new contour_regularity),
+			new ceres::AutoDiffCostFunction<contour_regularity, 1, 1, 1, 1>(new contour_regularity(gamma)),
 			nullptr,
 			bridge.xr + j - 1, //x^r_{j-1}
 			bridge.xr + j, //x^r_{j}
@@ -817,14 +838,14 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 	/*
 	for (int j = 0; j < bridge.N; j++) {
 		problem.AddResidualBlock(
-			new ceres::AutoDiffCostFunction<contour_regularity, 1, 1, 1>(new contour_regularity),
+			new ceres::AutoDiffCostFunction<contour_regularity, 1, 1, 1>(new contour_regularity(gamma)),
 			nullptr,
 			bridge.xl + j, //x^l_{j}
 			bridge.xl + j + 1); //x^l_{j+1}
 	}
 	for (int j = 0; j < bridge.N; j++) {
 		problem.AddResidualBlock(
-			new ceres::AutoDiffCostFunction<contour_regularity, 1, 1, 1>(new contour_regularity),
+			new ceres::AutoDiffCostFunction<contour_regularity, 1, 1, 1>(new contour_regularity(gamma)),
 			nullptr,
 			bridge.xr + j, //x^r_{j}
 			bridge.xr + j + 1); //x^r_{j+1}
@@ -834,7 +855,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 	//width of the reconstructed surface
 	for (int j = 0; j <= bridge.N; j++) {
 		problem.AddResidualBlock(
-			new ceres::AutoDiffCostFunction<surface_width, 1, 1, 1>(new surface_width(width.first + j*(width.second - width.first)/bridge.N)),
+			new ceres::AutoDiffCostFunction<surface_width, 1, 1, 1>(new surface_width(delta, width.first + j*(width.second - width.first)/bridge.N)),
 			nullptr,
 			bridge.xl + j, //x^l_{j}
 			bridge.xr + j); //x^r_{j}
@@ -842,31 +863,31 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 
 	//centering of the surface on the link vertices
 	problem.AddResidualBlock(
-		new ceres::AutoDiffCostFunction<surface_centering, 1, 1, 1>(new surface_centering()),
+		new ceres::AutoDiffCostFunction<surface_centering, 1, 1, 1>(new surface_centering(epsilon)),
 		nullptr,
 		bridge.xl, //x^l_{0}
 		bridge.xr); //x^r_{0}
 	problem.AddResidualBlock(
-		new ceres::AutoDiffCostFunction<surface_centering, 1, 1, 1>(new surface_centering()),
+		new ceres::AutoDiffCostFunction<surface_centering, 1, 1, 1>(new surface_centering(epsilon)),
 		nullptr,
 		bridge.xl + bridge.N, //x^l_{N}
 		bridge.xr + bridge.N); //x^r_{N}
 
 	//constraint border inside path
 	problem.AddResidualBlock(
-		new ceres::AutoDiffCostFunction<border_constraint, 1, 1>(new border_constraint(dl0)),
+		new ceres::AutoDiffCostFunction<border_constraint, 1, 1>(new border_constraint(eta, dl0)),
 		nullptr,
 		bridge.xl); //x^l_{0}
 	problem.AddResidualBlock(
-		new ceres::AutoDiffCostFunction<border_constraint, 1, 1>(new border_constraint(dlN)),
+		new ceres::AutoDiffCostFunction<border_constraint, 1, 1>(new border_constraint(eta, dlN)),
 		nullptr,
 		bridge.xl + bridge.N); //x^l_{N}
 	problem.AddResidualBlock(
-		new ceres::AutoDiffCostFunction<border_constraint, 1, 1>(new border_constraint(dr0)),
+		new ceres::AutoDiffCostFunction<border_constraint, 1, 1>(new border_constraint(eta, dr0)),
 		nullptr,
 		bridge.xr); //x^r_{0}
 	problem.AddResidualBlock(
-		new ceres::AutoDiffCostFunction<border_constraint, 1, 1>(new border_constraint(drN)),
+		new ceres::AutoDiffCostFunction<border_constraint, 1, 1>(new border_constraint(eta, drN)),
 		nullptr,
 		bridge.xr + bridge.N); //x^r_{N}
 
@@ -886,7 +907,6 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 	// Compute cost
 
 	//regularity of the contour
-	float gamma = 1;
 	for (int j = 1; j < bridge.N; j++) {
 		bridge.cost += pow(gamma * (bridge.xl[j-1]+bridge.xl[j+1]-2*bridge.xl[j]),2);
 		bridge.cost += pow(gamma * (bridge.xr[j-1]+bridge.xr[j+1]-2*bridge.xr[j]),2);
@@ -898,26 +918,21 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 	}*/
 
 	//width of the reconstructed surface
-	float delta = 1;
 	for (int j = 0; j <= bridge.N; j++) {
 		// x^l_j − x^l_{j+1}
 		bridge.cost += pow(delta * ((bridge.xl[j] + bridge.xr[j]) - (width.first + j*(width.second - width.first)/bridge.N)),2);
 	}
 
 	//centering of the surface on the link vertices
-	float epsilon = 1;
 	bridge.cost += pow(epsilon * (bridge.xl[0] - bridge.xr[0]),2);
 	bridge.cost += pow(epsilon * (bridge.xl[bridge.N] - bridge.xr[bridge.N]),2);
 
 	// regularity of the surface
-	float alpha = 10;
 	for (int i = 0; i < bridge.N; i++) {
 		bridge.cost += pow(alpha * (bridge.z_segment[i] - bridge.z_segment[i+1]),2);
 	}
 
 	// attachment to DSM data
-	float beta = 1;
-	float theta = 1;
 	for (int i = 0; i <= bridge.N; i++) {
 		float tmp_cost = 0;
 		double j;
@@ -956,7 +971,6 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 	}
 
 	// border
-	float zeta = 10;
 	bridge.cost += pow(zeta * (bridge.z_segment[0] - point1.z()),2);
 	bridge.cost += pow(zeta * (bridge.z_segment[bridge.N] - point2.z()),2);
 
