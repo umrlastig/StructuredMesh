@@ -11,6 +11,8 @@
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
 #include "ceres/ceres.h"
 
+#include <cmath>
+
 namespace PMP = CGAL::Polygon_mesh_processing;
 
 std::pair<Surface_mesh::Face_index, Point_2> point_on_path_border(const Surface_mesh &mesh, Surface_mesh::Face_index face, std::list<K::Segment_2> segments);
@@ -77,7 +79,7 @@ std::pair<K::FT, K::FT> road_width (std::pair<skeletonPoint,skeletonPoint> link)
 			auto vec = K::Vector_2(it->first->vertex()->point(), it->first->opposite()->vertex()->point());
 			auto length = sqrt(vec.squared_length());
 			auto cos_angle = abs(CGAL::scalar_product(vec, vector) / sqrt(vec.squared_length()));
-			auto coef = (cos_angle/2+0.6)*length*(50-it->second);
+			auto coef = (cos_angle/2+0.6)*length*(51*49/50 * (1/(it->second+1)+50*50/49/51-1));
 			road_width1 += coef;
 			sum1 += coef/width;
 		}
@@ -96,7 +98,7 @@ std::pair<K::FT, K::FT> road_width (std::pair<skeletonPoint,skeletonPoint> link)
 			auto vec = K::Vector_2(it->first->vertex()->point(), it->first->opposite()->vertex()->point());
 			auto length = sqrt(vec.squared_length());
 			auto cos_angle = abs(CGAL::scalar_product(vec, vector) / sqrt(vec.squared_length()));
-			auto coef = (cos_angle/2+0.6)*length*(50-it->second);
+			auto coef = (cos_angle/2+0.6)*length*(51*49/50 * (1/(it->second+1)+50*50/49/51-1));
 			road_width2 += coef;
 			sum2 += coef/width;
 		}
@@ -332,7 +334,7 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 							}	
 						} while (++he != v2->halfedge_around_vertex_begin());
 
-						result.insert(std::make_pair(skeletonPoint(path2, v2), skeletonPoint(path1, e1, p1)));
+						result.insert(std::make_pair(skeletonPoint(path1, e1, p1), skeletonPoint(path2, v2)));
 						exit3:
 							continue;
 					}
@@ -564,70 +566,171 @@ struct surface_regularity {
 };
 
 // attachment to DSM data 
-struct surface_cost {
-	double coef;
-	double cost;
+class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
+	private:
+		double coef;
+		double cost;
 
-	Point_2 start;
-	K::Vector_2 ortho_vect;
-	char label;
-	double tunnel_height;
-	const Raster *raster;
+		Point_2 start;
+		K::Vector_2 ortho_vect;
+		unsigned char label;
+		double tunnel_height;
+		const Surface_mesh &mesh;
+		const AABB_tree &tree;
+		Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_labels;
 
-	surface_cost (double coef,
+		double cost_at_point(const double j, const double* const z, double *grad) const {
+			double local_cost;
+
+			auto p2d = start + j * ortho_vect;
+			auto p3d = K::Point_3(p2d.x(), p2d.y(), z[0]);
+
+			const K::Ray_3 ray_top(p3d, K::Direction_3(0, 0, 1));
+			const K::Ray_3 ray_bottom(p3d, K::Direction_3(0, 0, -1));
+
+			auto location_top = PMP::locate_with_AABB_tree(ray_top, tree, mesh);
+			auto location_bottom = PMP::locate_with_AABB_tree(ray_bottom, tree, mesh);
+
+			//if no bottom point, we are outside the bounding boxe
+			if(location_bottom.first != mesh.null_face()) {
+
+				if (location_top.first == mesh.null_face()) {
+					// point is above the surface
+					auto l = mesh_labels[location_bottom.first];
+					auto point_bottom = PMP::construct_point(location_bottom, mesh);
+					local_cost = abs(z[0] - ((double) point_bottom.z()));
+					if (grad != nullptr) *grad = (z[0] > point_bottom.z()) ? 1 : -1;
+					if (l != 0 && l != label) {
+						if ((l != 8 && l != 9) || (label != 8 && label != 9)) {
+							local_cost += cost;
+						}
+					}
+				} else {
+					auto p1_top = mesh.point(CGAL::source(CGAL::halfedge(location_top.first, mesh), mesh));
+					auto p2_top = mesh.point(CGAL::target(CGAL::halfedge(location_top.first, mesh), mesh));
+					auto p3_top = mesh.point(CGAL::target(CGAL::next(CGAL::halfedge(location_top.first, mesh), mesh), mesh));
+
+					if (K::Orientation_3()(p1_top, p2_top, p3_top, p3d) == CGAL::POSITIVE) {
+						// the point is above the surface
+						auto l = mesh_labels[location_bottom.first];
+						auto point_bottom = PMP::construct_point(location_bottom, mesh);
+						local_cost = abs(z[0] - ((double) point_bottom.z()));
+						if (grad != nullptr) *grad = (z[0] > point_bottom.z()) ? 1 : -1;
+						if (l != 0 && l != label) {
+							if ((l != 8 && l != 9) || (label != 8 && label != 9)) {
+								local_cost += cost;
+							}
+						}
+
+						auto point_top = PMP::construct_point(location_top, mesh);
+						if (point_top.z() - tunnel_height < z[0]) {
+							local_cost += (z[0] + tunnel_height - point_top.z()) / 2;
+							if (grad != nullptr) *grad += 1/2;
+						}
+					} else {
+						// the point is under the surface
+						auto point_top = PMP::construct_point(location_top, mesh);
+						if (point_top.z() - z[0] < tunnel_height/2) {
+							auto l = mesh_labels[location_top.first];
+							local_cost = ((double) point_top.z()) - z[0];
+							if (grad != nullptr) *grad = -1;
+							if (l != 0 && l != label) {
+								if ((l != 8 && l != 9) || (label != 8 && label != 9)) {
+									local_cost += cost;
+								}
+							}
+						} else if (point_top.z() - z[0] < tunnel_height) {
+							local_cost = z[0] + tunnel_height - point_top.z();
+							if (grad != nullptr) *grad = 1;
+						} else {
+							local_cost = 0;
+							if (grad != nullptr) *grad = 0;
+						}
+					}
+				}
+			}
+
+			return local_cost;
+		}
+
+	public:
+		SurfaceCost (double coef,
 					double cost,
 					Point_2 start,
 					K::Vector_2 ortho_vect,
-					char label,
+					unsigned char label,
 					double tunnel_height,
-					const Raster *raster) :
+					const Surface_mesh &mesh,
+					const AABB_tree &tree) :
 		coef(coef),
 		cost(cost),
 		start(start),
 		ortho_vect(ortho_vect),
 		label(label),
 		tunnel_height(tunnel_height),
-		raster(raster) {}
-
-	bool operator()(const double* const xl, const double* const xr, const double* const z, double* residual) const {
-		residual[0] = 0;
-
-		double j;
-		for (j = -xl[0]; j < xr[0] - 0.1; j+=0.1) {
-			auto p = start + j * ortho_vect;
-			if (p.y() >= 0 && p.y() < raster->ySize && p.x() >= 0 && p.y() < raster->xSize) {
-				if (z[0] > raster->dsm[p.y()][p.x()] - tunnel_height / 2) {
-					residual[0] += abs(z[0] - ((double) raster->dsm[p.y()][p.x()]));
-					if (raster->land_cover[p.y()][p.x()] != 0 && raster->land_cover[p.y()][p.x()] != label) {
-						if ((raster->land_cover[p.y()][p.x()] != 8 && raster->land_cover[p.y()][p.x()] != 9) || (label != 8 && label != 9)) {
-							residual[0] += cost;
-						}
-					}
-				} else if (z[0] > raster->dsm[p.y()][p.x()] - tunnel_height) {
-					residual[0] += abs(z[0] - ((double) (raster->dsm[p.y()][p.x()])) + tunnel_height);
-				}
-			}
-		}
-		residual[0] *= 0.1;
-
-		auto p = start + j * ortho_vect;
-		if (p.y() >= 0 && p.y() < raster->ySize && p.x() >= 0 && p.y() < raster->xSize) {
-			if (z[0] > raster->dsm[p.y()][p.x()] - tunnel_height / 2) {
-				residual[0] += (xr[0] - j) * abs(z[0] - ((double) raster->dsm[p.y()][p.x()]));
-				if (raster->land_cover[p.y()][p.x()] != 0 && raster->land_cover[p.y()][p.x()] != label) {
-					if ((raster->land_cover[p.y()][p.x()] != 8 && raster->land_cover[p.y()][p.x()] != 9) || (label != 8 && label != 9)) {
-						residual[0] += (xr[0] - j) * cost;
-					}
-				}
-			} else if (z[0] > raster->dsm[p.y()][p.x()] - tunnel_height) {
-				residual[0] += (xr[0] - j) * abs(z[0] - ((double) raster->dsm[p.y()][p.x()]) + tunnel_height);
-			}
+		mesh(mesh),
+		tree(tree) {
+			// Get label property
+			bool has_label;
+			boost::tie(mesh_labels, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+			assert(has_label);
 		}
 
-		residual[0] *= coef;
+		bool Evaluate(double const* const* parameters, double* residual, double** jacobians) const {
+			const double* const xl = parameters[0];
+			const double* const xr = parameters[1];
+			const double* const z = parameters[2];
 
-		return true;
-	}
+			if (xr[0] + xl[0] < 0) { // the road has a negative width
+				residual[0] = (-xl[0] - xr[0])*coef*10;
+
+				if (jacobians == nullptr) return true;
+				jacobians[0][0] = - coef * 10; // dC/dxl
+				jacobians[1][0] = - coef * 10; // dC/dxr
+				jacobians[2][0] = 0;
+
+				return true;
+			}
+
+			double step = 0.3;
+
+			int num_step = ceil((xl[0] + xr[0]) / step);
+
+			if (jacobians != nullptr) {
+				double grad;
+
+				double left_cost = cost_at_point(-xl[0], z, &grad);
+				residual[0] = left_cost / 2 / num_step;
+				jacobians[0][0] = coef * left_cost / (xl[0] + xr[0]);
+				jacobians[2][0] = grad / 2 / num_step;
+
+				for (int i = 1; i < num_step; i++) {
+					residual[0] += cost_at_point(i * (xl[0] + xr[0]) / num_step - xl[0], z, &grad) / num_step;
+					jacobians[2][0] += grad / num_step;
+				}
+
+				double right_cost = cost_at_point(xr[0], z, &grad);
+				residual[0] += right_cost / 2 / num_step;
+				jacobians[1][0] = coef * right_cost / (xl[0] + xr[0]);
+				jacobians[2][0] += grad / 2 / num_step;
+
+				jacobians[2][0] *= coef;
+			} else {
+
+				residual[0] = cost_at_point(-xl[0], z, nullptr) / 2 / num_step;
+
+				for (int i = 1; i < num_step; i++) {
+					residual[0] += cost_at_point(i * (xl[0] + xr[0]) / num_step - xl[0], z, nullptr) / num_step;
+				}
+
+				residual[0] += cost_at_point(xr[0], z, nullptr) / 2 / num_step;
+			}
+
+			residual[0] *= coef;
+
+			return true;
+
+		}
 };
 
 // border
@@ -715,7 +818,7 @@ struct border_constraint {
 	}
 };
 
-pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster) {
+pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tree, const Raster &raster) {
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
 	bool has_path;
@@ -779,14 +882,14 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 
 	ceres::Problem problem;
 
-	float alpha = 50; // regularity of the surface
+	float alpha = 10; // regularity of the surface
 	float beta = 1; // attachment to DSM data
-	float gamma = 0.5; // regularity of the contour
-	float delta = 10; // width of the reconstructed surface
+	float gamma = 1; // regularity of the contour
+	float delta = 2; // width of the reconstructed surface
 	float epsilon = 1; // centering of the surface on the link vertices
 	float zeta = 10; // border elevation
 	float eta = 100; // constraint border inside path
-	float theta = 1; // cost for label error
+	float theta = 25; // cost for label error
 
 	// regularity of the surface
 	for (int i = 0; i < bridge.N; i++) {
@@ -800,7 +903,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 	// attachment to DSM data
 	for (int i = 0; i <= bridge.N; i++) {
 		problem.AddResidualBlock(
-			new ceres::NumericDiffCostFunction<surface_cost, ceres::CENTRAL, 1, 1, 1, 1>(new surface_cost(beta, theta, link.first.point + ((float) i)/bridge.N*link_vector, n, bridge.label, tunnel_height, &raster)),
+			new SurfaceCost(beta, theta, link.first.point + ((float) i)/bridge.N*link_vector, n, bridge.label, tunnel_height, mesh, tree),
 			nullptr,
 			bridge.xl + i, //x^l_{i}
 			bridge.xr + i, //x^r_{i}
@@ -899,10 +1002,19 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 	ceres::Solver::Summary summary;
 	Solve(options, &problem, &summary);
 
+	//Border constraint
 	if (bridge.xl[0] > dl0) bridge.xl[0] = dl0;
 	if (bridge.xl[bridge.N] > dlN) bridge.xl[bridge.N] = dlN;
 	if (bridge.xr[0] > dr0) bridge.xr[0] = dr0;
 	if (bridge.xr[bridge.N] > drN) bridge.xr[bridge.N] = drN;
+
+	//Width constraint
+	for (int j = 0; j <= bridge.N; j++) {
+		if (bridge.xl[j] + bridge.xr[j] <= 0) { // x^l_j − x^r_j
+			bridge.xl[j] += (-bridge.xl[j] - bridge.xr[j]) / 2 + 0.005;
+			bridge.xr[j] += (-bridge.xl[j] - bridge.xr[j]) / 2 + 0.005;
+		}
+	}
 
 	// Compute cost
 
@@ -932,49 +1044,124 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const Raster &raster
 		bridge.cost += pow(alpha * (bridge.z_segment[i] - bridge.z_segment[i+1]),2);
 	}
 
+	Surface_mesh bridge_surface_cost;
+
 	// attachment to DSM data
 	for (int i = 0; i <= bridge.N; i++) {
 		float tmp_cost = 0;
-		double j;
-		for (j = - bridge.xl[i]; j < bridge.xr[i] - 0.1; j+=0.1) {
-			auto p = link.first.point + ((float) i)/bridge.N*link_vector + j * n;
-			if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
-				if (bridge.z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height / 2) {
-					tmp_cost += abs(bridge.z_segment[i] - raster.dsm[p.y()][p.x()]);
-					if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge.label) {
-						if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge.label != 8 && bridge.label != 9)) {
-							tmp_cost += theta;
+
+		double step = 0.3;
+		int num_step = ceil((bridge.xl[i] + bridge.xr[i]) / step);
+
+		for (int k = 0; k <= num_step; k++) {
+
+			double j = (bridge.xl[i] + bridge.xr[i]) * k / num_step - bridge.xl[i];
+			double point_cost;
+
+			auto p2d = link.first.point + ((float) i)/bridge.N*link_vector + j * n;
+			auto p3d = K::Point_3(p2d.x(), p2d.y(), bridge.z_segment[i]);
+
+			const K::Ray_3 ray_top(p3d, K::Direction_3(0, 0, 1));
+			const K::Ray_3 ray_bottom(p3d, K::Direction_3(0, 0, -1));
+
+			auto location_top = PMP::locate_with_AABB_tree(ray_top, tree, mesh);
+			auto location_bottom = PMP::locate_with_AABB_tree(ray_bottom, tree, mesh);
+
+			//if no bottom point, we are outside the bounding boxe
+			if(location_bottom.first != mesh.null_face()) {
+
+				if (location_top.first == mesh.null_face()) {
+					// point is above the surface
+					auto l = label[location_bottom.first];
+					auto point_bottom = PMP::construct_point(location_bottom, mesh);
+					point_cost = abs(bridge.z_segment[i] - point_bottom.z());
+					if (l != 0 && l != bridge.label) {
+						if ((l != 8 && l != 9) || (bridge.label != 8 && bridge.label != 9)) {
+							point_cost += theta;
 						}
 					}
-				} else if (bridge.z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height) {
-					tmp_cost += abs(bridge.z_segment[i] - (raster.dsm[p.y()][p.x()] - tunnel_height));
-				}
-			}
-		}
-		tmp_cost *= 0.1;
+				} else {
+					auto p1_top = mesh.point(CGAL::source(CGAL::halfedge(location_top.first, mesh), mesh));
+					auto p2_top = mesh.point(CGAL::target(CGAL::halfedge(location_top.first, mesh), mesh));
+					auto p3_top = mesh.point(CGAL::target(CGAL::next(CGAL::halfedge(location_top.first, mesh), mesh), mesh));
 
-		auto p = link.first.point + ((float) i)/bridge.N*link_vector + j * n;
-		if (p.y() >= 0 && p.y() < raster.ySize && p.x() >= 0 && p.y() < raster.xSize) {
-			if (bridge.z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height / 2) {
-				tmp_cost += (bridge.xr[i] - j) * abs(bridge.z_segment[i] - raster.dsm[p.y()][p.x()]);
-				if (raster.land_cover[p.y()][p.x()] != 0 && raster.land_cover[p.y()][p.x()] != bridge.label) {
-					if ((raster.land_cover[p.y()][p.x()] != 8 && raster.land_cover[p.y()][p.x()] != 9) || (bridge.label != 8 && bridge.label != 9)) {
-						tmp_cost += (bridge.xr[i] - j) * theta;
+					if (K::Orientation_3()(p1_top, p2_top, p3_top, p3d) == CGAL::POSITIVE) {
+						// the point is above the surface
+						auto l = label[location_bottom.first];
+						auto point_bottom = PMP::construct_point(location_bottom, mesh);
+						point_cost = abs(bridge.z_segment[i] - point_bottom.z());
+						if (l != 0 && l != bridge.label) {
+							if ((l != 8 && l != 9) || (bridge.label != 8 && bridge.label != 9)) {
+								point_cost += theta;
+							}
+						}
+
+						auto point_top = PMP::construct_point(location_top, mesh);
+						if (point_top.z() - bridge.z_segment[i] < tunnel_height) {
+							point_cost = abs(tunnel_height - (point_top.z() - bridge.z_segment[i]));
+						}
+					} else {
+						// the point is under the surface
+						auto point_top = PMP::construct_point(location_top, mesh);
+						if (point_top.z() - bridge.z_segment[i] < tunnel_height/2) {
+							auto l = label[location_top.first];
+							point_cost = abs(bridge.z_segment[i] - ((double) point_top.z()));
+							if (l != 0 && l != bridge.label) {
+								if ((l != 8 && l != 9) || (bridge.label != 8 && bridge.label != 9)) {
+									point_cost += theta;
+								}
+							}
+						} else if (point_top.z() - bridge.z_segment[i] < tunnel_height) {
+							point_cost = abs(tunnel_height - (point_top.z() - bridge.z_segment[i]));
+						}
 					}
 				}
-			} else if (bridge.z_segment[i] > raster.dsm[p.y()][p.x()] - tunnel_height) {
-				tmp_cost += (bridge.xr[i] - j) * abs(bridge.z_segment[i] - (raster.dsm[p.y()][p.x()] - tunnel_height));
 			}
+
+			if (k == 0 || k == num_step) {
+				point_cost /= 2;
+			}
+
+			tmp_cost += point_cost;
+
+			auto v1 = bridge_surface_cost.add_vertex(p3d);
+			auto v2 = bridge_surface_cost.add_vertex(K::Point_3(p3d.x(), p3d.y(), p3d.z() + 50*(point_cost)));
+			bridge_surface_cost.add_edge(v1, v2);
 		}
 
+		tmp_cost /= num_step;	
+
 		bridge.cost += pow(beta * tmp_cost, 2);
+	}
+
+	{ // surface_cost
+		bool created;
+		Surface_mesh::Property_map<Surface_mesh::Edge_index, int> edge_prop;
+		boost::tie(edge_prop, created) = bridge_surface_cost.add_property_map<Surface_mesh::Edge_index, int>("prop",0);
+		assert(created);
+
+		double min_x, min_y;
+		raster.grid_to_coord(0, 0, min_x, min_y);
+
+		for(auto vertex : bridge_surface_cost.vertices()) {
+			auto point = bridge_surface_cost.point(vertex);
+			double x, y;
+			raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
+			bridge_surface_cost.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
+		}
+
+		std::stringstream bridge_surface_cost_name;
+		bridge_surface_cost_name << "bridge_surface_cost_" << ((int) bridge.label) << "_" << link.first.path << "_" << link.second.path << "_" << link.first.point << "_" << link.second.point << ".ply";
+		std::ofstream mesh_ofile (bridge_surface_cost_name.str().c_str());
+		CGAL::IO::write_PLY (mesh_ofile, bridge_surface_cost);
+		mesh_ofile.close();
 	}
 
 	// border
 	bridge.cost += pow(zeta * (bridge.z_segment[0] - point1.z()),2);
 	bridge.cost += pow(zeta * (bridge.z_segment[bridge.N] - point2.z()),2);
 
-	if (bridge.cost > 100) {
+	if (bridge.cost > 50) {
 		return bridge;
 	}
 
@@ -1150,6 +1337,12 @@ void close_surface_mesh(Surface_mesh &mesh) {
 	CGAL::Polygon_mesh_processing::orient_to_bound_a_volume(mesh);
 }
 
+AABB_tree index_surface_mesh(Surface_mesh &mesh) {
+	AABB_tree tree;
+	PMP::build_AABB_tree(mesh, tree);
+	return tree;
+}
+
 class Cost_stop_predicate {
 	public:
 
@@ -1283,8 +1476,6 @@ Surface_mesh compute_remove_mesh(const pathBridge &bridge, const Raster &raster)
 
 	CGAL::Polygon_mesh_processing::orient_to_bound_a_volume(bridge_mesh);
 
-	CGAL::Surface_mesh_simplification::edge_collapse(bridge_mesh, Cost_stop_predicate(0.1));
-
 	{ // output
 		Surface_mesh output_mesh(bridge_mesh);
 		double min_x, min_y;
@@ -1372,8 +1563,6 @@ Surface_mesh compute_support_mesh(const pathBridge &bridge, const Raster &raster
 	bridge_mesh.add_face(Xlt[bridge.N], Xrt[bridge.N], Xrb[bridge.N]);
 
 	CGAL::Polygon_mesh_processing::orient_to_bound_a_volume(bridge_mesh);
-
-	CGAL::Surface_mesh_simplification::edge_collapse(bridge_mesh, Cost_stop_predicate(0.1));
 
 	{ // output
 		Surface_mesh output_mesh(bridge_mesh);

@@ -149,14 +149,16 @@ int main(int argc, char **argv) {
 	save_mesh(mesh, raster, "final-closed-mesh-with-path.ply");
 	std::cout << "Mesh waterthighted" << std::endl;
 
+	AABB_tree tree = index_surface_mesh(mesh);
+
 	std::vector<pathBridge> bridges_to_add;
 	int i = 0;
 	std::cout << "Computing " << links.size() << " bridges" << std::endl;
 	for (auto link: links) {
 		std::cout << "\rBridge " << i++ << "/" << links.size() << "               ";
 		std::cout.flush();
-		pathBridge bridge_result = bridge(link, mesh, raster);
-		if (bridge_result.cost < 100) {
+		pathBridge bridge_result = bridge(link, mesh, tree, raster);
+		if (bridge_result.cost < 50) {
 			bridges_to_add.push_back(bridge_result);
 		}
 	}
