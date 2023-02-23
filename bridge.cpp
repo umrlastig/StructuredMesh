@@ -580,7 +580,7 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 		Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_labels;
 
 		double cost_at_point(const double j, const double* const z, double *grad) const {
-			double local_cost;
+			double local_cost = 0;
 
 			auto p2d = start + j * ortho_vect;
 			auto p3d = K::Point_3(p2d.x(), p2d.y(), z[0]);
@@ -1056,7 +1056,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 		for (int k = 0; k <= num_step; k++) {
 
 			double j = (bridge.xl[i] + bridge.xr[i]) * k / num_step - bridge.xl[i];
-			double point_cost;
+			double point_cost = 0;
 
 			auto p2d = link.first.point + ((float) i)/bridge.N*link_vector + j * n;
 			auto p3d = K::Point_3(p2d.x(), p2d.y(), bridge.z_segment[i]);
