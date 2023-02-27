@@ -623,8 +623,8 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 						}
 
 						auto point_top = PMP::construct_point(location_top, mesh);
-						if (point_top.z() - tunnel_height < z[0]) {
-							local_cost += (z[0] + tunnel_height - point_top.z()) / 2;
+						if (point_top.z() - z[0] < tunnel_height) {
+							local_cost += (tunnel_height - (point_top.z() - z[0])) / 2;
 							if (grad != nullptr) *grad += 1/2;
 						}
 					} else {
@@ -684,10 +684,11 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 			if (xr[0] + xl[0] < 0) { // the road has a negative width
 				residual[0] = (-xl[0] - xr[0])*coef*10;
 
-				if (jacobians == nullptr) return true;
-				jacobians[0][0] = - coef * 10; // dC/dxl
-				jacobians[1][0] = - coef * 10; // dC/dxr
-				jacobians[2][0] = 0;
+				if (jacobians != nullptr) {
+					jacobians[0][0] = - coef * 10; // dC/dxl
+					jacobians[1][0] = - coef * 10; // dC/dxr
+					jacobians[2][0] = 0;
+				}
 
 				return true;
 			}
@@ -695,35 +696,39 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 			double step = 0.3;
 
 			int num_step = ceil((xl[0] + xr[0]) / step);
+			if (num_step < 1) num_step = 1;
+			step = (xl[0] + xr[0]) / num_step;
 
 			if (jacobians != nullptr) {
 				double grad;
 
 				double left_cost = cost_at_point(-xl[0], z, &grad);
-				residual[0] = left_cost / 2 / num_step;
-				jacobians[0][0] = coef * left_cost / (xl[0] + xr[0]);
-				jacobians[2][0] = grad / 2 / num_step;
+				residual[0] = left_cost * step / 2;
+				jacobians[0][0] = coef * left_cost;
+				jacobians[2][0] = grad * step / 2;
 
 				for (int i = 1; i < num_step; i++) {
-					residual[0] += cost_at_point(i * (xl[0] + xr[0]) / num_step - xl[0], z, &grad) / num_step;
-					jacobians[2][0] += grad / num_step;
+					residual[0] += cost_at_point(i * (xl[0] + xr[0]) / num_step - xl[0], z, &grad) * step;
+					jacobians[2][0] += grad * step;
 				}
 
 				double right_cost = cost_at_point(xr[0], z, &grad);
-				residual[0] += right_cost / 2 / num_step;
-				jacobians[1][0] = coef * right_cost / (xl[0] + xr[0]);
-				jacobians[2][0] += grad / 2 / num_step;
+				residual[0] += right_cost * step / 2;
+				jacobians[1][0] = coef * right_cost ;
+				jacobians[2][0] += grad * step / 2;
 
 				jacobians[2][0] *= coef;
 			} else {
 
-				residual[0] = cost_at_point(-xl[0], z, nullptr) / 2 / num_step;
+				residual[0] = cost_at_point(-xl[0], z, nullptr);
+				residual[0] *= step / 2;
 
 				for (int i = 1; i < num_step; i++) {
-					residual[0] += cost_at_point(i * (xl[0] + xr[0]) / num_step - xl[0], z, nullptr) / num_step;
+					residual[0] += cost_at_point(i * (xl[0] + xr[0]) / num_step - xl[0], z, nullptr) * step;
 				}
 
-				residual[0] += cost_at_point(xr[0], z, nullptr) / 2 / num_step;
+				double right_cost = cost_at_point(xr[0], z, nullptr);
+				residual[0] += right_cost * step / 2;
 			}
 
 			residual[0] *= coef;
@@ -997,6 +1002,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 	// solving
 	ceres::Solver::Options options;
 	options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
+	options.use_nonmonotonic_steps = true;
 	options.logging_type = ceres::SILENT;
 	options.minimizer_progress_to_stdout = true;
 	ceres::Solver::Summary summary;
@@ -1010,9 +1016,9 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 
 	//Width constraint
 	for (int j = 0; j <= bridge.N; j++) {
-		if (bridge.xl[j] + bridge.xr[j] <= 0) { // x^l_j − x^r_j
-			bridge.xl[j] += (-bridge.xl[j] - bridge.xr[j]) / 2 + 0.005;
-			bridge.xr[j] += (-bridge.xl[j] - bridge.xr[j]) / 2 + 0.005;
+		if (bridge.xl[j] + bridge.xr[j] < 0) { // x^l_j − x^r_j
+			bridge.xl[j] += (-bridge.xl[j] - bridge.xr[j]) / 2;
+			bridge.xr[j] += (-bridge.xl[j] - bridge.xr[j]) / 2;
 		}
 	}
 
@@ -1052,6 +1058,8 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 
 		double step = 0.3;
 		int num_step = ceil((bridge.xl[i] + bridge.xr[i]) / step);
+		if (num_step < 1) num_step = 1;
+		step = (bridge.xl[i] + bridge.xr[i]) / num_step;
 
 		for (int k = 0; k <= num_step; k++) {
 
@@ -1098,7 +1106,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 
 						auto point_top = PMP::construct_point(location_top, mesh);
 						if (point_top.z() - bridge.z_segment[i] < tunnel_height) {
-							point_cost = abs(tunnel_height - (point_top.z() - bridge.z_segment[i]));
+							point_cost += abs(tunnel_height - (point_top.z() - bridge.z_segment[i])) / 2;
 						}
 					} else {
 						// the point is under the surface
@@ -1129,7 +1137,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 			bridge_surface_cost.add_edge(v1, v2);
 		}
 
-		tmp_cost /= num_step;	
+		tmp_cost *= step;
 
 		bridge.cost += pow(beta * tmp_cost, 2);
 	}
