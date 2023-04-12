@@ -7,6 +7,8 @@
 #include <CGAL/Polygon_mesh_processing/triangulate_hole.h>
 #include <CGAL/Polygon_mesh_processing/orientation.h>
 #include <CGAL/Polygon_mesh_processing/corefinement.h>
+#include <CGAL/Polygon_mesh_processing/extrude.h>
+#include <CGAL/Side_of_triangle_mesh.h>
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
 #include "ceres/ceres.h"
@@ -70,7 +72,7 @@ std::pair<K::FT, K::FT> road_width (std::pair<skeletonPoint,skeletonPoint> link)
 		add_road(roads2, sqrt(CGAL::squared_distance(link.second.halfedge->vertex()->point(), link.second.point)), link.second.halfedge->vertex());
 		add_road(roads2, sqrt(CGAL::squared_distance(link.second.halfedge->opposite()->vertex()->point(), link.second.point)), link.second.halfedge->opposite()->vertex());
 	}
-	
+
 	K::FT road_width1 = 0;
 	if (roads1.size() > 0) {
 		K::FT sum1 = 0;
@@ -274,7 +276,7 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 							}
 						}
 						if (intersect != 1) continue;
-	
+
 						auto he = v1->halfedge_around_vertex_begin();
 						do {
 							auto v = (*he)->opposite()->vertex();
@@ -331,7 +333,7 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 								if (segment.collinear_has_on(proj)) {
 									goto exit3;
 								}
-							}	
+							}
 						} while (++he != v2->halfedge_around_vertex_begin());
 
 						result.insert(std::make_pair(skeletonPoint(path1, e1, p1), skeletonPoint(path2, v2)));
@@ -459,7 +461,7 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 							}
 						}
 						if (intersect != 2) continue;
-									
+
 						auto he = v1->halfedge_around_vertex_begin();
 						do {
 							auto v = (*he)->opposite()->vertex();
@@ -534,7 +536,7 @@ pathBridge::pathBridge(pathLink link): link(link), cost(0) {
 	z_segment = new double[N+1];
 }
 
-pathBridge::pathBridge(const pathBridge& other) : link(other.link), label(other.label), N(other.N), cost(other.cost) {
+pathBridge::pathBridge(const pathBridge& other) : link(other.link), label(other.label), N(other.N), cost(other.cost), crossing_surface(other.crossing_surface) {
 	// Copy all elements from 'other' to 'data'
 	xl = new double[N+1];
 	xr = new double[N+1];
@@ -841,7 +843,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 
 	typedef CGAL::dynamic_vertex_property_t<Point_2>               Point_2_property;
 	auto projection_pmap = CGAL::get(Point_2_property(), mesh);
-	
+
 	for(auto v : CGAL::vertices(mesh)) {
 		const Point_3& p = mesh.point(v);
 		put(projection_pmap, v, Point_2(p.x(), p.y()));
@@ -1051,6 +1053,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 	}
 
 	Surface_mesh bridge_surface_cost;
+	std::set<Surface_mesh::Face_index> bridge_crossing;
 
 	// attachment to DSM data
 	for (int i = 0; i <= bridge.N; i++) {
@@ -1086,6 +1089,8 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 					if (l != 0 && l != bridge.label) {
 						if ((l != 8 && l != 9) || (bridge.label != 8 && bridge.label != 9)) {
 							point_cost += theta;
+						} else {
+							bridge_crossing.insert(location_bottom.first);
 						}
 					}
 				} else {
@@ -1101,6 +1106,8 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 						if (l != 0 && l != bridge.label) {
 							if ((l != 8 && l != 9) || (bridge.label != 8 && bridge.label != 9)) {
 								point_cost += theta;
+							} else {
+								bridge_crossing.insert(location_bottom.first);
 							}
 						}
 
@@ -1117,6 +1124,8 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 							if (l != 0 && l != bridge.label) {
 								if ((l != 8 && l != 9) || (bridge.label != 8 && bridge.label != 9)) {
 									point_cost += theta;
+								} else {
+									bridge_crossing.insert(location_top.first);
 								}
 							}
 						} else if (point_top.z() - bridge.z_segment[i] < tunnel_height) {
@@ -1168,6 +1177,16 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 	// border
 	bridge.cost += pow(zeta * (bridge.z_segment[0] - point1.z()),2);
 	bridge.cost += pow(zeta * (bridge.z_segment[bridge.N] - point2.z()),2);
+
+	//Compute crossing surface
+	bridge.crossing_surface.clear();
+
+	if (bridge_crossing.size() > 0) {
+
+		CGAL::Face_filtered_graph<Surface_mesh> filtered_graph(mesh, bridge_crossing);
+
+		CGAL::copy_face_graph(filtered_graph, bridge.crossing_surface);
+	}
 
 	if (bridge.cost > 50) {
 		return bridge;
@@ -1297,7 +1316,7 @@ void close_surface_mesh(Surface_mesh &mesh) {
 	CGAL::Polygon_mesh_processing::extract_boundary_cycles (mesh, std::back_inserter(borders_edge));
 	assert(borders_edge.size() == 1);
 	auto border_edge = borders_edge[0];
-	
+
 	std::vector<Point_3> points_bottom;
 	std::vector<Point_3> points_top;
 	std::vector<Surface_mesh::Vertex_index> vertices_bottom;
@@ -1324,7 +1343,7 @@ void close_surface_mesh(Surface_mesh &mesh) {
 
 	auto v0 = CGAL::target(halfedge, mesh);
 	auto v1 = CGAL::target(CGAL::next(halfedge, mesh), mesh);
-	
+
 	auto f = mesh.add_face(v0, vertices_bottom.at(1), vertices_bottom.at(0));
 	true_face[f] = false;
 	f = mesh.add_face(v0, v1, vertices_bottom.at(1));
@@ -1374,18 +1393,20 @@ struct CorefinementVisitor : public CGAL::Polygon_mesh_processing::Corefinement:
 	bool current_true_face;
 	const Surface_mesh *main_mesh;
 
-	CorefinementVisitor (const Surface_mesh &mesh) : main_mesh(&mesh) {
-		bool has_path;
-		boost::tie(path, has_path) = mesh.property_map<Surface_mesh::Face_index, int>("path");
-		assert(has_path);
+	CorefinementVisitor (const Surface_mesh *mesh) : main_mesh(mesh) {
+		if (main_mesh != nullptr) {
+			bool has_path;
+			boost::tie(path, has_path) = mesh->property_map<Surface_mesh::Face_index, int>("path");
+			assert(has_path);
 
-		bool has_label;
-		boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
-		assert(has_label);
+			bool has_label;
+			boost::tie(label, has_label) = mesh->property_map<Surface_mesh::Face_index, unsigned char>("label");
+			assert(has_label);
 
-		bool has_true_face;
-		boost::tie(true_face, has_true_face) = mesh.property_map<Surface_mesh::Face_index, bool>("true_face");
-		assert(has_true_face);
+			bool has_true_face;
+			boost::tie(true_face, has_true_face) = mesh->property_map<Surface_mesh::Face_index, bool>("true_face");
+			assert(has_true_face);
+		}
 	}
 
 	void before_subface_creations (Surface_mesh::Face_index f_split, const Surface_mesh &tm) {
@@ -1393,7 +1414,7 @@ struct CorefinementVisitor : public CGAL::Polygon_mesh_processing::Corefinement:
 			current_path = path[f_split];
 			current_label = label[f_split];
 			current_true_face = true_face[f_split];
-		} else {			
+		} else {
 			Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> bridge_label;
 			bool has_label;
 			boost::tie(bridge_label, has_label) = tm.property_map<Surface_mesh::Face_index, unsigned char>("label");
@@ -1417,14 +1438,24 @@ struct CorefinementVisitor : public CGAL::Polygon_mesh_processing::Corefinement:
 	}
 
 	void after_face_copy (Surface_mesh::Face_index f_src, const Surface_mesh &tm_src, Surface_mesh::Face_index f_tgt, const Surface_mesh &tm_tgt) {
-		assert(&tm_tgt == main_mesh);
-		assert(&tm_src != main_mesh);
+		if (main_mesh != nullptr) {
+			assert(&tm_tgt == main_mesh);
+			assert(&tm_src != main_mesh);
 
-		Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> bridge_label;
-		bool has_label;
-		boost::tie(bridge_label, has_label) = tm_src.property_map<Surface_mesh::Face_index, unsigned char>("label");
-		assert(has_label);
-		label[f_tgt] = bridge_label[f_src];
+			Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> bridge_label;
+			bool has_label;
+			boost::tie(bridge_label, has_label) = tm_src.property_map<Surface_mesh::Face_index, unsigned char>("label");
+			assert(has_label);
+			label[f_tgt] = bridge_label[f_src];
+		} else {
+			Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> bridge_label1, bridge_label2;
+			bool has_label;
+			boost::tie(bridge_label1, has_label) = tm_src.property_map<Surface_mesh::Face_index, unsigned char>("label");
+			assert(has_label);
+			boost::tie(bridge_label2, has_label) = tm_tgt.property_map<Surface_mesh::Face_index, unsigned char>("label");
+			assert(has_label);
+			bridge_label2[f_tgt] = bridge_label1[f_src];
+		}
 	}
 
 };
@@ -1605,7 +1636,102 @@ Surface_mesh compute_support_mesh(const pathBridge &bridge, const Raster &raster
 	return bridge_mesh;
 }
 
-void add_bridge_to_mesh(Surface_mesh &mesh, const std::vector<pathBridge> &bridges, const Raster &raster) {
+struct Extrudor {
+	bool top;
+	float tunnel_height = 3; // in meter
+	Surface_mesh &omesh;
+	Surface_mesh::Property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3> exact_point;
+
+	Extrudor(bool top, Surface_mesh &omesh) : top(top), omesh(omesh) {
+		bool has_exact_points;
+		boost::tie(exact_point, has_exact_points) = omesh.property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>("v:exact_point");
+		assert(has_exact_points);
+	}
+
+	void operator()(const Surface_mesh::Vertex_index &vin, const Surface_mesh::Vertex_index &vout) const {
+		if (top) {
+			exact_point[vout] += CGAL::Exact_predicates_exact_constructions_kernel::Vector_3(0, 0, tunnel_height);
+		} else { // bottom
+			exact_point[vout] += CGAL::Exact_predicates_exact_constructions_kernel::Vector_3(0, 0, -tunnel_height);
+		}
+	}
+};
+
+Surface_mesh compute_crossing_mesh(Surface_mesh mesh, const pathBridge &bridge, std::list<Point_2> *polygon, const Raster &raster) {
+
+	// Get label
+	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
+	bool has_label;
+	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+	assert(has_label);
+
+	// Compute bridge border
+	K::Vector_2 link_vector(bridge.link.first.point, bridge.link.second.point);
+	float length = sqrt(link_vector.squared_length());
+	auto l = link_vector / length;
+	auto n = l.perpendicular(CGAL::COUNTERCLOCKWISE);
+
+	// Add points
+	for (int i = 0; i <= bridge.N; i++) {
+		polygon->push_back(bridge.link.first.point + ((float) i)/bridge.N*link_vector + bridge.xr[i] * n);
+	}
+	for (int i = bridge.N; i >= 0; i--) {
+		polygon->push_back(bridge.link.first.point + ((float) i)/bridge.N*link_vector - bridge.xl[i] * n);
+	}
+
+	// Compute crossing border
+
+	// Exact points
+	CGAL::Cartesian_converter<Surface_mesh::Point::R, CGAL::Exact_predicates_exact_constructions_kernel> to_exact;
+	Surface_mesh::Property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3> exact_points;
+	bool created_point;
+
+	// crossing_mesh
+	Surface_mesh crossing_mesh;
+
+	boost::tie(exact_points, created_point) = crossing_mesh.add_property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>("v:exact_point");
+	assert(created_point);
+
+	Extrudor extrudor1 (false, crossing_mesh);
+	Extrudor extrudor2 (true, crossing_mesh);
+	CGAL::Polygon_mesh_processing::extrude_mesh (bridge.crossing_surface, crossing_mesh, extrudor1, extrudor2, CGAL::parameters::all_default(), CGAL::parameters::vertex_point_map(exact_points));
+	assert(!CGAL::Polygon_mesh_processing::does_self_intersect(crossing_mesh, CGAL::parameters::vertex_point_map(exact_points)));
+
+	{ // output
+		CGAL::Cartesian_converter<CGAL::Exact_predicates_exact_constructions_kernel, Surface_mesh::Point::R> to_float;
+		Surface_mesh output_mesh(crossing_mesh);
+		double min_x, min_y;
+		raster.grid_to_coord(0, 0, min_x, min_y);
+
+		for(auto vertex : output_mesh.vertices()) {
+			auto point = to_float(exact_points[vertex]);
+			double x, y;
+			raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
+			output_mesh.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
+		}
+
+		std::stringstream bridge_mesh_name;
+		bridge_mesh_name << "crossing_mesh_" << ((int) bridge.label) << "_" << bridge.link.first.path << "_" << bridge.link.second.path << "_" << bridge.link.first.point << "_" << bridge.link.second.point << ".ply";
+		std::ofstream mesh_ofile (bridge_mesh_name.str().c_str());
+		CGAL::IO::write_PLY (mesh_ofile, output_mesh);
+		mesh_ofile.close();
+	}
+
+	return crossing_mesh;
+}
+
+void add_bridge_to_mesh(Surface_mesh &mesh, const std::vector<pathBridge> &bridges, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const Raster &raster) {
+
+	// Label
+	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
+	bool has_label;
+	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+	assert(has_label);
+
+	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
+	bool has_path;
+	boost::tie(path, has_path) = mesh.property_map<Surface_mesh::Face_index, int>("path");
+	assert(has_path);
 
 	CGAL::Cartesian_converter<Surface_mesh::Point::R, CGAL::Exact_predicates_exact_constructions_kernel> to_exact;
 	CGAL::Cartesian_converter<CGAL::Exact_predicates_exact_constructions_kernel, Surface_mesh::Point::R> to_kernel;
@@ -1620,26 +1746,93 @@ void add_bridge_to_mesh(Surface_mesh &mesh, const std::vector<pathBridge> &bridg
 		exact_points[vertex] = to_exact(mesh.point(vertex));
 	}
 
-	Surface_mesh::Property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3> remove_exact_points;
-	Surface_mesh::Property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3> support_exact_points;
+	Surface_mesh::Property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3> vpm1, vpm2, vpm3;
 	bool has_exact_points;
 
 	for (auto bridge: bridges) {
 
 		std::cout << "Bridge " << bridge.link.first.path << " (" << bridge.link.first.point << ") -> " << bridge.link.second.path << " (" << bridge.link.second.point << ")\n";
-		
-		auto r_b = compute_remove_mesh(bridge, raster);
-		boost::tie(remove_exact_points, has_exact_points) = r_b.property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>("v:exact_point");
-		assert(has_exact_points);
-		std::cout << "Remove bridge: " << CGAL::Polygon_mesh_processing::corefine_and_compute_difference(mesh, r_b, mesh, CGAL::parameters::vertex_point_map(exact_points).visitor(CorefinementVisitor(mesh)), CGAL::parameters::vertex_point_map(remove_exact_points), CGAL::parameters::vertex_point_map(exact_points)) << "\n";
-		
-		auto s_b = compute_support_mesh(bridge, raster);
-		boost::tie(support_exact_points, has_exact_points) = s_b.property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>("v:exact_point");
-		assert(has_exact_points);
-		std::cout << "Support bridge: " << CGAL::Polygon_mesh_processing::corefine_and_compute_union(mesh, s_b, mesh, CGAL::parameters::vertex_point_map(exact_points).visitor(CorefinementVisitor(mesh)), CGAL::parameters::vertex_point_map(support_exact_points), CGAL::parameters::vertex_point_map(exact_points)) << "\n";
-		
-		assert(!CGAL::Polygon_mesh_processing::does_self_intersect(mesh, CGAL::parameters::vertex_point_map(exact_points)));
-		assert(std::cout << CGAL::Polygon_mesh_processing::does_bound_a_volume(mesh, CGAL::parameters::vertex_point_map(exact_points)));
+
+		if (bridge.crossing_surface.num_faces() > 0) {
+
+			std::list<Point_2> polygon;
+			Surface_mesh mesh_crossing = compute_crossing_mesh(mesh, bridge, &polygon, raster);
+
+			auto r_b = compute_remove_mesh(bridge, raster);
+			auto s_b = compute_support_mesh(bridge, raster);
+
+			boost::tie(vpm1, has_exact_points) = r_b.property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>("v:exact_point");
+			assert(has_exact_points);
+			boost::tie(vpm2, has_exact_points) = s_b.property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>("v:exact_point");
+			assert(has_exact_points);
+			boost::tie(vpm3, has_exact_points) = mesh_crossing.property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>("v:exact_point");
+			assert(has_exact_points);
+
+			// Crossing relabling
+
+			CGAL::Polygon_mesh_processing::corefine(r_b, mesh_crossing, CGAL::parameters::vertex_point_map(vpm1).visitor(CorefinementVisitor(nullptr)), CGAL::parameters::vertex_point_map(vpm3).do_not_modify(true));
+
+			CGAL::Polygon_mesh_processing::corefine(s_b, mesh_crossing, CGAL::parameters::vertex_point_map(vpm2).visitor(CorefinementVisitor(nullptr)), CGAL::parameters::vertex_point_map(vpm3).do_not_modify(true));
+
+			CGAL::Side_of_triangle_mesh<Surface_mesh, CGAL::Exact_predicates_exact_constructions_kernel, Surface_mesh::Property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>> inside(mesh_crossing, vpm3);
+
+			bool has_label;
+
+			Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label_r_b;
+			boost::tie(label_r_b, has_label) = r_b.property_map<Surface_mesh::Face_index, unsigned char>("label");
+			assert(has_label);
+
+			for (auto face: r_b.faces()) {
+				if (label_r_b[face] == bridge.label) {
+					auto p1 = vpm1[CGAL::source(CGAL::halfedge(face, r_b), r_b)];
+					auto p2 = vpm1[CGAL::target(CGAL::halfedge(face, r_b), r_b)];
+					auto p3 = vpm1[CGAL::target(CGAL::next(CGAL::halfedge(face, r_b), r_b), r_b)];
+
+					if (inside(CGAL::centroid(p1, p2, p3)) == CGAL::ON_BOUNDED_SIDE) {
+						label_r_b[face] = 11;
+					}
+				}
+			}
+
+			Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label_s_b;
+			boost::tie(label_s_b, has_label) = s_b.property_map<Surface_mesh::Face_index, unsigned char>("label");
+			assert(has_label);
+
+			for (auto face: s_b.faces()) {
+				if (label_s_b[face] == bridge.label) {
+					auto p1 = vpm2[CGAL::source(CGAL::halfedge(face, s_b), s_b)];
+					auto p2 = vpm2[CGAL::target(CGAL::halfedge(face, s_b), s_b)];
+					auto p3 = vpm2[CGAL::target(CGAL::next(CGAL::halfedge(face, s_b), s_b), s_b)];
+
+					if (inside(CGAL::centroid(p1, p2, p3)) == CGAL::ON_BOUNDED_SIDE) {
+						label_s_b[face] = 11;
+					}
+				}
+			}
+
+			std::cout << "Remove bridge: " << CGAL::Polygon_mesh_processing::corefine_and_compute_difference(mesh, r_b, mesh, CGAL::parameters::vertex_point_map(exact_points).visitor(CorefinementVisitor(&mesh)), CGAL::parameters::vertex_point_map(vpm1), CGAL::parameters::vertex_point_map(exact_points)) << "\n";
+
+			std::cout << "Support bridge: " << CGAL::Polygon_mesh_processing::corefine_and_compute_union(mesh, s_b, mesh, CGAL::parameters::vertex_point_map(exact_points).visitor(CorefinementVisitor(&mesh)), CGAL::parameters::vertex_point_map(vpm2), CGAL::parameters::vertex_point_map(exact_points)) << "\n";
+
+			assert(!CGAL::Polygon_mesh_processing::does_self_intersect(mesh, CGAL::parameters::vertex_point_map(exact_points)));
+			assert(std::cout << CGAL::Polygon_mesh_processing::does_bound_a_volume(mesh, CGAL::parameters::vertex_point_map(exact_points)));
+
+		} else {
+
+			auto r_b = compute_remove_mesh(bridge, raster);
+			boost::tie(vpm1, has_exact_points) = r_b.property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>("v:exact_point");
+			assert(has_exact_points);
+			std::cout << "Remove bridge: " << CGAL::Polygon_mesh_processing::corefine_and_compute_difference(mesh, r_b, mesh, CGAL::parameters::vertex_point_map(exact_points).visitor(CorefinementVisitor(&mesh)), CGAL::parameters::vertex_point_map(vpm1), CGAL::parameters::vertex_point_map(exact_points)) << "\n";
+
+			auto s_b = compute_support_mesh(bridge, raster);
+			boost::tie(vpm2, has_exact_points) = s_b.property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>("v:exact_point");
+			assert(has_exact_points);
+			std::cout << "Support bridge: " << CGAL::Polygon_mesh_processing::corefine_and_compute_union(mesh, s_b, mesh, CGAL::parameters::vertex_point_map(exact_points).visitor(CorefinementVisitor(&mesh)), CGAL::parameters::vertex_point_map(vpm2), CGAL::parameters::vertex_point_map(exact_points)) << "\n";
+
+			assert(!CGAL::Polygon_mesh_processing::does_self_intersect(mesh, CGAL::parameters::vertex_point_map(exact_points)));
+			assert(std::cout << CGAL::Polygon_mesh_processing::does_bound_a_volume(mesh, CGAL::parameters::vertex_point_map(exact_points)));
+
+		}
 
 	}
 

@@ -167,7 +167,7 @@ int main(int argc, char **argv) {
 	}
 	std::cout << "\rBridges computed               " << std::endl;
 
-	add_bridge_to_mesh(mesh, bridges_to_add, raster);
+	add_bridge_to_mesh(mesh, bridges_to_add, path_polygon, raster);
 
 	save_mesh(mesh, raster, "final-closed-mesh-with-path-and-bridges.ply");
 	std::cout << "Bridges added to mesh" << std::endl;

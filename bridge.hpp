@@ -7,6 +7,10 @@
 #include <CGAL/AABB_face_graph_triangle_primitive.h>
 #include <CGAL/AABB_tree.h>
 #include <CGAL/AABB_traits.h>
+#include <CGAL/Exact_predicates_exact_constructions_kernel.h>
+
+#include <vector>
+#include <map>
 
 typedef std::pair<skeletonPoint,skeletonPoint> pathLink;
 
@@ -24,6 +28,7 @@ struct pathBridge {
 	double *xr;
 	double *z_segment;
 	float cost;
+	CGAL::Surface_mesh<CGAL::Exact_predicates_exact_constructions_kernel::Point_3> crossing_surface;
 
 	pathBridge(pathLink link);
 	pathBridge(const pathBridge& other);
@@ -37,6 +42,6 @@ void close_surface_mesh(Surface_mesh &mesh);
 
 AABB_tree index_surface_mesh(Surface_mesh &mesh);
 
-void add_bridge_to_mesh(Surface_mesh &mesh, const std::vector<pathBridge> &bridges, const Raster &raster);
+void add_bridge_to_mesh(Surface_mesh &mesh, const std::vector<pathBridge> &bridges, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const Raster &raster);
 
 #endif  /* !BRIDGE_H_ */
