@@ -2,6 +2,7 @@
 #include "raster.hpp"
 
 #include <getopt.h>
+#include <cstdlib>
 
 void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filename);
 
@@ -98,6 +99,8 @@ int main(int argc, char **argv) {
 		std::cout << "Orthophoto: " << orthophoto << std::endl;
 	}
 	std::cout << std::endl;
+
+	std::srand(38401);
 
 	const Raster raster(DSM, DTM, land_use_map);
 
