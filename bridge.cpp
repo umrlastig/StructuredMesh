@@ -755,7 +755,7 @@ struct surface_border {
 };
 
 //regularity of the contour
-struct contour_regularity {
+/*struct contour_regularity {
 	double coef;
 
 	contour_regularity (double coef) : coef(coef) {}
@@ -765,9 +765,8 @@ struct contour_regularity {
 		residual[0] = (x0[0] - 2.0 * x1[0] + x2[0])*coef;
 		return true;
 	}
-};
+};*/
 
-/*
 struct contour_regularity {
 	double coef;
 
@@ -778,7 +777,7 @@ struct contour_regularity {
 		residual[0] = (x0[0] - x1[0])*coef;
 		return true;
 	}
-};*/
+};
 
 //width of the reconstructed surface
 struct surface_width {
@@ -928,7 +927,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 		bridge.z_segment + bridge.N); //z_segment[bridge.N]
 
 	//regularity of the contour
-	for (int j = 1; j < bridge.N; j++) {
+	/*for (int j = 1; j < bridge.N; j++) {
 		problem.AddResidualBlock(
 			new ceres::AutoDiffCostFunction<contour_regularity, 1, 1, 1, 1>(new contour_regularity(gamma)),
 			nullptr,
@@ -943,9 +942,8 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 			bridge.xr + j - 1, //x^r_{j-1}
 			bridge.xr + j, //x^r_{j}
 			bridge.xr + j + 1); //x^r_{j+1}
-	}
+	}*/
 
-	/*
 	for (int j = 0; j < bridge.N; j++) {
 		problem.AddResidualBlock(
 			new ceres::AutoDiffCostFunction<contour_regularity, 1, 1, 1>(new contour_regularity(gamma)),
@@ -960,7 +958,6 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 			bridge.xr + j, //x^r_{j}
 			bridge.xr + j + 1); //x^r_{j+1}
 	}
-	*/
 
 	//width of the reconstructed surface
 	for (int j = 0; j <= bridge.N; j++) {
@@ -1027,15 +1024,15 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 	// Compute cost
 
 	//regularity of the contour
-	for (int j = 1; j < bridge.N; j++) {
+	/*for (int j = 1; j < bridge.N; j++) {
 		bridge.cost += pow(gamma * (bridge.xl[j-1]+bridge.xl[j+1]-2*bridge.xl[j]),2);
 		bridge.cost += pow(gamma * (bridge.xr[j-1]+bridge.xr[j+1]-2*bridge.xr[j]),2);
-	}
-	/*for (int j = 0; j < bridge.N; j++) {
+	}*/
+	for (int j = 0; j < bridge.N; j++) {
 		// x^l_j − x^l_{j+1}
 		bridge.cost += pow(gamma * (bridge.xl[j]-bridge.xl[j+1]),2);
 		bridge.cost += pow(gamma * (bridge.xr[j]-bridge.xr[j+1]),2);
-	}*/
+	}
 
 	//width of the reconstructed surface
 	for (int j = 0; j <= bridge.N; j++) {
