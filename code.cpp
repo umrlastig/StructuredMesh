@@ -53,8 +53,6 @@ std::list<Polygon> get_LOD0_from_shapefile(char *path) {
 	return polygons;
 }
 
-float single_face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, const Point_3 &p2);
-
 void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filename) {
 	Surface_mesh output_mesh (mesh);
 
@@ -109,14 +107,6 @@ void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filen
 		green[face] = LABELS[label[face]].green;
 		blue[face] = LABELS[label[face]].blue;
 
-		if (!has_path) {
-			CGAL::Vertex_around_face_iterator<Surface_mesh> vbegin, vend;
-			boost::tie(vbegin, vend) = vertices_around_face(output_mesh.halfedge(face), output_mesh);
-			auto pa = output_mesh.point(*(vbegin++));
-			auto pb = output_mesh.point(*(vbegin++));
-			auto pc = output_mesh.point(*(vbegin++));
-			quality[face] = single_face_cost(raster, Point_3(pa.x(), pa.y(), pa.z()), Point_3(pb.x(), pb.y(), pb.z()), Point_3(pc.x(), pc.y(), pc.z()));
-		}
 	}
 
 	double min_x, min_y;
