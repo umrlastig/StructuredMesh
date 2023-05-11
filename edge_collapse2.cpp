@@ -124,6 +124,12 @@ std::pair <Eigen_matrix, Eigen_vector> volume_optimisation (const SMS::Edge_prof
 	Eigen_matrix A(3,3);
 	K::Vector_3 b (CGAL::NULL_VECTOR);
 
+	for (std::size_t i = 0; i < 3; i++) {
+		for (std::size_t j = 0; j < 3; j++) {
+			A.set(i,j,0);
+		}
+	}
+
 	if (constant != nullptr) *constant = 0;
 
 	SMS::Edge_profile<Surface_mesh>::Triangle_vector triangles = profile.triangles();
@@ -170,6 +176,12 @@ std::pair <Eigen_matrix, Eigen_vector> boundary_optimization (const SMS::Edge_pr
 	Eigen_matrix A(3,3);
 	K::Vector_3 b (CGAL::NULL_VECTOR);
 
+	for (std::size_t i = 0; i < 3; i++) {
+		for (std::size_t j = 0; j < 3; j++) {
+			A.set(i,j,0);
+		}
+	}
+
 	if (constant != nullptr) *constant = 0;
 
 	for (auto edge: profile.border_edges()) {
@@ -180,12 +192,15 @@ std::pair <Eigen_matrix, Eigen_vector> boundary_optimization (const SMS::Edge_pr
 		K::Vector_3 e2 = CGAL::cross_product(K::Vector_3(Point_3(CGAL::ORIGIN), p1), K::Vector_3(Point_3(CGAL::ORIGIN), p0));
 
 		Eigen_matrix e1_cross (3,3);
+		e1_cross.set(0,0, 0);
 		e1_cross.set(1,0, e1.z());
 		e1_cross.set(2,0, -e1.y());
 		e1_cross.set(0,1, -e1.z());
+		e1_cross.set(1,1, 0);
 		e1_cross.set(2,1, e1.x());
 		e1_cross.set(0,2, e1.y());
 		e1_cross.set(1,2, -e1.x());
+		e1_cross.set(2,2, 0);
 
 		A += e1_cross.transpose() * e1_cross;
 		b += - CGAL::cross_product(e1, e2);
@@ -200,9 +215,9 @@ std::pair <Eigen_matrix, Eigen_vector> boundary_optimization (const SMS::Edge_pr
 	B.set(1, b.y());
 	B.set(2, b.z());
 
-	A *= squared_length/2;
-	B *= squared_length/2;
-	if (constant != nullptr) *constant *= squared_length/(2*2);
+	A *= squared_length*squared_length/2;
+	B *= squared_length*squared_length/2;
+	if (constant != nullptr) *constant *= squared_length*squared_length/(2*2);
 
 	std::cout << "A: " << A << "\n";
 	std::cout << "B: " << B << "\n";
@@ -211,7 +226,7 @@ std::pair <Eigen_matrix, Eigen_vector> boundary_optimization (const SMS::Edge_pr
 }
 
 std::pair <Eigen_matrix, Eigen_vector> triangle_shape_optimization (const SMS::Edge_profile<Surface_mesh>& profile, K::FT *constant = nullptr) {
-	int a;
+	int a = 0;
 	K::Vector_3 b (CGAL::NULL_VECTOR);
 
 	if (constant != nullptr) *constant = 0;
@@ -231,16 +246,22 @@ std::pair <Eigen_matrix, Eigen_vector> triangle_shape_optimization (const SMS::E
 	Eigen_vector B(3);
 
 	A.set(0,0,a);
+	A.set(0,1,0);
+	A.set(0,2,0);
+	A.set(1,0,0);
 	A.set(1,1,a);
+	A.set(1,2,0);
+	A.set(2,0,0);
+	A.set(2,1,0);
 	A.set(2,2,a);
 
 	B.set(0, b.x());
 	B.set(1, b.y());
 	B.set(2, b.z());
 
-	A *= 2*squared_length*squared_length;
-	B *= 2*squared_length*squared_length;
-	if (constant != nullptr) *constant *= squared_length*squared_length;
+	A *= 2*squared_length*squared_length*squared_length*squared_length;
+	B *= 2*squared_length*squared_length*squared_length*squared_length;
+	if (constant != nullptr) *constant *= squared_length*squared_length*squared_length*squared_length;
 
 	std::cout << "A: " << A << "\n";
 	std::cout << "B: " << B << "\n";
