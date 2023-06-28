@@ -59,7 +59,10 @@ void Raster::grid_to_coord(int P, int L, double& x, double& y) const {
     y = grid_to_crs[3] + (0.5 + P)*grid_to_crs[4] + (0.5 + L)*grid_to_crs[5];
 }
 
-void Raster::grid_to_coord(float P, float L, double& x, double& y) const {
+void Raster::grid_to_coord(K::FT P_, K::FT L_, double& x, double& y) const {
+    double P = CGAL::to_double(P_);
+    double L = CGAL::to_double(L_);
+
     x = grid_to_crs[0] + P*grid_to_crs[1] + L*grid_to_crs[2];
     y = grid_to_crs[3] + P*grid_to_crs[4] + L*grid_to_crs[5];
 }
@@ -72,7 +75,8 @@ float Raster::coord_distance_to_grid_distance(double d) const {
     return sqrt(pow(P,2)+pow(L,2));
 }
 
-double Raster::grid_distance_to_coord_distance(float d) const {
+double Raster::grid_distance_to_coord_distance(K::FT d_) const {
+    double d = CGAL::to_double(d_);
     double x1, y1, x2, y2;
     grid_to_coord(0, 0, x1, y1);
     grid_to_coord((float) (d/sqrt(2)), (float) (d/sqrt(2)), x2, y2);

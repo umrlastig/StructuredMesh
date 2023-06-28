@@ -25,11 +25,11 @@ class Raster {
 
 		void grid_to_coord(int P, int L, double& x, double& y) const;
 
-		void grid_to_coord(float P, float L, double& x, double& y) const;
+		void grid_to_coord(K::FT P, K::FT L, double& x, double& y) const;
 
 		float coord_distance_to_grid_distance(double d) const;
 
-		double grid_distance_to_coord_distance(float d) const;
+		double grid_distance_to_coord_distance(K::FT d) const;
 
 		OGRSpatialReference get_crs() const;
 

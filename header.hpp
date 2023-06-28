@@ -21,7 +21,7 @@
 
 #include "label.hpp"
 
-typedef CGAL::Simple_cartesian<float>                       K;
+typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
 typedef K::Point_2                                          Point_2;
 typedef K::Point_3                                          Point_3;
 typedef CGAL::Surface_mesh<Point_3>                         Surface_mesh;
