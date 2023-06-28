@@ -1356,7 +1356,7 @@ void close_surface_mesh(Surface_mesh &mesh) {
 		true_face[face] = false;
 	}
 
-	assert(CGAL::Polygon_mesh_processing::does_self_intersect(mesh));
+	assert(!CGAL::Polygon_mesh_processing::does_self_intersect(mesh));
 	assert(CGAL::is_closed(mesh));
 	CGAL::Polygon_mesh_processing::orient_to_bound_a_volume(mesh);
 }
