@@ -5,11 +5,14 @@
 #include <list>
 #include <map>
 #include <vector>
+#include <set>
+#include <limits>
 
 #include <CGAL/Point_set_3.h>
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Edge_profile.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Count_stop_predicate.h>
+#include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Bounded_normal_change_filter.h>
 #include <CGAL/Surface_mesh_simplification/Edge_collapse_visitor_base.h>
 #include <CGAL/QP_models.h>
 #include <CGAL/QP_functions.h>
@@ -28,11 +31,11 @@ typedef CGAL::Gmpzf ET;
 typedef CGAL::MP_Float ET;
 #endif
 
-typedef CGAL::Point_set_3<Point_3>              Point_set;
-typedef CGAL::Eigen_svd::Vector                 Eigen_vector;
-typedef CGAL::Eigen_svd::Matrix                 Eigen_matrix;
-typedef CGAL::Quadratic_program<ET>             Program;
-typedef CGAL::Quadratic_program_solution<ET>    Solution;
+typedef CGAL::Point_set_3<Exact_predicates_kernel::Point_3> Point_set;
+typedef CGAL::Eigen_svd::Vector                             Eigen_vector;
+typedef CGAL::Eigen_svd::Matrix                             Eigen_matrix;
+typedef CGAL::Quadratic_program<ET>                         Program;
+typedef CGAL::Quadratic_program_solution<ET>                Solution;
 
 namespace SMS = CGAL::Surface_mesh_simplification;
 
@@ -53,9 +56,9 @@ std::list<std::pair <K::Vector_3, K::FT>> volume_preservation_and_optimisation (
 			Point_3 p2 = get(profile.vertex_point_map(),triangle.v2);
 
 			if (!CGAL::collinear (p0, p1, p2)) {
-				/*std::cout << "triangle: " << p0 << ", " << p1 << ", " << p2 << "\n";
-				std::cout << "normal: " << CGAL::normal(p0, p1, p2) << "\n";
-				std::cout << "determinant: " << CGAL::determinant(K::Vector_3(Point_3(CGAL::ORIGIN), p0), K::Vector_3(Point_3(CGAL::ORIGIN), p1), K::Vector_3(Point_3(CGAL::ORIGIN), p2)) << "\n";*/
+				/*std::cerr << "triangle: " << p0 << ", " << p1 << ", " << p2 << "\n";
+				std::cerr << "normal: " << CGAL::normal(p0, p1, p2) << "\n";
+				std::cerr << "determinant: " << CGAL::determinant(K::Vector_3(Point_3(CGAL::ORIGIN), p0), K::Vector_3(Point_3(CGAL::ORIGIN), p1), K::Vector_3(Point_3(CGAL::ORIGIN), p2)) << "\n";*/
 				
 				K::Vector_3 n = CGAL::normal(p0, p1, p2) / 6;
 				K::FT det = CGAL::scalar_product (n, K::Vector_3(Point_3(CGAL::ORIGIN), p0));
@@ -63,7 +66,7 @@ std::list<std::pair <K::Vector_3, K::FT>> volume_preservation_and_optimisation (
 				result.push_back(std::make_pair(n, det));
 			}
 		} else {
-			//std::cout << "no way" << "\n";
+			//std::cerr << "no way" << "\n";
 		}
 	}
 
@@ -80,13 +83,13 @@ std::list<std::pair <K::Vector_3, K::Vector_3>> boundary_preservation_and_optimi
 		Point_3 p0 = get(profile.vertex_point_map(), profile.surface_mesh().source(edge));
 		Point_3 p1 = get(profile.vertex_point_map(), profile.surface_mesh().target(edge));
 
-		//std::cout << "edge: " << p0 << ", " << p1 << "\n";
+		//std::cerr << "edge: " << p0 << ", " << p1 << "\n";
 
 		auto e1 = K::Vector_3(p0, p1) * length / 2;
 		auto e2 = CGAL::cross_product(K::Vector_3(Point_3(CGAL::ORIGIN), p1), K::Vector_3(Point_3(CGAL::ORIGIN), p0)) * length / 2;
 
-		/*std::cout << "e1: " << K::Vector_3(p0, p1) << "\n";
-		std::cout << "e2: " << CGAL::cross_product(K::Vector_3(Point_3(CGAL::ORIGIN), p1), K::Vector_3(Point_3(CGAL::ORIGIN), p0)) << "\n";*/
+		/*std::cerr << "e1: " << K::Vector_3(p0, p1) << "\n";
+		std::cerr << "e2: " << CGAL::cross_product(K::Vector_3(Point_3(CGAL::ORIGIN), p1), K::Vector_3(Point_3(CGAL::ORIGIN), p0)) << "\n";*/
 
 		result.push_back(std::make_pair(e1, e2));
 	}
@@ -117,11 +120,11 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 	boost::tie(label, has_label) = point_cloud.property_map<unsigned char>("p:label");
 	assert(has_label);
 
-	std::vector<Point_set::Index> points_in_faces;
+	std::set<Point_set::Index> points_in_faces;
 	int count_collapse_label[LABELS.size()] = {0};
 	for(auto face: profile.triangles()) {
 		auto fh = profile.surface_mesh().face(profile.surface_mesh().halfedge(face.v0, face.v1));
-		points_in_faces.insert(points_in_faces.end(), point_in_face[fh].begin(), point_in_face[fh].end());
+		points_in_faces.insert(point_in_face[fh].begin(), point_in_face[fh].end());
 		int count_face_label[LABELS.size()] = {0};
 		for (auto ph: point_in_face[fh]) {
 			count_face_label[int(label[ph])]++;
@@ -134,6 +137,9 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 	for (int i = 0; i < LABELS.size(); i++) {
 		if (count_collapse_label[i] > 0) count_diff_label++;
 	}
+
+	auto squared_length = K::Vector_3(profile.p0(), profile.p1()).squared_length();
+	CGAL::Cartesian_converter<Exact_predicates_kernel,K> type_converter;
 
 	if (count_diff_label < 2) {
 		return result;
@@ -166,65 +172,195 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 			}
 		}
 
-		K::FT c = 1;
+		Exact_predicates_kernel::FT c = 5;
 
 		Program qp (CGAL::EQUAL, true, 0, true, c);
 		for (int i = 0; i < points_for_svm.size(); i++) {
-			auto vr = K::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) * y[i];
+			auto vr = Exact_predicates_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) * y[i];
 			qp.set_d(i, i, CGAL::scalar_product(vr,vr));
 			for (int j = 0; j < i; j++) {
-				qp.set_d(i, j, CGAL::scalar_product(vr, K::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[j])) * y[j]));
+				qp.set_d(i, j, CGAL::scalar_product(vr, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[j])) * y[j]));
 			}
 			qp.set_c(i, -1);
 			qp.set_a(i, 0,  y[i]);
 		}
 		Solution s = CGAL::solve_quadratic_program(qp, ET());
-		//std::cout << s << "\n";
-		if (!s.solves_quadratic_program(qp)) std::cout << "ALERT !!!!!!!!!!!!!!!!!!!\n";
+		//std::cerr << s << "\n";
+		if (!s.solves_quadratic_program(qp)) std::cerr << "ALERT !!!!!!!!!!!!!!!!!!!\n";
 		assert (s.solves_quadratic_program(qp));
 
-		K::Vector_3 w(CGAL::NULL_VECTOR);
+		Exact_predicates_kernel::Vector_3 w(CGAL::NULL_VECTOR);
 		auto value = s.variable_values_begin();
 		for (int i = 0; i < points_for_svm.size(); i++) {
-			w += y[i] * CGAL::to_double(*(value++)) * K::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]));
+			w += y[i] * CGAL::to_double(*(value++)) * Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]));
 		}
 
-		K::FT b = 0;
+		Exact_predicates_kernel::FT b = 0;
 		int count = 0;
-		value = s.variable_values_begin();
+		Exact_predicates_kernel::FT min_positive = std::numeric_limits<Exact_predicates_kernel::FT>::max();
+		Exact_predicates_kernel::FT max_negative = std::numeric_limits<Exact_predicates_kernel::FT>::lowest();
 		for (int i = 0; i < points_for_svm.size(); i++) {
-			double v = CGAL::to_double(*(value++));
-			if (v > 0 && v < c) {
-				b += y[i] - CGAL::scalar_product(w, K::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
-				count++;
+			Exact_predicates_kernel::FT v = CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+			if (y[i] > 0 && v < min_positive) min_positive = v;
+			if (y[i] < 0 && v > max_negative) max_negative = v;
+		}
+		if (max_negative < min_positive) {
+			b += - (max_negative + min_positive) / 2;
+			count = 1;
+		} else {
+			std::cerr << "to_be_test " << max_negative << " " << min_positive << "\n";
+		}
+		if (count == 0) {
+			value = s.variable_values_begin();
+			for (int i = 0; i < points_for_svm.size(); i++) {
+				double v = CGAL::to_double(*(value++));
+				if (v > 0 && v < c) {
+					b += y[i] - CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+					count++;
+				}
 			}
 		}
 		if (count == 0) {
 			value = s.variable_values_begin();
 			for (int i = 0; i < points_for_svm.size(); i++) {
 				if (CGAL::to_double(*(value++)) > 0) {
-					b += y[i] - CGAL::scalar_product(w, K::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+					b += y[i] - CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
 					count++;
 				}
 			}
 		}
 		if (count == 0) {
 			for (int i = 0; i < points_for_svm.size(); i++) {
-				b += y[i] - CGAL::scalar_product(w, K::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+				b += y[i] - CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
 				count++;
 			}
 		}
 		b /= count;
+		
+		Exact_predicates_kernel::FT w_length = CGAL::sqrt(w.squared_length());
+		w /= w_length;
+		b /= w_length;
 
-		/*for (int i = 0; i < points_for_svm.size(); i++) {
-			std::cout << "y" << i << ":\t" << y[i] << "\t";
-			std::cout << K::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) << "\t\t";
-			std::cout << CGAL::to_double(*(s.variable_values_begin() + i)) << "\t";
-			std::cout << CGAL::scalar_product(w, K::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) << "  \t";
-			std::cout << y[i]*(CGAL::scalar_product(w, K::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) +b) << "\n";
-		}*/
+		std::cerr << "w: " << w << "\n";
+		std::cerr << "b: " << b << "\n";
 
-		result.push_back(std::make_pair(w, b));
+		for (int i = 0; i < points_for_svm.size(); i++) {
+			std::cerr << "y" << i << ":\t" << y[i] << "\t";
+			std::cerr << Exact_predicates_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) << "   \t";
+			std::cerr << CGAL::to_double(*(s.variable_values_begin() + i)) << "\t";
+			std::cerr << CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) << "  \t";
+			std::cerr << y[i]*(CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) +b) << "\n";
+			if (y[i]*(CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) +b) < 0) {
+				std::cerr << "Error\n";
+			}
+		}
+
+		result.push_back(std::pair<K::Vector_3, K::FT>(type_converter(w)*squared_length, type_converter(b)*squared_length));
+	} else {
+
+		for (int i = 0; i < LABELS.size(); i++) {
+			if (count_collapse_label[i] > 0) {
+				
+				std::vector<int> y;
+				std::vector<Point_set::Index> points_for_svm;
+				y.reserve(points_in_faces.size());
+				points_for_svm.reserve(points_in_faces.size());
+				for (auto point: points_in_faces) {
+					if (label[point] == i) {
+						points_for_svm.push_back(point);
+						y.push_back(1);
+					} else {
+						points_for_svm.push_back(point);
+						y.push_back(-1);
+					}
+				}
+
+				Exact_predicates_kernel::FT c = 5;
+
+				Program qp (CGAL::EQUAL, true, 0, true, c);
+				for (int i = 0; i < points_for_svm.size(); i++) {
+					auto vr = Exact_predicates_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) * y[i];
+					qp.set_d(i, i, CGAL::scalar_product(vr,vr));
+					for (int j = 0; j < i; j++) {
+						qp.set_d(i, j, CGAL::scalar_product(vr, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[j])) * y[j]));
+					}
+					qp.set_c(i, -1);
+					qp.set_a(i, 0,  y[i]);
+				}
+				Solution s = CGAL::solve_quadratic_program(qp, ET());
+				//std::cerr << s << "\n";
+				if (!s.solves_quadratic_program(qp)) std::cerr << "ALERT !!!!!!!!!!!!!!!!!!!\n";
+				assert (s.solves_quadratic_program(qp));
+
+				Exact_predicates_kernel::Vector_3 w(CGAL::NULL_VECTOR);
+				auto value = s.variable_values_begin();
+				for (int i = 0; i < points_for_svm.size(); i++) {
+					w += y[i] * CGAL::to_double(*(value++)) * Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]));
+				}
+
+				Exact_predicates_kernel::FT b = 0;
+				int count = 0;
+				Exact_predicates_kernel::FT min_positive = std::numeric_limits<Exact_predicates_kernel::FT>::max();
+				Exact_predicates_kernel::FT max_negative = std::numeric_limits<Exact_predicates_kernel::FT>::lowest();
+				for (int i = 0; i < points_for_svm.size(); i++) {
+					Exact_predicates_kernel::FT v = CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+					if (y[i] > 0 && v < min_positive) min_positive = v;
+					if (y[i] < 0 && v > max_negative) max_negative = v;
+				}
+				if (max_negative < min_positive) {
+					b += - (max_negative + min_positive) / 2;
+					count = 1;
+				} else {
+					std::cerr << "to_be_test " << max_negative << " " << min_positive << "\n";
+				}
+				if (count == 0) {
+					value = s.variable_values_begin();
+					for (int i = 0; i < points_for_svm.size(); i++) {
+						double v = CGAL::to_double(*(value++));
+						if (v > 0 && v < c) {
+							b += y[i] - CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+							count++;
+						}
+					}
+				}
+				if (count == 0) {
+					value = s.variable_values_begin();
+					for (int i = 0; i < points_for_svm.size(); i++) {
+						if (CGAL::to_double(*(value++)) > 0) {
+							b += y[i] - CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+							count++;
+						}
+					}
+				}
+				if (count == 0) {
+					for (int i = 0; i < points_for_svm.size(); i++) {
+						b += y[i] - CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+						count++;
+					}
+				}
+				b /= count;
+				
+				Exact_predicates_kernel::FT w_length = CGAL::sqrt(w.squared_length());
+				w /= w_length;
+				b /= w_length;
+
+				std::cerr << "w: " << w << "\n";
+				std::cerr << "b: " << b << "\n";
+
+				for (int i = 0; i < points_for_svm.size(); i++) {
+					std::cerr << "y" << i << ":\t" << y[i] << "\t";
+					std::cerr << Exact_predicates_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) << "   \t";
+					std::cerr << CGAL::to_double(*(s.variable_values_begin() + i)) << "\t";
+					std::cerr << CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) << "  \t";
+					std::cerr << y[i]*(CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) +b) << "\n";
+					if (y[i]*(CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) +b) < 0) {
+						std::cerr << "Error\n";
+					}
+				}
+
+				result.push_back(std::pair<K::Vector_3, K::FT>(type_converter(w)*squared_length, type_converter(b)*squared_length));
+			}
+		}
 	}
 
 	return result;
@@ -282,8 +418,8 @@ class Custom_placement {
 			auto r4 = label_preservation(profile, point_cloud, point_in_face);
 			auto r5 = middle_point(profile);
 
-			Eigen_vector B(((params.volume_preservation > 0) ? 1 : 0) + ((params.volume_optimisation > 0) ? r1.size() : 0) + ((params.boundary_preservation > 0) ? 3 : 0) + ((params.boundary_optimization > 0) ? 3*r2.size() : 0) + ((params.triangle_shape_preservation > 0) ? 3 : 0) + ((params.triangle_shape_optimization > 0) ? 3*r3.first.size() : 0) + ((params.label_preservation > 0) ? r4.size() : 0) + 3);
-			Eigen_matrix A(((params.volume_preservation > 0) ? 1 : 0) + ((params.volume_optimisation > 0) ? r1.size() : 0) + ((params.boundary_preservation > 0) ? 3 : 0) + ((params.boundary_optimization > 0) ? 3*r2.size() : 0) + ((params.triangle_shape_preservation > 0) ? 3 : 0) + ((params.triangle_shape_optimization > 0) ? 3*r3.first.size() : 0) + ((params.label_preservation > 0) ? r4.size() : 0) + 3, 3);
+			Eigen_vector B(((params.volume_preservation > 0) ? 1 : 0) + ((params.volume_optimisation > 0) ? r1.size() : 0) + ((params.boundary_preservation > 0) ? 3 : 0) + ((params.boundary_optimization > 0) ? 3*r2.size() : 0) + ((params.triangle_shape_preservation > 0) ? 3 : 0) + ((params.triangle_shape_optimization > 0) ? 3*r3.first.size() : 0) + ((params.label_preservation > 0) ? r4.size() : 0));
+			Eigen_matrix A(((params.volume_preservation > 0) ? 1 : 0) + ((params.volume_optimisation > 0) ? r1.size() : 0) + ((params.boundary_preservation > 0) ? 3 : 0) + ((params.boundary_optimization > 0) ? 3*r2.size() : 0) + ((params.triangle_shape_preservation > 0) ? 3 : 0) + ((params.triangle_shape_optimization > 0) ? 3*r3.first.size() : 0) + ((params.label_preservation > 0) ? r4.size() : 0), 3);
 
 			std::size_t i = 0;
 
@@ -400,21 +536,6 @@ class Custom_placement {
 				}
 			}
 
-			// Data attach
-			float data_attach = 0.01; //Necessary to have sufficient constraints
-			A.set(i, 0, r5.second*data_attach);
-			A.set(i, 1, 0);
-			A.set(i, 2, 0);
-			B.set(i++, r5.first.x()*data_attach);
-			A.set(i, 0, 0);
-			A.set(i, 1, r5.second*data_attach);
-			A.set(i, 2, 0);
-			B.set(i++, r5.first.y()*data_attach);
-			A.set(i, 0, 0);
-			A.set(i, 1, 0);
-			A.set(i, 2, r5.second*data_attach);
-			B.set(i++, r5.first.z()*data_attach);
-
 			// Solve AX=B
 			auto C = B;
 			CGAL::Eigen_svd::solve(A, B);
@@ -466,7 +587,7 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 		const Raster &raster;
 		std::chrono::time_point<std::chrono::system_clock> start_collecte;
 		std::chrono::time_point<std::chrono::system_clock> start_collapse;
-		bool output[10] = {false};
+		bool output[25] = {false};
 
 		const Point_set &point_cloud;
 		std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face;
@@ -518,9 +639,15 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 				} else if(!output[4] && current_edge_count <= 100000) {
 					output[4] = true;
 					save_mesh(mesh,raster,"mesh-100000.ply");
+				} else if(!output[11] && current_edge_count <= 50000) {
+					output[11] = true;
+					save_mesh(mesh,raster,"mesh-50000.ply");
 				} else if(!output[5] && current_edge_count <= 10000) {
 					output[5] = true;
 					save_mesh(mesh,raster,"mesh-10000.ply");
+				} else if(!output[10] && current_edge_count <= 5000) {
+					output[10] = true;
+					save_mesh(mesh,raster,"mesh-5000.ply");
 				} else if(!output[6] && current_edge_count <= 1000) {
 					output[6] = true;
 					save_mesh(mesh,raster,"mesh-1000.ply");
@@ -549,19 +676,21 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 
 		void OnCollapsed (const SMS::Edge_profile<Surface_mesh> &profile, const Surface_mesh::Vertex_index vd) {
 			// Called when an edge has been collapsed and replaced by the vertex vd
+			CGAL::Cartesian_converter<Exact_predicates_kernel,K> type_converter;
+
 			for(auto ph: points_to_be_change) {
-				K::FT max = 0;
-				Surface_mesh::Face_index f;
+				K::FT min_d = std::numeric_limits<K::FT>::max();
+				Surface_mesh::Face_index nearest_face;
 				for(auto face: profile.surface_mesh().faces_around_target(profile.surface_mesh().halfedge(vd))) {
 					auto r = profile.surface_mesh().vertices_around_face(profile.surface_mesh().halfedge(face)).begin();
-					K::FT d = CGAL::squared_distance(point_cloud.point(ph), K::Triangle_3(profile.surface_mesh().point(*r++), profile.surface_mesh().point(*r++), profile.surface_mesh().point(*r)));
-					if (1/d > max) {
-						max = 1/d;
-						f = face;
+					auto d = CGAL::squared_distance(K::Triangle_3(profile.surface_mesh().point(*r++), profile.surface_mesh().point(*r++), profile.surface_mesh().point(*r)), type_converter(point_cloud.point(ph)));
+					if (d < min_d) {
+						min_d = d;
+						nearest_face = face;
 					}
 				}
-				if (f.is_valid()) {
-					point_in_face[f].push_back(ph);
+				if (nearest_face.is_valid()) {
+					point_in_face[nearest_face].push_back(ph);
 				}
 			}
 		};
@@ -616,7 +745,7 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster) {
 	for (int L = 0; L < raster.ySize; L++) {
 		for (int P = 0; P < raster.xSize; P++) {
 			vertex_index[L][P] = mesh.add_vertex(Point_3(0.5 + P, 0.5 + L, raster.dsm[L][P]));
-			point_index[L][P] = *(point_cloud.insert(Point_3(0.5 + P, 0.5 + L, raster.dsm[L][P])));
+			point_index[L][P] = *(point_cloud.insert(Point_set::Point_3(0.5 + P, 0.5 + L, raster.dsm[L][P])));
 			label[point_index[L][P]] = raster.land_cover[L][P];
 		}
 	}
@@ -651,11 +780,12 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster) {
 
 	//Cost_stop_predicate stop(10);
 	SMS::Count_stop_predicate<Surface_mesh> stop(50);
-	const LindstromTurk_param params (1,1,1,1,0,0,0);
+	const LindstromTurk_param params (1,1,1,1,0,0,0.01);
 	std::map<Surface_mesh::Halfedge_index, K::FT> costs;
 	Custom_placement pf(params, costs, point_cloud, point_in_face);
 	Custom_cost cf(costs);
-	int r = SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).get_placement(pf).visitor(My_visitor(mesh, raster, point_cloud, point_in_face)));
+	SMS::Bounded_normal_change_filter<> filter;
+	int r = SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).filter(filter).get_placement(pf).visitor(My_visitor(mesh, raster, point_cloud, point_in_face)));
 	std::cout << "\rMesh simplified                                               " << std::endl;
 
 	save_mesh(mesh, raster, "final-mesh.ply");
