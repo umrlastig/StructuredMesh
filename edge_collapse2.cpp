@@ -39,8 +39,6 @@ typedef CGAL::Quadratic_program_solution<ET>                Solution;
 
 namespace SMS = CGAL::Surface_mesh_simplification;
 
-void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filename);
-
 std::list<std::pair <K::Vector_3, K::FT>> volume_preservation_and_optimisation (const SMS::Edge_profile<Surface_mesh>& profile) {
 
 	std::list<std::pair <K::Vector_3, K::FT>> result;
@@ -584,7 +582,7 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 	private:
 		int i_collecte = 0;
 		Surface_mesh &mesh;
-		const Raster &raster;
+		const Surface_mesh_info &mesh_info;
 		std::chrono::time_point<std::chrono::system_clock> start_collecte;
 		std::chrono::time_point<std::chrono::system_clock> start_collapse;
 		bool output[25] = {false};
@@ -594,7 +592,7 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 		std::set<Point_set::Index> points_to_be_change;
 
 	public:
-		My_visitor(Surface_mesh &mesh, const Raster &raster, const Point_set &point_cloud, std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face) : mesh(mesh), raster(raster), point_cloud(point_cloud), point_in_face(point_in_face) {}
+		My_visitor(Surface_mesh &mesh, const Surface_mesh_info &mesh_info, const Point_set &point_cloud, std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face) : mesh(mesh), mesh_info(mesh_info), point_cloud(point_cloud), point_in_face(point_in_face) {}
 
 		void OnStarted (Surface_mesh &mesh) {
 			start_collecte = std::chrono::system_clock::now();
@@ -622,44 +620,44 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 			if (cost) {
 				if(*cost > 100 && !output[0]) {
 					output[0] = true;
-					save_mesh(mesh,raster,"mesh-100.ply");
+					mesh_info.save_mesh(mesh,"mesh-100.ply");
 				} else if(*cost > 10 && !output[0]) {
 					output[0] = true;
-					save_mesh(mesh,raster,"mesh-10.ply");
+					mesh_info.save_mesh(mesh,"mesh-10.ply");
 				} else if(*cost > 0 && !output[1]) {
 					output[1] = true;
-					save_mesh(mesh,raster,"mesh-0.ply");
+					mesh_info.save_mesh(mesh,"mesh-0.ply");
 				}
 				if(!output[2] && current_edge_count <= 1000000) {
 					output[2] = true;
-					save_mesh(mesh,raster,"mesh-1000000.ply");
+					mesh_info.save_mesh(mesh,"mesh-1000000.ply");
 				} else if(!output[3] && current_edge_count <= 250000) {
 					output[3] = true;
-					save_mesh(mesh,raster,"mesh-250000.ply");
+					mesh_info.save_mesh(mesh,"mesh-250000.ply");
 				} else if(!output[4] && current_edge_count <= 100000) {
 					output[4] = true;
-					save_mesh(mesh,raster,"mesh-100000.ply");
+					mesh_info.save_mesh(mesh,"mesh-100000.ply");
 				} else if(!output[11] && current_edge_count <= 50000) {
 					output[11] = true;
-					save_mesh(mesh,raster,"mesh-50000.ply");
+					mesh_info.save_mesh(mesh,"mesh-50000.ply");
 				} else if(!output[5] && current_edge_count <= 10000) {
 					output[5] = true;
-					save_mesh(mesh,raster,"mesh-10000.ply");
+					mesh_info.save_mesh(mesh,"mesh-10000.ply");
 				} else if(!output[10] && current_edge_count <= 5000) {
 					output[10] = true;
-					save_mesh(mesh,raster,"mesh-5000.ply");
+					mesh_info.save_mesh(mesh,"mesh-5000.ply");
 				} else if(!output[6] && current_edge_count <= 1000) {
 					output[6] = true;
-					save_mesh(mesh,raster,"mesh-1000.ply");
+					mesh_info.save_mesh(mesh,"mesh-1000.ply");
 				} else if(!output[7] && current_edge_count <= 100) {
 					output[7] = true;
-					save_mesh(mesh,raster,"mesh-100.ply");
+					mesh_info.save_mesh(mesh,"mesh-100.ply");
 				} else if(!output[8] && current_edge_count <= 50) {
 					output[8] = true;
-					save_mesh(mesh,raster,"mesh-50.ply");
+					mesh_info.save_mesh(mesh,"mesh-50.ply");
 				} else if(!output[9] && current_edge_count <= 10) {
 					output[9] = true;
-					save_mesh(mesh,raster,"mesh-10.ply");
+					mesh_info.save_mesh(mesh,"mesh-10.ply");
 				}
 			}
 
@@ -696,7 +694,7 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 		};
 };
 
-std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster) {
+std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, const Surface_mesh_info &mesh_info) {
 
 	std::cout << "Terrain mesh" << std::endl;
 	Surface_mesh terrain_mesh;
@@ -722,12 +720,12 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster) {
 	}
 	std::cout << "Faces added" << std::endl;
 
-	save_mesh(terrain_mesh, raster, "initial-terrain-mesh.ply");
+	mesh_info.save_mesh(terrain_mesh, "initial-terrain-mesh.ply");
 
 	SMS::edge_collapse(terrain_mesh, Cost_stop_predicate(10));
 	std::cout << "Terrain mesh simplified" << std::endl;
 
-	save_mesh(terrain_mesh, raster, "terrain-mesh.ply");
+	mesh_info.save_mesh(terrain_mesh, "terrain-mesh.ply");
 
 	std::cout << "Surface mesh" << std::endl;
 	Surface_mesh mesh;
@@ -776,7 +774,7 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster) {
 	}
 	std::cout << "Faces added" << std::endl;
 
-	save_mesh(mesh, raster, "initial-mesh.ply");
+	mesh_info.save_mesh(mesh, "initial-mesh.ply");
 
 	//Cost_stop_predicate stop(10);
 	SMS::Count_stop_predicate<Surface_mesh> stop(50);
@@ -785,10 +783,10 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster) {
 	Custom_placement pf(params, costs, point_cloud, point_in_face);
 	Custom_cost cf(costs);
 	SMS::Bounded_normal_change_filter<> filter;
-	int r = SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).filter(filter).get_placement(pf).visitor(My_visitor(mesh, raster, point_cloud, point_in_face)));
+	int r = SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).filter(filter).get_placement(pf).visitor(My_visitor(mesh, mesh_info, point_cloud, point_in_face)));
 	std::cout << "\rMesh simplified                                               " << std::endl;
 
-	save_mesh(mesh, raster, "final-mesh.ply");
+	mesh_info.save_mesh(mesh, "final-mesh.ply");
 
 	return std::make_tuple(terrain_mesh, mesh);
 }

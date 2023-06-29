@@ -19,6 +19,8 @@
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Straight_skeleton_2.h>
 
+#include <ogr_spatialref.h>
+
 #include "label.hpp"
 
 typedef CGAL::Simple_cartesian<float>                       K;
@@ -64,6 +66,18 @@ struct skeletonPoint {
 	friend bool operator==(const skeletonPoint& l, const skeletonPoint& r) {
 		return (l.path == r.path && l.point == r.point);
 	}
+};
+
+// contains information on mesh location
+struct Surface_mesh_info {
+	const OGRSpatialReference crs;
+	const double x_0;
+	const double y_0;
+
+	Surface_mesh_info();
+	Surface_mesh_info(OGRSpatialReference crs, double x_0, double y_0);
+
+	void save_mesh (const Surface_mesh &mesh, const char *filename) const;
 };
 
 #endif  /* !HEADER_H_ */

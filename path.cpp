@@ -12,8 +12,6 @@
 typedef CGAL::Arr_segment_traits_2<Exact_predicates_kernel> Traits_2;
 typedef CGAL::Arrangement_2<Traits_2>                       Arrangement_2;
 
-void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filename);
-
 void set_path(Surface_mesh &mesh,
 				Surface_mesh::Property_map<Surface_mesh::Face_index, int> &path,
 				Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> &label,
@@ -82,7 +80,7 @@ CGAL::Polygon_with_holes_2<typename Face_handle::value_type::Vertex::Point::R> p
 }
 
 
-std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_polygon(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const Raster &raster) {
+std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_polygon(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const Raster &raster, const Surface_mesh_info &mesh_info) {
 	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
 	bool has_path;
 	boost::tie(path, has_path) = mesh.property_map<Surface_mesh::Face_index, int>("path");
@@ -136,28 +134,16 @@ std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_
 					boost::tie(edge_prop, created) = skeleton.add_property_map<Surface_mesh::Edge_index, int>("prop",0);
 					assert(created);
 
-					double min_x, min_y;
-					raster.grid_to_coord(0, 0, min_x, min_y);
-
-					for(auto vertex : skeleton.vertices()) {
-						auto point = skeleton.point(vertex);
-						double x, y;
-						raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
-						skeleton.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
-					}
-
 					std::stringstream skeleton_name;
 					skeleton_name << "arr_" << lab << "_" << i << ".ply";
-					std::ofstream mesh_ofile (skeleton_name.str().c_str());
-					CGAL::IO::write_PLY (mesh_ofile, skeleton);
-					mesh_ofile.close();
+					mesh_info.save_mesh(skeleton, skeleton_name.str().c_str());
 				}
 
 				Surface_mesh part_mesh;
 				CGAL::copy_face_graph(filtered_sm, part_mesh);
 				std::stringstream name;
 				name << "part_mesh_" << lab << "_" << i << ".ply";
-				save_mesh(part_mesh, raster, name.str().c_str());
+				mesh_info.save_mesh(part_mesh, name.str().c_str());
 
 			}
 		}
@@ -168,7 +154,7 @@ std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_
 }
 
 
-std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_axes(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const Raster &raster) {
+std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_axes(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const Raster &raster, const Surface_mesh_info &mesh_info) {
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool has_label;
 	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
@@ -212,21 +198,9 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_ax
 				boost::tie(edge_prop, created) = skeleton.add_property_map<Surface_mesh::Edge_index, int>("prop",0);
 				assert(created);
 
-				double min_x, min_y;
-				raster.grid_to_coord(0, 0, min_x, min_y);
-
-				for(auto vertex : skeleton.vertices()) {
-					auto point = skeleton.point(vertex);
-					double x, y;
-					raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
-					skeleton.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
-				}
-
 				std::stringstream skeleton_name;
 				skeleton_name << "skeleton_" << lab << "_" << i << ".ply";
-				std::ofstream mesh_ofile (skeleton_name.str().c_str());
-				CGAL::IO::write_PLY (mesh_ofile, skeleton);
-				mesh_ofile.close();
+				mesh_info.save_mesh(skeleton, skeleton_name.str().c_str());
 			}
 
 			{ // Path
@@ -265,21 +239,9 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_ax
 				boost::tie(blue, created) = skeleton.add_property_map<Surface_mesh::Vertex_index, unsigned char>("blue", LABELS[lab].blue);
 				assert(created);
 
-				double min_x, min_y;
-				raster.grid_to_coord(0, 0, min_x, min_y);
-
-				for(auto vertex : skeleton.vertices()) {
-					auto point = skeleton.point(vertex);
-					double x, y;
-					raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
-					skeleton.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
-				}
-
 				std::stringstream skeleton_name;
 				skeleton_name << "path_" << lab << "_" << i << ".ply";
-				std::ofstream mesh_ofile (skeleton_name.str().c_str());
-				CGAL::IO::write_PLY (mesh_ofile, skeleton);
-				mesh_ofile.close();
+				mesh_info.save_mesh(skeleton, skeleton_name.str().c_str());
 			}
 
 		}

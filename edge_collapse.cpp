@@ -10,8 +10,6 @@
 
 namespace SMS = CGAL::Surface_mesh_simplification;
 
-void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filename);
-
 float single_face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p1, const Point_3 &p2) {
 	float nz = ((-p0.x() + p1.x()) * (-p0.y() + p2.y()) - (-p0.x() + p2.x()) * (-p0.y() + p1.y()));
 	if (nz == 0) {
@@ -333,14 +331,14 @@ class Cost_stop_predicate {
 struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 	private:
 		int i_collecte = 0;
-		const Surface_mesh *mesh;
-		const Raster *raster;
+		Surface_mesh &mesh;
+		const Surface_mesh_info &mesh_info;
 		std::chrono::time_point<std::chrono::system_clock> start_collecte;
 		std::chrono::time_point<std::chrono::system_clock> start_collapse;
 		bool output[5] = {false};
 
 	public:
-		My_visitor(const Surface_mesh *mesh, const Raster *raster) : mesh(mesh), raster(raster) {}
+		My_visitor(const Surface_mesh &mesh, const Surface_mesh_info &mesh_info) : mesh(mesh), mesh_info(mesh_info) {}
 
 		void OnStarted (Surface_mesh &mesh) {
 			start_collecte = std::chrono::system_clock::now();
@@ -368,23 +366,23 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 			if (cost) {
 				if(*cost > 1e-4 && !output[0]) {
 					output[0] = true;
-					save_mesh(*mesh,*raster,"mesh-1e-4.ply");
+					mesh_info.save_mesh(mesh, "mesh-1e-4.ply");
 				} else if(*cost > 0 && !output[1]) {
 					output[1] = true;
-					save_mesh(*mesh,*raster,"mesh-0.ply");
+					mesh_info.save_mesh(mesh, "mesh-0.ply");
 				}
 				if(current_edge_count <= 100000 && !output[2]) {
 					output[2] = true;
-					save_mesh(*mesh,*raster,"mesh-100000.ply");
+					mesh_info.save_mesh(mesh, "mesh-100000.ply");
 				} else if(current_edge_count <= 10000 && !output[3]) {
 					output[3] = true;
-					save_mesh(*mesh,*raster,"mesh-10000.ply");
+					mesh_info.save_mesh(mesh, "mesh-10000.ply");
 				} else if(current_edge_count <= 5000 && !output[4]) {
 					output[4] = true;
-					save_mesh(*mesh,*raster,"mesh-5000.ply");
+					mesh_info.save_mesh(mesh, "mesh-5000.ply");
 				} else if(current_edge_count <= 1000000 && !output[5]) {
 					output[5] = true;
-					save_mesh(*mesh,*raster,"mesh-1000000.ply");
+					mesh_info.save_mesh(mesh, "mesh-1000000.ply");
 				}
 			}
 
@@ -392,7 +390,7 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 
 };
 
-std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster) {
+std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, const Surface_mesh_info &mesh_info) {
 
 	std::cout << "Terrain mesh" << std::endl;
 	Surface_mesh terrain_mesh;
@@ -418,12 +416,12 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster) {
 	}
 	std::cout << "Faces added" << std::endl;
 
-	save_mesh(terrain_mesh, raster, "initial-terrain-mesh.ply");
+	mesh_info.save_mesh(terrain_mesh, "initial-terrain-mesh.ply");
 
 	SMS::edge_collapse(terrain_mesh, Cost_stop_predicate(10));
 	std::cout << "Terrain mesh simplified" << std::endl;
 
-	save_mesh(terrain_mesh, raster, "terrain-mesh.ply");
+	mesh_info.save_mesh(terrain_mesh, "terrain-mesh.ply");
 
 	std::cout << "Surface mesh" << std::endl;
 	Surface_mesh mesh;
@@ -449,16 +447,16 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster) {
 	}
 	std::cout << "Faces added" << std::endl;
 
-	save_mesh(mesh, raster, "initial-mesh.ply");
+	mesh_info.save_mesh(mesh, "initial-mesh.ply");
 
 	Cost_stop_predicate stop(10);
 	//SMS::Count_stop_predicate<Surface_mesh> stop(1000);
 	Custom_cost cf(raster);
 	Custom_placement pf(raster);
-	int r = SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).get_placement(pf).visitor(My_visitor(&mesh, &raster)));
+	int r = SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).get_placement(pf).visitor(My_visitor(mesh, mesh_info)));
 	std::cout << "\rMesh simplified                                               " << std::endl;
 
-	save_mesh(mesh, raster, "final-mesh.ply");
+	mesh_info.save_mesh(mesh, "final-mesh.ply");
 
 	return std::make_tuple(terrain_mesh, mesh);
 }

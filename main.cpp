@@ -4,9 +4,7 @@
 #include <getopt.h>
 #include <cstdlib>
 
-void save_mesh(const Surface_mesh &mesh, const Raster &raster, const char *filename);
-
-std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster);
+std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, const Surface_mesh_info &mesh_info);
 
 void add_label(const Raster &raster, Surface_mesh &mesh);
 
@@ -14,11 +12,68 @@ void change_vertical_faces(Surface_mesh &mesh, const Raster &raster);
 
 std::vector<std::list<Surface_mesh::Face_index>> compute_path(Surface_mesh &mesh);
 
-std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_polygon(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const Raster &raster);
+std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_polygon(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const Raster &raster, const Surface_mesh_info &mesh_info);
 
-std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_axes(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const Raster &raster);
+std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_axes(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const Raster &raster, const Surface_mesh_info &mesh_info);
 
 #include "bridge.hpp"
+
+Surface_mesh_info::Surface_mesh_info() : x_0(0), y_0(0) {};
+Surface_mesh_info::Surface_mesh_info(OGRSpatialReference crs, double x_0, double y_0) : crs(crs), x_0(x_0), y_0(y_0) {};
+
+void Surface_mesh_info::save_mesh(const Surface_mesh &mesh, const char *filename) const {
+	Surface_mesh output_mesh (mesh);
+
+	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
+	bool has_label;
+	boost::tie(label, has_label) = output_mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+	if (has_label) {
+		// Color
+		bool created;
+		Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> red;
+		Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> green;
+		Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> blue;
+		boost::tie(red, created) = output_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("red",0);
+		assert(created);
+		boost::tie(green, created) = output_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("green",0);
+		assert(created);
+		boost::tie(blue, created) = output_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("blue",0);
+		assert(created);
+
+		for (auto face : output_mesh.faces()) {
+			red[face] = LABELS[label[face]].red;
+			green[face] = LABELS[label[face]].green;
+			blue[face] = LABELS[label[face]].blue;
+		}
+	}
+
+	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
+	bool has_path;
+	boost::tie(path, has_path) = output_mesh.property_map<Surface_mesh::Face_index, int>("path");
+	if (has_path) {
+		// Entropy
+		bool created;
+		Surface_mesh::Property_map<Surface_mesh::Face_index, float> quality;
+		boost::tie(quality, created) = output_mesh.add_property_map<Surface_mesh::Face_index, float>("quality",0);
+		assert(created);
+		
+		for (auto face : output_mesh.faces()) {
+			quality[face] = path[face];
+		}
+	}
+
+	char *temp;
+	/*const char *options_wkt[] = { "MULTILINE=NO", "FORMAT=WKT2", NULL };
+	crs.exportToWkt(&temp, options_wkt);*/
+	crs.exportToProj4(&temp); // WKT format is too long for MeshLab
+	std::string crs_as_string(temp);
+	CPLFree(temp);
+
+	std::ofstream mesh_ofile (filename, std::ios_base::binary);
+	CGAL::IO::set_binary_mode (mesh_ofile);
+	CGAL::IO::write_PLY (mesh_ofile, output_mesh, "crs " + crs_as_string + "\nx0 " + std::to_string(x_0) + "\ny0 " + std::to_string(y_0) );
+	mesh_ofile.close();
+}
 
 int main(int argc, char **argv) {
 	int opt;
@@ -104,9 +159,13 @@ int main(int argc, char **argv) {
 
 	const Raster raster(DSM, DTM, land_use_map);
 
+	double min_x, min_y;
+	raster.grid_to_coord(0, 0, min_x, min_y);
+	Surface_mesh_info mesh_info(raster.get_crs(), min_x, min_y);
+
 	Surface_mesh terrain_mesh, mesh;
 	if (MESH == NULL || TERRAIN_MESH == NULL) {
-		std::tie(terrain_mesh, mesh) = compute_meshes(raster);
+		std::tie(terrain_mesh, mesh) = compute_meshes(raster, mesh_info);
 
 		std::ofstream mesh_ofile ("save_mesh.ply", std::ios_base::binary);
 		CGAL::IO::set_binary_mode (mesh_ofile);
@@ -133,23 +192,23 @@ int main(int argc, char **argv) {
 
 	add_label(raster, mesh);
 	change_vertical_faces(mesh, raster);
-	save_mesh(mesh, raster, "final-mesh-without-facade.ply");
+	mesh_info.save_mesh(mesh, "final-mesh-without-facade.ply");
 	std::cout << "Label set for vertical face" << std::endl;
 
 	std::vector<std::list<Surface_mesh::Face_index>> paths = compute_path(mesh);
-	save_mesh(mesh, raster, "final-mesh-with-path.ply");
+	mesh_info.save_mesh(mesh, "final-mesh-with-path.ply");
 	std::cout << "Path computed" << std::endl;
 
-	std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> path_polygon = compute_path_polygon(mesh, paths, raster);
-	std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> medial_axes = compute_medial_axes(mesh, paths, path_polygon, raster);
+	std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> path_polygon = compute_path_polygon(mesh, paths, raster, mesh_info);
+	std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> medial_axes = compute_medial_axes(mesh, paths, path_polygon, raster, mesh_info);
 	std::cout << "Medial axes computed" << std::endl;
 
-	std::set<pathLink> links = link_paths(mesh, paths, path_polygon, medial_axes, raster);
+	std::set<pathLink> links = link_paths(mesh, paths, path_polygon, medial_axes, raster, mesh_info);
 	std::cout << "Links computed" << std::endl;
 
 	close_surface_mesh(mesh);
 
-	save_mesh(mesh, raster, "final-closed-mesh-with-path.ply");
+	mesh_info.save_mesh(mesh, "final-closed-mesh-with-path.ply");
 	std::cout << "Mesh waterthighted" << std::endl;
 
 	AABB_tree tree = index_surface_mesh(mesh);
@@ -160,16 +219,16 @@ int main(int argc, char **argv) {
 	for (auto link: links) {
 		std::cout << "\rBridge " << i++ << "/" << links.size() << "               ";
 		std::cout.flush();
-		pathBridge bridge_result = bridge(link, mesh, tree, raster);
+		pathBridge bridge_result = bridge(link, mesh, tree, mesh_info);
 		if (bridge_result.cost < 50) {
 			bridges_to_add.push_back(bridge_result);
 		}
 	}
 	std::cout << "\rBridges computed               " << std::endl;
 
-	add_bridge_to_mesh(mesh, bridges_to_add, path_polygon, raster);
+	add_bridge_to_mesh(mesh, bridges_to_add, path_polygon, mesh_info);
 
-	save_mesh(mesh, raster, "final-closed-mesh-with-path-and-bridges.ply");
+	mesh_info.save_mesh(mesh, "final-closed-mesh-with-path-and-bridges.ply");
 	std::cout << "Bridges added to mesh" << std::endl;
 
 	return EXIT_SUCCESS;

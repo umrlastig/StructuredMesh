@@ -116,7 +116,7 @@ std::pair<K::FT, K::FT> road_width (std::pair<skeletonPoint,skeletonPoint> link)
 }
 
 
-std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> &medial_axes, const Raster &raster) {
+std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> &medial_axes, const Raster &raster, const Surface_mesh_info &mesh_info) {
 
 	K::FT minimal_path_width = raster.coord_distance_to_grid_distance(2); // in m
 
@@ -511,19 +511,7 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 	boost::tie(edge_prop, created) = links.add_property_map<Surface_mesh::Edge_index, int>("prop",0);
 	assert(created);
 
-	double min_x, min_y;
-	raster.grid_to_coord(0, 0, min_x, min_y);
-
-	for(auto vertex : links.vertices()) {
-		auto point = links.point(vertex);
-		double x, y;
-		raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
-		links.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
-	}
-
-	std::ofstream mesh_ofile ("links.ply");
-	CGAL::IO::write_PLY (mesh_ofile, links);
-	mesh_ofile.close();
+	mesh_info.save_mesh(links, "links.ply");
 
 	return result;
 
@@ -824,7 +812,7 @@ struct border_constraint {
 	}
 };
 
-pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tree, const Raster &raster) {
+pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tree, const Surface_mesh_info &mesh_info) {
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
 	bool has_path;
@@ -1154,21 +1142,9 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 		boost::tie(edge_prop, created) = bridge_surface_cost.add_property_map<Surface_mesh::Edge_index, int>("prop",0);
 		assert(created);
 
-		double min_x, min_y;
-		raster.grid_to_coord(0, 0, min_x, min_y);
-
-		for(auto vertex : bridge_surface_cost.vertices()) {
-			auto point = bridge_surface_cost.point(vertex);
-			double x, y;
-			raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
-			bridge_surface_cost.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
-		}
-
 		std::stringstream bridge_surface_cost_name;
 		bridge_surface_cost_name << "bridge_surface_cost_" << ((int) bridge.label) << "_" << link.first.path << "_" << link.second.path << "_" << link.first.point << "_" << link.second.point << ".ply";
-		std::ofstream mesh_ofile (bridge_surface_cost_name.str().c_str());
-		CGAL::IO::write_PLY (mesh_ofile, bridge_surface_cost);
-		mesh_ofile.close();
+		mesh_info.save_mesh(bridge_surface_cost, bridge_surface_cost_name.str().c_str());
 	}
 
 	// border
@@ -1209,21 +1185,9 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 			bridge_mesh.add_face(Xl[i], Xr[i+1], Xl[i+1]);
 		}
 
-		double min_x, min_y;
-		raster.grid_to_coord(0, 0, min_x, min_y);
-
-		for(auto vertex : bridge_mesh.vertices()) {
-			auto point = bridge_mesh.point(vertex);
-			double x, y;
-			raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
-			bridge_mesh.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
-		}
-
 		std::stringstream bridge_mesh_name;
 		bridge_mesh_name << "bridge_mesh_" << ((int) bridge.label) << "_" << link.first.path << "_" << link.second.path << "_" << link.first.point << "_" << link.second.point << "(" << bridge.cost << ").ply";
-		std::ofstream mesh_ofile (bridge_mesh_name.str().c_str());
-		CGAL::IO::write_PLY (mesh_ofile, bridge_mesh);
-		mesh_ofile.close();
+		mesh_info.save_mesh(bridge_mesh, bridge_mesh_name.str().c_str());
 
 	}
 
@@ -1270,21 +1234,10 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 		boost::tie(edge_prop, created) = skeleton.add_property_map<Surface_mesh::Edge_index, int>("prop",0);
 		assert(created);
 
-		double min_x, min_y;
-		raster.grid_to_coord(0, 0, min_x, min_y);
-
-		for(auto vertex : skeleton.vertices()) {
-			auto point = skeleton.point(vertex);
-			double x, y;
-			raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
-			skeleton.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
-		}
-
 		std::stringstream skeleton_name;
 		skeleton_name << "bridge_" << ((int) bridge.label) << "_" << link.first.path << "_" << link.second.path << "_" << link.first.point << "_" << link.second.point << ".ply";
-		std::ofstream mesh_ofile (skeleton_name.str().c_str());
-		CGAL::IO::write_PLY (mesh_ofile, skeleton);
-		mesh_ofile.close();
+
+		mesh_info.save_mesh(skeleton, skeleton_name.str().c_str());
 	}
 
 	return bridge;
@@ -1457,7 +1410,7 @@ struct CorefinementVisitor : public CGAL::Polygon_mesh_processing::Corefinement:
 
 };
 
-Surface_mesh compute_remove_mesh(const pathBridge &bridge, const Raster &raster) {
+Surface_mesh compute_remove_mesh(const pathBridge &bridge, const Surface_mesh_info &mesh_info) {
 	float tunnel_height = 3; // in meter
 
 	K::Vector_2 link_vector(bridge.link.first.point, bridge.link.second.point);
@@ -1513,22 +1466,9 @@ Surface_mesh compute_remove_mesh(const pathBridge &bridge, const Raster &raster)
 	CGAL::Polygon_mesh_processing::orient_to_bound_a_volume(bridge_mesh);
 
 	{ // output
-		Surface_mesh output_mesh(bridge_mesh);
-		double min_x, min_y;
-		raster.grid_to_coord(0, 0, min_x, min_y);
-
-		for(auto vertex : output_mesh.vertices()) {
-			auto point = output_mesh.point(vertex);
-			double x, y;
-			raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
-			output_mesh.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
-		}
-
 		std::stringstream bridge_mesh_name;
 		bridge_mesh_name << "bridge_tube_" << ((int) bridge.label) << "_" << bridge.link.first.path << "_" << bridge.link.second.path << "_" << bridge.link.first.point << "_" << bridge.link.second.point << "(" << bridge.cost << ").ply";
-		std::ofstream mesh_ofile (bridge_mesh_name.str().c_str());
-		CGAL::IO::write_PLY (mesh_ofile, output_mesh);
-		mesh_ofile.close();
+		mesh_info.save_mesh(bridge_mesh, bridge_mesh_name.str().c_str());
 	}
 
 	CGAL::Cartesian_converter<Surface_mesh::Point::R, CGAL::Exact_predicates_exact_constructions_kernel> to_exact;
@@ -1545,7 +1485,7 @@ Surface_mesh compute_remove_mesh(const pathBridge &bridge, const Raster &raster)
 	return bridge_mesh;
 }
 
-Surface_mesh compute_support_mesh(const pathBridge &bridge, const Raster &raster) {
+Surface_mesh compute_support_mesh(const pathBridge &bridge, const Surface_mesh_info &mesh_info) {
 	float tunnel_height = 3; // in meter
 
 	K::Vector_2 link_vector(bridge.link.first.point, bridge.link.second.point);
@@ -1601,22 +1541,9 @@ Surface_mesh compute_support_mesh(const pathBridge &bridge, const Raster &raster
 	CGAL::Polygon_mesh_processing::orient_to_bound_a_volume(bridge_mesh);
 
 	{ // output
-		Surface_mesh output_mesh(bridge_mesh);
-		double min_x, min_y;
-		raster.grid_to_coord(0, 0, min_x, min_y);
-
-		for(auto vertex : output_mesh.vertices()) {
-			auto point = output_mesh.point(vertex);
-			double x, y;
-			raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
-			output_mesh.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
-		}
-
 		std::stringstream bridge_mesh_name;
 		bridge_mesh_name << "bridge_support_" << ((int) bridge.label) << "_" << bridge.link.first.path << "_" << bridge.link.second.path << "_" << bridge.link.first.point << "_" << bridge.link.second.point << "(" << bridge.cost << ").ply";
-		std::ofstream mesh_ofile (bridge_mesh_name.str().c_str());
-		CGAL::IO::write_PLY (mesh_ofile, output_mesh);
-		mesh_ofile.close();
+		mesh_info.save_mesh(bridge_mesh, bridge_mesh_name.str().c_str());
 	}
 
 	CGAL::Cartesian_converter<Surface_mesh::Point::R, CGAL::Exact_predicates_exact_constructions_kernel> to_exact;
@@ -1654,7 +1581,7 @@ struct Extrudor {
 	}
 };
 
-Surface_mesh compute_crossing_mesh(Surface_mesh mesh, const pathBridge &bridge, std::list<Point_2> *polygon, const Raster &raster) {
+Surface_mesh compute_crossing_mesh(Surface_mesh mesh, const pathBridge &bridge, std::list<Point_2> *polygon, const Surface_mesh_info &mesh_info) {
 
 	// Get label
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
@@ -1695,29 +1622,15 @@ Surface_mesh compute_crossing_mesh(Surface_mesh mesh, const pathBridge &bridge, 
 	assert(!CGAL::Polygon_mesh_processing::does_self_intersect(crossing_mesh, CGAL::parameters::vertex_point_map(exact_points)));
 
 	{ // output
-		CGAL::Cartesian_converter<CGAL::Exact_predicates_exact_constructions_kernel, Surface_mesh::Point::R> to_float;
-		Surface_mesh output_mesh(crossing_mesh);
-		double min_x, min_y;
-		raster.grid_to_coord(0, 0, min_x, min_y);
-
-		for(auto vertex : output_mesh.vertices()) {
-			auto point = to_float(exact_points[vertex]);
-			double x, y;
-			raster.grid_to_coord((float) point.x(), (float) point.y(), x, y);
-			output_mesh.point(vertex) = Point_3(x-min_x, y-min_y, point.z());
-		}
-
 		std::stringstream bridge_mesh_name;
 		bridge_mesh_name << "crossing_mesh_" << ((int) bridge.label) << "_" << bridge.link.first.path << "_" << bridge.link.second.path << "_" << bridge.link.first.point << "_" << bridge.link.second.point << ".ply";
-		std::ofstream mesh_ofile (bridge_mesh_name.str().c_str());
-		CGAL::IO::write_PLY (mesh_ofile, output_mesh);
-		mesh_ofile.close();
+		mesh_info.save_mesh(crossing_mesh, bridge_mesh_name.str().c_str());
 	}
 
 	return crossing_mesh;
 }
 
-void add_bridge_to_mesh(Surface_mesh &mesh, const std::vector<pathBridge> &bridges, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const Raster &raster) {
+void add_bridge_to_mesh(Surface_mesh &mesh, const std::vector<pathBridge> &bridges, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const Surface_mesh_info &mesh_info) {
 
 	// Label
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
@@ -1753,10 +1666,10 @@ void add_bridge_to_mesh(Surface_mesh &mesh, const std::vector<pathBridge> &bridg
 		if (bridge.crossing_surface.num_faces() > 0) {
 
 			std::list<Point_2> polygon;
-			Surface_mesh mesh_crossing = compute_crossing_mesh(mesh, bridge, &polygon, raster);
+			Surface_mesh mesh_crossing = compute_crossing_mesh(mesh, bridge, &polygon, mesh_info);
 
-			auto r_b = compute_remove_mesh(bridge, raster);
-			auto s_b = compute_support_mesh(bridge, raster);
+			auto r_b = compute_remove_mesh(bridge, mesh_info);
+			auto s_b = compute_support_mesh(bridge, mesh_info);
 
 			boost::tie(vpm1, has_exact_points) = r_b.property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>("v:exact_point");
 			assert(has_exact_points);
@@ -1816,12 +1729,12 @@ void add_bridge_to_mesh(Surface_mesh &mesh, const std::vector<pathBridge> &bridg
 
 		} else {
 
-			auto r_b = compute_remove_mesh(bridge, raster);
+			auto r_b = compute_remove_mesh(bridge, mesh_info);
 			boost::tie(vpm1, has_exact_points) = r_b.property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>("v:exact_point");
 			assert(has_exact_points);
 			std::cout << "Remove bridge: " << CGAL::Polygon_mesh_processing::corefine_and_compute_difference(mesh, r_b, mesh, CGAL::parameters::vertex_point_map(exact_points).visitor(CorefinementVisitor(&mesh)), CGAL::parameters::vertex_point_map(vpm1), CGAL::parameters::vertex_point_map(exact_points)) << "\n";
 
-			auto s_b = compute_support_mesh(bridge, raster);
+			auto s_b = compute_support_mesh(bridge, mesh_info);
 			boost::tie(vpm2, has_exact_points) = s_b.property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>("v:exact_point");
 			assert(has_exact_points);
 			std::cout << "Support bridge: " << CGAL::Polygon_mesh_processing::corefine_and_compute_union(mesh, s_b, mesh, CGAL::parameters::vertex_point_map(exact_points).visitor(CorefinementVisitor(&mesh)), CGAL::parameters::vertex_point_map(vpm2), CGAL::parameters::vertex_point_map(exact_points)) << "\n";
