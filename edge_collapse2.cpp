@@ -234,8 +234,6 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 		if (max_negative < min_positive) {
 			b += - (max_negative + min_positive) / 2;
 			count = 1;
-		} else {
-			std::cerr << "to_be_test " << max_negative << " " << min_positive << "\n";
 		}
 		if (count == 0) {
 			value = s.variable_values_begin();
@@ -264,25 +262,9 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 		}
 		b /= count;
 		
-		Exact_predicates_kernel::FT w_length = CGAL::sqrt(w.squared_length());
-		w /= w_length;
-		b /= w_length;
 
-		std::cerr << "w: " << w << "\n";
-		std::cerr << "b: " << b << "\n";
+		result.push_back(std::pair<K::Vector_3, K::FT>(type_converter(w)*squared_length, -type_converter(b)*squared_length));
 
-		for (int i = 0; i < points_for_svm.size(); i++) {
-			std::cerr << "y" << i << ":\t" << y[i] << "\t";
-			std::cerr << Exact_predicates_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) << "   \t";
-			std::cerr << CGAL::to_double(*(s.variable_values_begin() + i)) << "\t";
-			std::cerr << CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) << "  \t";
-			std::cerr << y[i]*(CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) +b) << "\n";
-			if (y[i]*(CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) +b) < 0) {
-				std::cerr << "Error\n";
-			}
-		}
-
-		result.push_back(std::pair<K::Vector_3, K::FT>(type_converter(w)*squared_length, type_converter(b)*squared_length));
 	} else {
 
 		for (int i = 0; i < LABELS.size(); i++) {
@@ -337,8 +319,6 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 				if (max_negative < min_positive) {
 					b += - (max_negative + min_positive) / 2;
 					count = 1;
-				} else {
-					std::cerr << "to_be_test " << max_negative << " " << min_positive << "\n";
 				}
 				if (count == 0) {
 					value = s.variable_values_begin();
@@ -367,25 +347,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 				}
 				b /= count;
 				
-				Exact_predicates_kernel::FT w_length = CGAL::sqrt(w.squared_length());
-				w /= w_length;
-				b /= w_length;
-
-				std::cerr << "w: " << w << "\n";
-				std::cerr << "b: " << b << "\n";
-
-				for (int i = 0; i < points_for_svm.size(); i++) {
-					std::cerr << "y" << i << ":\t" << y[i] << "\t";
-					std::cerr << Exact_predicates_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) << "   \t";
-					std::cerr << CGAL::to_double(*(s.variable_values_begin() + i)) << "\t";
-					std::cerr << CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) << "  \t";
-					std::cerr << y[i]*(CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) +b) << "\n";
-					if (y[i]*(CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) +b) < 0) {
-						std::cerr << "Error\n";
-					}
-				}
-
-				result.push_back(std::pair<K::Vector_3, K::FT>(type_converter(w)*squared_length, type_converter(b)*squared_length));
+				result.push_back(std::pair<K::Vector_3, K::FT>(type_converter(w)*squared_length, -type_converter(b)*squared_length));
 			}
 		}
 	}
