@@ -18,7 +18,7 @@ typedef CGAL::AABB_face_graph_triangle_primitive<Surface_mesh> AABB_face_graph_p
 typedef CGAL::AABB_traits<K, AABB_face_graph_primitive>        AABB_face_graph_traits;
 typedef CGAL::AABB_tree<AABB_face_graph_traits>                AABB_tree;
 
-std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> &medial_axes, const Raster &raster, const Surface_mesh_info &mesh_info);
+std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> &medial_axes, const Surface_mesh_info &mesh_info);
 
 struct pathBridge {
 	pathLink link;

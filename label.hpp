@@ -30,4 +30,6 @@ static std::array<Label, 12> LABELS {
     Label(11, "rail crossing", 250, 150, 0)
 };
 
+const int LABEL_OTHER = 0;
+
 #endif  /* !LABEL_H_ */

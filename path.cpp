@@ -1,5 +1,4 @@
 #include "header.hpp"
-#include "raster.hpp"
 
 #include <CGAL/boost/graph/copy_face_graph.h>
 #include <CGAL/boost/graph/Face_filtered_graph.h>
@@ -8,9 +7,17 @@
 #include <CGAL/Straight_skeleton_converter_2.h>
 #include <CGAL/Arr_segment_traits_2.h>
 #include <CGAL/Arrangement_2.h>
+#include <CGAL/Polygon_mesh_processing/locate.h>
+#include <CGAL/AABB_tree.h>
+#include <CGAL/AABB_traits.h>
 
-typedef CGAL::Arr_segment_traits_2<Exact_predicates_kernel> Traits_2;
-typedef CGAL::Arrangement_2<Traits_2>                       Arrangement_2;
+namespace PMP = CGAL::Polygon_mesh_processing;
+
+typedef CGAL::Arr_segment_traits_2<Exact_predicates_kernel>    Traits_2;
+typedef CGAL::Arrangement_2<Traits_2>                          Arrangement_2;
+typedef CGAL::AABB_face_graph_triangle_primitive<Surface_mesh> AABB_face_graph_primitive;
+typedef CGAL::AABB_traits<K, AABB_face_graph_primitive>        AABB_face_graph_traits;
+typedef CGAL::AABB_tree<AABB_face_graph_traits>                AABB_tree;
 
 void set_path(Surface_mesh &mesh,
 				Surface_mesh::Property_map<Surface_mesh::Face_index, int> &path,
@@ -80,7 +87,7 @@ CGAL::Polygon_with_holes_2<typename Face_handle::value_type::Vertex::Point::R> p
 }
 
 
-std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_polygon(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const Raster &raster, const Surface_mesh_info &mesh_info) {
+std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_polygon(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const Surface_mesh_info &mesh_info) {
 	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
 	bool has_path;
 	boost::tie(path, has_path) = mesh.property_map<Surface_mesh::Face_index, int>("path");
@@ -93,10 +100,9 @@ std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_
 
 	std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> path_polygon;
 
-	typedef CGAL::Face_filtered_graph<Surface_mesh> Filtered_graph;
 	for (int i = 0; i < paths.size(); i++) {
 
-		Filtered_graph filtered_sm(mesh, i, path);
+		CGAL::Face_filtered_graph<Surface_mesh> filtered_sm(mesh, i, path);
 
 		if (filtered_sm.number_of_faces() > 0) {
 
@@ -118,11 +124,17 @@ std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_
 				{ // Arrangement
 					Surface_mesh skeleton;
 
+					Surface_mesh filtered_mesh;
+  					CGAL::copy_face_graph(filtered_sm, filtered_mesh);
+					AABB_tree tree;
+					PMP::build_AABB_tree(filtered_mesh, tree);
+
 					std::map<Arrangement_2::Vertex_handle, Surface_mesh::vertex_index> v_map;
 					for (auto v = arr.vertices_begin(); v != arr.vertices_end(); v++) {
-						auto p = v->point();
-						auto z = raster.dsm[int(p.y())][int(p.x())];
-						v_map[v] = skeleton.add_vertex(Point_3((float) p.x(), (float) p.y(), z));
+						auto p = v->point();						
+						auto location = PMP::locate_with_AABB_tree(K::Point_3(p.x(), p.y(), 0), tree, filtered_mesh);
+						auto point = PMP::construct_point(location, mesh);
+						v_map[v] = skeleton.add_vertex(point);
 					}
 
 					for (auto he = arr.edges_begin(); he != arr.edges_end(); ++he ) {
@@ -154,7 +166,7 @@ std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_
 }
 
 
-std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_axes(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const Raster &raster, const Surface_mesh_info &mesh_info) {
+std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_axes(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const Surface_mesh_info &mesh_info) {
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool has_label;
 	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
@@ -173,20 +185,32 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_ax
 			poly = CGAL::Polyline_simplification_2::simplify(
 				poly,
 				CGAL::Polyline_simplification_2::Squared_distance_cost(),
-				CGAL::Polyline_simplification_2::Stop_above_cost_threshold(pow(raster.coord_distance_to_grid_distance(1.5),2))
+				CGAL::Polyline_simplification_2::Stop_above_cost_threshold(pow(1.5,2))
 			);
 
 			auto iss = CGAL::create_interior_straight_skeleton_2(poly, Exact_predicates_kernel());
 			medial_axes[i] = CGAL::convert_straight_skeleton_2<CGAL::Straight_skeleton_2<K>>(*iss);
 
+			Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
+			bool has_path;
+			boost::tie(path, has_path) = mesh.property_map<Surface_mesh::Face_index, int>("path");
+			assert(has_path);
+			CGAL::Face_filtered_graph<Surface_mesh> filtered_sm(mesh, path[paths.at(i).front()], path);
+
 			{ // Skeleton
 				Surface_mesh skeleton;
+
+				Surface_mesh filtered_mesh;
+				CGAL::copy_face_graph(filtered_sm, filtered_mesh);
+				AABB_tree tree;
+				PMP::build_AABB_tree(filtered_mesh, tree);
 
 				std::map<int, Surface_mesh::vertex_index> v_map;
 				for (auto v = iss->vertices_begin(); v != iss->vertices_end(); v++) {
 					auto p = v->point();
-					auto z = raster.dsm[int(p.y())][int(p.x())];
-					v_map[v->id()] = skeleton.add_vertex(Point_3((float) p.x(), (float) p.y(), z));
+					auto location = PMP::locate_with_AABB_tree(K::Point_3(p.x(), p.y(), 0), tree, filtered_mesh);
+					auto point = PMP::construct_point(location, mesh);
+					v_map[v->id()] = skeleton.add_vertex(point);
 				}
 
 				for (auto he = iss->halfedges_begin(); he != iss->halfedges_end(); ++he ) {
@@ -206,12 +230,18 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_ax
 			{ // Path
 				Surface_mesh skeleton;
 
+				Surface_mesh filtered_mesh;
+				CGAL::copy_face_graph(filtered_sm, filtered_mesh);
+				AABB_tree tree;
+				PMP::build_AABB_tree(filtered_mesh, tree);
+
 				std::map<int, Surface_mesh::vertex_index> v_map;
 				for (auto v = iss->vertices_begin(); v != iss->vertices_end(); v++) {
 					if (v->is_skeleton()) {
 						auto p = v->point();
-						auto z = raster.dsm[int(p.y())][int(p.x())];
-						v_map[v->id()] = skeleton.add_vertex(Point_3((float) p.x(), (float) p.y(),z));
+					auto location = PMP::locate_with_AABB_tree(K::Point_3(p.x(), p.y(), 0), tree, filtered_mesh);
+					auto point = PMP::construct_point(location, mesh);
+					v_map[v->id()] = skeleton.add_vertex(point);
 					}
 				}
 
@@ -260,8 +290,7 @@ std::pair<Surface_mesh::Face_index, Point_2> point_on_path_border(const Surface_
 	boost::tie(path, has_path) = mesh.property_map<Surface_mesh::Face_index, int>("path");
 	assert(has_path);
 
-	typedef CGAL::Face_filtered_graph<Surface_mesh> Filtered_graph;
-	Filtered_graph filtered_mesh(mesh, path[face], path);
+	CGAL::Face_filtered_graph<Surface_mesh> filtered_mesh(mesh, path[face], path);
 
 	// find first intersecting edge
 	K::Segment_2 segment;

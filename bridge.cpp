@@ -116,9 +116,9 @@ std::pair<K::FT, K::FT> road_width (std::pair<skeletonPoint,skeletonPoint> link)
 }
 
 
-std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> &medial_axes, const Raster &raster, const Surface_mesh_info &mesh_info) {
+std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> &medial_axes, const Surface_mesh_info &mesh_info) {
 
-	K::FT minimal_path_width = raster.coord_distance_to_grid_distance(2); // in m
+	K::FT minimal_path_width = 2; // in m
 
 	// Get label property
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
@@ -498,11 +498,22 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 
 	Surface_mesh links;
 
+	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
+	bool has_path;
+	boost::tie(path, has_path) = mesh.property_map<Surface_mesh::Face_index, int>("path");
+	assert(has_path);
+
 	for(auto link: result) {
-		auto z1 = raster.dsm[int(link.first.point.y())][int(link.first.point.x())];
-		auto z2 = raster.dsm[int(link.second.point.y())][int(link.second.point.x())];
-		auto v1 = links.add_vertex(Point_3((float) link.first.point.x(), (float) link.first.point.y(), z1));
-		auto v2 = links.add_vertex(Point_3((float) link.second.point.x(), (float) link.second.point.y(), z2));
+		CGAL::Face_filtered_graph<Surface_mesh> filtered_sm1(mesh, link.first.path, path);
+		CGAL::Face_filtered_graph<Surface_mesh> filtered_sm2(mesh, link.second.path, path);
+		auto location1 = PMP::locate(K::Ray_3(K::Point_3(link.first.point.x(),link.first.point.y(),150), K::Direction_3(0, 0, -1)), filtered_sm1);
+		assert(location1.first != Surface_mesh::null_face());
+		auto point1 = PMP::construct_point(location1, mesh);
+		auto location2 = PMP::locate(K::Ray_3(K::Point_3(link.second.point.x(),link.second.point.y(),150), K::Direction_3(0, 0, -1)), filtered_sm2);
+		assert(location2.first != Surface_mesh::null_face());
+		auto point2 = PMP::construct_point(location1, mesh);
+		auto v1 = links.add_vertex(point1);
+		auto v2 = links.add_vertex(point2);
 		links.add_edge(v1,v2);
 	}
 

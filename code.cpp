@@ -143,7 +143,7 @@ void change_vertical_faces(Surface_mesh &mesh, const Raster &raster) {
 			}
 
 			if (new_label[face] != 4 && new_label[face] != 5) {
-				new_label[face] = 0;
+				new_label[face] = LABEL_OTHER;
 			}
 		}
 	}

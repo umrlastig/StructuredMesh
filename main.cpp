@@ -12,9 +12,9 @@ void change_vertical_faces(Surface_mesh &mesh, const Raster &raster);
 
 std::vector<std::list<Surface_mesh::Face_index>> compute_path(Surface_mesh &mesh);
 
-std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_polygon(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const Raster &raster, const Surface_mesh_info &mesh_info);
+std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_polygon(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const Surface_mesh_info &mesh_info);
 
-std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_axes(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const Raster &raster, const Surface_mesh_info &mesh_info);
+std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_axes(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const Surface_mesh_info &mesh_info);
 
 #include "bridge.hpp"
 
@@ -190,8 +190,7 @@ int main(int argc, char **argv) {
 		std::cout << "Mesh and terrain mesh load" << std::endl;
 	}
 
-	add_label(raster, mesh);
-	change_vertical_faces(mesh, raster);
+	/*change_vertical_faces(mesh, raster);*/ // Need label information from point cloud
 	mesh_info.save_mesh(mesh, "final-mesh-without-facade.ply");
 	std::cout << "Label set for vertical face" << std::endl;
 
@@ -199,11 +198,11 @@ int main(int argc, char **argv) {
 	mesh_info.save_mesh(mesh, "final-mesh-with-path.ply");
 	std::cout << "Path computed" << std::endl;
 
-	std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> path_polygon = compute_path_polygon(mesh, paths, raster, mesh_info);
-	std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> medial_axes = compute_medial_axes(mesh, paths, path_polygon, raster, mesh_info);
+	std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> path_polygon = compute_path_polygon(mesh, paths, mesh_info);
+	std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> medial_axes = compute_medial_axes(mesh, paths, path_polygon, mesh_info);
 	std::cout << "Medial axes computed" << std::endl;
 
-	std::set<pathLink> links = link_paths(mesh, paths, path_polygon, medial_axes, raster, mesh_info);
+	std::set<pathLink> links = link_paths(mesh, paths, path_polygon, medial_axes, mesh_info);
 	std::cout << "Links computed" << std::endl;
 
 	close_surface_mesh(mesh);
