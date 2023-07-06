@@ -612,15 +612,15 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 				if(*cost > 100 && !output[0]) {
 					output[0] = true;
 					add_label(mesh, point_cloud, point_in_face);
-					mesh_info.save_mesh(mesh,"mesh-100.ply");
+					mesh_info.save_mesh(mesh,"mesh-c100.ply");
 				} else if(*cost > 10 && !output[0]) {
 					output[0] = true;
 					add_label(mesh, point_cloud, point_in_face);
-					mesh_info.save_mesh(mesh,"mesh-10.ply");
+					mesh_info.save_mesh(mesh,"mesh-c10.ply");
 				} else if(*cost > 0 && !output[1]) {
 					output[1] = true;
 					add_label(mesh, point_cloud, point_in_face);
-					mesh_info.save_mesh(mesh,"mesh-0.ply");
+					mesh_info.save_mesh(mesh,"mesh-c0.ply");
 				}
 				if(!output[2] && current_edge_count <= 1000000) {
 					output[2] = true;
