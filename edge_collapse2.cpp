@@ -140,13 +140,15 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 	int count_collapse_label[LABELS.size()] = {0};
 	for(auto face: profile.triangles()) {
 		auto fh = profile.surface_mesh().face(profile.surface_mesh().halfedge(face.v0, face.v1));
-		points_in_faces.insert(point_in_face[fh].begin(), point_in_face[fh].end());
-		int count_face_label[LABELS.size()] = {0};
-		for (auto ph: point_in_face[fh]) {
-			count_face_label[int(label[ph])]++;
+		if (point_in_face[fh].size() > 0) {
+			points_in_faces.insert(point_in_face[fh].begin(), point_in_face[fh].end());
+			int count_face_label[LABELS.size()] = {0};
+			for (auto ph: point_in_face[fh]) {
+				count_face_label[int(label[ph])]++;
+			}
+			auto argmax = std::max_element(count_face_label, count_face_label+LABELS.size());
+			count_collapse_label[argmax - count_face_label]++;
 		}
-		auto argmax = std::max_element(count_face_label, count_face_label+LABELS.size());
-		count_collapse_label[argmax - count_face_label]++;
 	}
 
 	int count_diff_label = 0;
@@ -249,6 +251,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 				count++;
 			}
 		}
+		assert(count > 0);
 		b /= count;
 		
 
@@ -256,15 +259,15 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 
 	} else {
 
-		for (int i = 0; i < LABELS.size(); i++) {
-			if (count_collapse_label[i] > 0) {
+		for (int i_label = 0; i_label < LABELS.size(); i_label++) {
+			if (count_collapse_label[i_label] > 0) {
 				
 				std::vector<int> y;
 				std::vector<Point_set::Index> points_for_svm;
 				y.reserve(points_in_faces.size());
 				points_for_svm.reserve(points_in_faces.size());
 				for (auto point: points_in_faces) {
-					if (label[point] == i) {
+					if (label[point] == i_label) {
 						points_for_svm.push_back(point);
 						y.push_back(1);
 					} else {
@@ -334,6 +337,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 						count++;
 					}
 				}
+				assert(count > 0);
 				b /= count;
 				
 				result.push_back(std::pair<K::Vector_3, K::FT>(type_converter(w)*squared_length, -type_converter(b)*squared_length));
