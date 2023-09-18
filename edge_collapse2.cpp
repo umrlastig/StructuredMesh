@@ -657,7 +657,7 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 
 		};
 
-		void Collapsing (const SMS::Edge_profile<Surface_mesh> &profile, const boost::optional<SMS::Edge_profile<Surface_mesh>::Point>& placement) {
+		void OnCollapsing (const SMS::Edge_profile<Surface_mesh> &profile, const boost::optional<SMS::Edge_profile<Surface_mesh>::Point>& placement) {
 			// Called when an edge is about to be collapsed and replaced by a vertex whose position is *placement
 			for(auto face: profile.triangles()) {
 				auto fh = mesh.face(mesh.halfedge(face.v0, face.v1));
@@ -672,19 +672,32 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 
 			for(auto ph: points_to_be_change) {
 				K::FT min_d = std::numeric_limits<K::FT>::max();
-				Surface_mesh::Face_index nearest_face;
+				std::map<Surface_mesh::Face_index, K::FT> nearest_face;
+				K::FT threshold = 0.001;
 				for(auto face: mesh.faces_around_target(mesh.halfedge(vd))) {
-					auto r = mesh.vertices_around_face(mesh.halfedge(face)).begin();
-					auto d = CGAL::squared_distance(K::Triangle_3(mesh.point(*r++), mesh.point(*r++), mesh.point(*r)), type_converter(point_cloud.point(ph)));
-					if (d < min_d) {
-						min_d = d;
-						nearest_face = face;
+					if (face != mesh.null_face()) {
+						auto r = mesh.vertices_around_face(mesh.halfedge(face)).begin();
+						auto d = CGAL::squared_distance(K::Triangle_3(mesh.point(*r++), mesh.point(*r++), mesh.point(*r++)), type_converter(point_cloud.point(ph)));
+						if (d < min_d) {
+							if (d < min_d - threshold) {
+								nearest_face.clear();
+							}
+							nearest_face[face] = d;
+							min_d = d;
+						} else if (d < min_d + threshold) {
+							nearest_face[face] = d;
+						}
 					}
 				}
-				if (nearest_face.is_valid()) {
-					point_in_face[nearest_face].push_back(ph);
+				for (auto face_d: nearest_face) {
+					if (face_d.second < min_d + threshold) {
+						assert(face_d.first.is_valid());
+						point_in_face[face_d.first].push_back(ph);
+					}
 				}
 			}
+
+			points_to_be_change.clear();
 		};
 };
 
