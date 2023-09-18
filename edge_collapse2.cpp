@@ -230,7 +230,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 			}
 		}
 
-		Exact_predicates_kernel::FT c = 5;
+		Exact_predicates_kernel::FT c = 1;
 
 		Program qp (CGAL::EQUAL, true, 0, true, c);
 		for (int i = 0; i < points_for_svm.size(); i++) {
