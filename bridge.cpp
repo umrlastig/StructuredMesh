@@ -131,7 +131,7 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 	for (int selected_label:  {3, 8, 9}) {
 		// List path with selected label
 		std::list<int> same_label_paths;
-		for (int i = 0; i < paths.size(); i++) {
+		for (std::size_t i = 0; i < paths.size(); i++) {
 			if (label[paths[i].front()] == selected_label && medial_axes.count(i) == 1) {
 				same_label_paths.push_back(i);
 			}
@@ -874,7 +874,6 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 	float dlN = sqrt(CGAL::squared_distance(link.second.point, left2_border.second));
 	float drN = sqrt(CGAL::squared_distance(link.second.point, right2_border.second));
 
-	int N = int(sqrt(link_vector.squared_length ()));
 	pathBridge bridge(link);
 	for (int i = 0; i <= bridge.N; i++) {
 		bridge.xl[i] = dl0 + ((float) i)/bridge.N*(dlN-dl0);
@@ -1179,8 +1178,8 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 	{ // Surface
 
 		Surface_mesh bridge_mesh;
-		Surface_mesh::Vertex_index Xl[bridge.N+1];
-		Surface_mesh::Vertex_index Xr[bridge.N+1];
+		std::vector<Surface_mesh::Vertex_index> Xl(bridge.N+1);
+		std::vector<Surface_mesh::Vertex_index> Xr(bridge.N+1);
 
 		// Add points
 		for (int i = 0; i <= bridge.N; i++) {
@@ -1269,9 +1268,6 @@ void close_surface_mesh(Surface_mesh &mesh) {
 		}
 	}
 	min_h -= 50;
-
-	float min_x;
-	float min_y;
 
 	std::vector<Surface_mesh::Halfedge_index> borders_edge;
 	CGAL::Polygon_mesh_processing::extract_boundary_cycles (mesh, std::back_inserter(borders_edge));
@@ -1430,10 +1426,10 @@ Surface_mesh compute_remove_mesh(const pathBridge &bridge, const Surface_mesh_in
 	auto n = l.perpendicular(CGAL::COUNTERCLOCKWISE);
 
 	Surface_mesh bridge_mesh;
-	Surface_mesh::Vertex_index Xlb[bridge.N+1]; // X left bottom
-	Surface_mesh::Vertex_index Xrb[bridge.N+1]; // X right bottom
-	Surface_mesh::Vertex_index Xlt[bridge.N+1]; // X left top
-	Surface_mesh::Vertex_index Xrt[bridge.N+1]; // X right top
+	std::vector<Surface_mesh::Vertex_index> Xlb(bridge.N+1); // X left bottom
+	std::vector<Surface_mesh::Vertex_index> Xrb(bridge.N+1); // X right bottom
+	std::vector<Surface_mesh::Vertex_index> Xlt(bridge.N+1); // X left top
+	std::vector<Surface_mesh::Vertex_index> Xrt(bridge.N+1); // X right top
 
 	// Add points
 	for (int i = 0; i <= bridge.N; i++) {
@@ -1505,10 +1501,10 @@ Surface_mesh compute_support_mesh(const pathBridge &bridge, const Surface_mesh_i
 	auto n = l.perpendicular(CGAL::COUNTERCLOCKWISE);
 
 	Surface_mesh bridge_mesh;
-	Surface_mesh::Vertex_index Xlb[bridge.N+1]; // X left bottom
-	Surface_mesh::Vertex_index Xrb[bridge.N+1]; // X right bottom
-	Surface_mesh::Vertex_index Xlt[bridge.N+1]; // X left top
-	Surface_mesh::Vertex_index Xrt[bridge.N+1]; // X right top
+	std::vector<Surface_mesh::Vertex_index> Xlb(bridge.N+1); // X left bottom
+	std::vector<Surface_mesh::Vertex_index> Xrb(bridge.N+1); // X right bottom
+	std::vector<Surface_mesh::Vertex_index> Xlt(bridge.N+1); // X left top
+	std::vector<Surface_mesh::Vertex_index> Xrt(bridge.N+1); // X right top
 
 	// Add points
 	for (int i = 0; i <= bridge.N; i++) {
@@ -1583,7 +1579,7 @@ struct Extrudor {
 		assert(has_exact_points);
 	}
 
-	void operator()(const Surface_mesh::Vertex_index &vin, const Surface_mesh::Vertex_index &vout) const {
+	void operator()(const Surface_mesh::Vertex_index&, const Surface_mesh::Vertex_index &vout) const {
 		if (top) {
 			exact_point[vout] += CGAL::Exact_predicates_exact_constructions_kernel::Vector_3(0, 0, tunnel_height);
 		} else { // bottom
@@ -1617,7 +1613,6 @@ Surface_mesh compute_crossing_mesh(Surface_mesh mesh, const pathBridge &bridge, 
 	// Compute crossing border
 
 	// Exact points
-	CGAL::Cartesian_converter<Surface_mesh::Point::R, CGAL::Exact_predicates_exact_constructions_kernel> to_exact;
 	Surface_mesh::Property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3> exact_points;
 	bool created_point;
 
@@ -1641,7 +1636,7 @@ Surface_mesh compute_crossing_mesh(Surface_mesh mesh, const pathBridge &bridge, 
 	return crossing_mesh;
 }
 
-void add_bridge_to_mesh(Surface_mesh &mesh, const std::vector<pathBridge> &bridges, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const Surface_mesh_info &mesh_info) {
+void add_bridge_to_mesh(Surface_mesh &mesh, const std::vector<pathBridge> &bridges, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &/*path_polygon*/, const Surface_mesh_info &mesh_info) {
 
 	// Label
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;

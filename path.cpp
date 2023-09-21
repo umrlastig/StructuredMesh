@@ -100,7 +100,7 @@ std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_
 
 	std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> path_polygon;
 
-	for (int i = 0; i < paths.size(); i++) {
+	for (std::size_t i = 0; i < paths.size(); i++) {
 
 		CGAL::Face_filtered_graph<Surface_mesh> filtered_sm(mesh, i, path);
 
@@ -174,7 +174,7 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_ax
 
 	std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> medial_axes;
 
-	for (int i = 0; i < paths.size(); i++) {
+	for (std::size_t i = 0; i < paths.size(); i++) {
 
 		if (path_polygon.count(i) > 0) {
 
@@ -348,7 +348,7 @@ std::pair<Surface_mesh::Face_index, Point_2> point_on_path_border(const Surface_
 	auto target = mesh.point(CGAL::target(he, filtered_mesh));
 	auto result = CGAL::intersection(segment, K::Segment_2(Point_2(source.x(), source.y()), Point_2(target.x(), target.y())));
 	assert(result);
-	if (const K::Segment_2* s = boost::get<K::Segment_2>(&*result)) {
+	if (boost::get<K::Segment_2>(&*result)) {
 		if (CGAL::squared_distance(Point_2(source.x(), source.y()), segment.source()) < CGAL::squared_distance(Point_2(target.x(), target.y()), segment.source())) {
 			return std::make_pair(face, Point_2(source.x(), source.y()));
 		} else {

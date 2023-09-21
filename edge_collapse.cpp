@@ -23,14 +23,12 @@ float single_face_cost(const Raster &raster, const Point_3 &p0, const Point_3 &p
 	int face_label[LABELS.size()] = {0};
 	int sum_face_label = 0;
 	for (auto pixel : pixels) {
-		if (raster.land_cover[pixel.second][pixel.first] > -1) {
-			sum_face_label++;
-			face_label[raster.land_cover[pixel.second][pixel.first]]++;
-		}
+		sum_face_label++;
+		face_label[raster.land_cover[pixel.second][pixel.first]]++;
 	}
 	float entropy = 0;
 	if (sum_face_label > 0) {
-		for (int i = 0; i < LABELS.size(); i++) {
+		for (std::size_t i = 0; i < LABELS.size(); i++) {
 			if (face_label[i] > 0) {
 				entropy += ((float) face_label[i])*log((float) face_label[i]);
 			}
@@ -170,7 +168,7 @@ class Custom_placement {
 			Point_3 p[5] = {profile.p0(), profile.p0() + 0.25 * vector, profile.p0() + 0.5 * vector, profile.p0() + 0.75 * vector, profile.p1()};
 			float cost[5] = {0};
 
-			/*for (int j = 0; j < 5; j++) {
+			/*for (unsigned char j = 0; j < 5; j++) {
 				p[j] = best_point(raster, p[j].x(), p[j].y(), profile);
 			}*/
 
@@ -178,7 +176,7 @@ class Custom_placement {
 				if (he != profile.v0_v1() && he != profile.v0_vR()) {
 					Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
 					Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
-					for (int j = 0; j < 5; j++) {
+					for (unsigned char j = 0; j < 5; j++) {
 						cost[j] += face_cost(raster, A, B, p[j]);
 					}
 				}
@@ -187,13 +185,13 @@ class Custom_placement {
 				if (he != profile.v1_v0() && he != profile.v1_vL()) {
 					Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
 					Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
-					for (int j = 0; j < 5; j++) {
+					for (unsigned char j = 0; j < 5; j++) {
 						cost[j] += face_cost(raster, A, B, p[j]);
 					}
 				}
 			}
 
-			for (int i = 0; i < 2; i++) {
+			for (unsigned char i = 0; i < 2; i++) {
 				int min_cost = std::min_element(cost, cost + 5) - cost;
 
 				if (min_cost == 0 || min_cost == 1) {

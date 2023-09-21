@@ -8,7 +8,7 @@ class Raster {
 	public:
 		std::vector<std::vector<float>> dsm;
 		std::vector<std::vector<float>> dtm;
-		std::vector<std::vector<char>> land_cover;
+		std::vector<std::vector<unsigned char>> land_cover;
 		int xSize;
 		int ySize;
 

@@ -12,7 +12,7 @@ struct Label {
     unsigned char red;
     unsigned char green;
     unsigned char blue;
-    Label(int value, std::string label, unsigned char red, unsigned char green, unsigned char blue): value(value), label(label), red(red), green(green), blue(blue) {}
+    Label(unsigned char value, std::string label, unsigned char red, unsigned char green, unsigned char blue): value(value), label(label), red(red), green(green), blue(blue) {}
 };
 
 static std::array<Label, 12> LABELS {
@@ -30,6 +30,6 @@ static std::array<Label, 12> LABELS {
     Label(11, "rail crossing", 250, 150, 0)
 };
 
-const int LABEL_OTHER = 0;
+const unsigned char LABEL_OTHER = 0;
 
 #endif  /* !LABEL_H_ */

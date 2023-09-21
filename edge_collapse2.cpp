@@ -166,7 +166,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 	}
 
 	int count_diff_label = 0;
-	for (int i = 0; i < LABELS.size(); i++) {
+	for (std::size_t i = 0; i < LABELS.size(); i++) {
 		if (count_collapse_label[i] > 0) count_diff_label++;
 	}
 
@@ -179,7 +179,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 		
 		unsigned char label1, label2;
 		bool first = true;
-		for (int i = 0; i < LABELS.size(); i++) {
+		for (std::size_t i = 0; i < LABELS.size(); i++) {
 			if (count_collapse_label[i] > 0) {
 				if (first) {
 					label1 = i;
@@ -233,10 +233,10 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 		Exact_predicates_kernel::FT c = 1;
 
 		Program qp (CGAL::EQUAL, true, 0, true, c);
-		for (int i = 0; i < points_for_svm.size(); i++) {
+		for (std::size_t i = 0; i < points_for_svm.size(); i++) {
 			auto vr = Exact_predicates_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) * y[i];
 			qp.set_d(i, i, CGAL::scalar_product(vr,vr));
-			for (int j = 0; j < i; j++) {
+			for (std::size_t j = 0; j < i; j++) {
 				qp.set_d(i, j, CGAL::scalar_product(vr, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[j])) * y[j]));
 			}
 			qp.set_c(i, -1);
@@ -249,7 +249,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 
 		Exact_predicates_kernel::Vector_3 w(CGAL::NULL_VECTOR);
 		auto value = s.variable_values_begin();
-		for (int i = 0; i < points_for_svm.size(); i++) {
+		for (std::size_t i = 0; i < points_for_svm.size(); i++) {
 			w += y[i] * CGAL::to_double(*(value++)) * Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]));
 		}
 
@@ -257,7 +257,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 		int count = 0;
 		Exact_predicates_kernel::FT min_positive = std::numeric_limits<Exact_predicates_kernel::FT>::max();
 		Exact_predicates_kernel::FT max_negative = std::numeric_limits<Exact_predicates_kernel::FT>::lowest();
-		for (int i = 0; i < points_for_svm.size(); i++) {
+		for (std::size_t i = 0; i < points_for_svm.size(); i++) {
 			Exact_predicates_kernel::FT v = CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
 			if (y[i] > 0 && v < min_positive) min_positive = v;
 			if (y[i] < 0 && v > max_negative) max_negative = v;
@@ -268,7 +268,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 		}
 		if (count == 0) {
 			value = s.variable_values_begin();
-			for (int i = 0; i < points_for_svm.size(); i++) {
+			for (std::size_t i = 0; i < points_for_svm.size(); i++) {
 				double v = CGAL::to_double(*(value++));
 				if (v > 0 && v < c) {
 					b += y[i] - CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
@@ -278,7 +278,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 		}
 		if (count == 0) {
 			value = s.variable_values_begin();
-			for (int i = 0; i < points_for_svm.size(); i++) {
+			for (std::size_t i = 0; i < points_for_svm.size(); i++) {
 				if (CGAL::to_double(*(value++)) > 0) {
 					b += y[i] - CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
 					count++;
@@ -286,7 +286,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 			}
 		}
 		if (count == 0) {
-			for (int i = 0; i < points_for_svm.size(); i++) {
+			for (std::size_t i = 0; i < points_for_svm.size(); i++) {
 				b += y[i] - CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
 				count++;
 			}
@@ -299,7 +299,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 
 	} else {
 
-		for (int i_label = 0; i_label < LABELS.size(); i_label++) {
+		for (std::size_t i_label = 0; i_label < LABELS.size(); i_label++) {
 			if (count_collapse_label[i_label] > 0) {
 				
 				std::vector<int> y;
@@ -324,10 +324,10 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 					Exact_predicates_kernel::FT c = 1;
 
 					Program qp (CGAL::EQUAL, true, 0, true, c);
-					for (int i = 0; i < points_for_svm.size(); i++) {
+					for (std::size_t i = 0; i < points_for_svm.size(); i++) {
 						auto vr = Exact_predicates_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) * y[i];
 						qp.set_d(i, i, CGAL::scalar_product(vr,vr));
-						for (int j = 0; j < i; j++) {
+						for (std::size_t j = 0; j < i; j++) {
 							qp.set_d(i, j, CGAL::scalar_product(vr, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[j])) * y[j]));
 						}
 						qp.set_c(i, -1);
@@ -340,7 +340,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 
 					Exact_predicates_kernel::Vector_3 w(CGAL::NULL_VECTOR);
 					auto value = s.variable_values_begin();
-					for (int i = 0; i < points_for_svm.size(); i++) {
+					for (std::size_t i = 0; i < points_for_svm.size(); i++) {
 						w += y[i] * CGAL::to_double(*(value++)) * Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]));
 					}
 
@@ -348,7 +348,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 					int count = 0;
 					Exact_predicates_kernel::FT min_positive = std::numeric_limits<Exact_predicates_kernel::FT>::max();
 					Exact_predicates_kernel::FT max_negative = std::numeric_limits<Exact_predicates_kernel::FT>::lowest();
-					for (int i = 0; i < points_for_svm.size(); i++) {
+					for (std::size_t i = 0; i < points_for_svm.size(); i++) {
 						Exact_predicates_kernel::FT v = CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
 						if (y[i] > 0 && v < min_positive) min_positive = v;
 						if (y[i] < 0 && v > max_negative) max_negative = v;
@@ -359,7 +359,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 					}
 					if (count == 0) {
 						value = s.variable_values_begin();
-						for (int i = 0; i < points_for_svm.size(); i++) {
+						for (std::size_t i = 0; i < points_for_svm.size(); i++) {
 							double v = CGAL::to_double(*(value++));
 							if (v > 0 && v < c) {
 								b += y[i] - CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
@@ -369,7 +369,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 					}
 					if (count == 0) {
 						value = s.variable_values_begin();
-						for (int i = 0; i < points_for_svm.size(); i++) {
+						for (std::size_t i = 0; i < points_for_svm.size(); i++) {
 							if (CGAL::to_double(*(value++)) > 0) {
 								b += y[i] - CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
 								count++;
@@ -377,7 +377,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 						}
 					}
 					if (count == 0) {
-						for (int i = 0; i < points_for_svm.size(); i++) {
+						for (std::size_t i = 0; i < points_for_svm.size(); i++) {
 							b += y[i] - CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
 							count++;
 						}
@@ -591,11 +591,11 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 	public:
 		My_visitor(Surface_mesh &mesh, const Surface_mesh_info &mesh_info, const Point_set &point_cloud, std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face) : mesh(mesh), mesh_info(mesh_info), point_cloud(point_cloud), point_in_face(point_in_face) {}
 
-		void OnStarted (Surface_mesh &mesh) {
+		void OnStarted (Surface_mesh&) {
 			start_collecte = std::chrono::system_clock::now();
 		}
 
-		void OnCollected(const SMS::Edge_profile<Surface_mesh>& profile, const boost::optional< SMS::Edge_profile<Surface_mesh>::FT >& cost) {
+		void OnCollected(const SMS::Edge_profile<Surface_mesh>&, const boost::optional< SMS::Edge_profile<Surface_mesh>::FT >&) {
 			start_collapse = std::chrono::system_clock::now();
 			i_collecte++;
 			if (i_collecte%1000 == 0) {
@@ -604,7 +604,7 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 			}
 		}
 
-		void OnSelected (const SMS::Edge_profile<Surface_mesh> &profile, boost::optional< SMS::Edge_profile<Surface_mesh>::FT > cost, const SMS::Edge_profile<Surface_mesh>::edges_size_type initial_edge_count, const SMS::Edge_profile<Surface_mesh>::edges_size_type current_edge_count) {
+		void OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::optional< SMS::Edge_profile<Surface_mesh>::FT > cost, const SMS::Edge_profile<Surface_mesh>::edges_size_type initial_edge_count, const SMS::Edge_profile<Surface_mesh>::edges_size_type current_edge_count) {
 			if (current_edge_count%100 == 0) {
 				auto end = std::chrono::system_clock::now();
 				std::chrono::duration<double> diff = end - start_collapse;
@@ -703,7 +703,7 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 
 		};
 
-		void OnCollapsing (const SMS::Edge_profile<Surface_mesh> &profile, const boost::optional<SMS::Edge_profile<Surface_mesh>::Point>& placement) {
+		void OnCollapsing (const SMS::Edge_profile<Surface_mesh> &profile, const boost::optional<SMS::Edge_profile<Surface_mesh>::Point>&) {
 			// Called when an edge is about to be collapsed and replaced by a vertex whose position is *placement
 			for(auto face: profile.triangles()) {
 				auto fh = mesh.face(mesh.halfedge(face.v0, face.v1));
@@ -712,7 +712,7 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 			}
 		};
 
-		void OnCollapsed (const SMS::Edge_profile<Surface_mesh> &profile, const Surface_mesh::Vertex_index vd) {
+		void OnCollapsed (const SMS::Edge_profile<Surface_mesh>&, const Surface_mesh::Vertex_index vd) {
 			// Called when an edge has been collapsed and replaced by the vertex vd
 			CGAL::Cartesian_converter<Exact_predicates_kernel,K> type_converter;
 
@@ -876,7 +876,7 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, cons
 	Custom_placement pf(params, costs, point_cloud, point_in_face);
 	Custom_cost cf(costs);
 	SMS::Bounded_normal_change_filter<> filter;
-	int r = SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).filter(filter).get_placement(pf).visitor(My_visitor(mesh, mesh_info, point_cloud, point_in_face)));
+	SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).filter(filter).get_placement(pf).visitor(My_visitor(mesh, mesh_info, point_cloud, point_in_face)));
 	std::cout << "\rMesh simplified                                               " << std::endl;
 
 	add_label(mesh, point_cloud, point_in_face);

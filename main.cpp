@@ -18,8 +18,8 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_ax
 
 #include "bridge.hpp"
 
-Surface_mesh_info::Surface_mesh_info() : x_0(0), y_0(0) {};
-Surface_mesh_info::Surface_mesh_info(OGRSpatialReference crs, double x_0, double y_0) : crs(crs), x_0(x_0), y_0(y_0) {};
+Surface_mesh_info::Surface_mesh_info() : x_0(0), y_0(0) {}
+Surface_mesh_info::Surface_mesh_info(OGRSpatialReference crs, double x_0, double y_0) : crs(crs), x_0(x_0), y_0(y_0) {}
 
 void Surface_mesh_info::save_mesh(const Surface_mesh &mesh, const char *filename) const {
 	Surface_mesh output_mesh (mesh);

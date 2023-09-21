@@ -66,10 +66,8 @@ void add_label(const Raster &raster, Surface_mesh &mesh) {
 		CGAL::Vertex_around_face_iterator<Surface_mesh> vbegin, vend;
 		boost::tie(vbegin, vend) = vertices_around_face(mesh.halfedge(face), mesh);
 		for (auto pixel : raster.triangle_to_pixel(mesh.point(*(vbegin++)), mesh.point(*(vbegin++)), mesh.point(*(vbegin++)))) {
-			if (raster.land_cover[pixel.second][pixel.first] > -1) {
-				sum_face_label++;
-				face_label[raster.land_cover[pixel.second][pixel.first]]++;
-			}
+			sum_face_label++;
+			face_label[raster.land_cover[pixel.second][pixel.first]]++;
 		}
 
 		auto argmax = std::max_element(face_label, face_label+LABELS.size());
@@ -83,7 +81,7 @@ void change_vertical_faces(Surface_mesh &mesh, const Raster &raster) {
 	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
 	assert(has_label);
 
-	std::unordered_map<Surface_mesh::Face_index, char> new_label;
+	std::unordered_map<Surface_mesh::Face_index, unsigned char> new_label;
 	std::list<Surface_mesh::Face_index> remove_face;
 
 	for (auto face : mesh.faces()) {
@@ -128,10 +126,8 @@ void change_vertical_faces(Surface_mesh &mesh, const Raster &raster) {
 			CGAL::Vertex_around_face_iterator<Surface_mesh> vbegin, vend;
 			boost::tie(vbegin, vend) = vertices_around_face(mesh.halfedge(face), mesh);
 			for (auto pixel : raster.triangle_to_pixel(mesh.point(*(vbegin++)), mesh.point(*(vbegin++)), mesh.point(*(vbegin++)))) {
-				if (raster.land_cover[pixel.second][pixel.first] > -1) {
-					sum_face_label++;
-					face_label[raster.land_cover[pixel.second][pixel.first]]++;
-				}
+				sum_face_label++;
+				face_label[raster.land_cover[pixel.second][pixel.first]]++;
 			}
 
 			if (face_label[4] > 0) {
