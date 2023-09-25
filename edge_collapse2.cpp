@@ -20,6 +20,9 @@
 #include <CGAL/Orthogonal_k_neighbor_search.h>
 #include <CGAL/Search_traits_3.h>
 #include <CGAL/Search_traits_adapter.h>
+#include <CGAL/AABB_tree.h>
+#include <CGAL/AABB_traits.h>
+#include <CGAL/AABB_triangle_primitive.h>
 
 #ifdef CGAL_EIGEN3_ENABLED
 #include <CGAL/Eigen_matrix.h>
@@ -45,6 +48,8 @@ typedef CGAL::Search_traits_3<Exact_predicates_kernel>      Traits_base;
 typedef CGAL::Search_traits_adapter<Point_set::Index, Point_set::Point_map, Traits_base> TreeTraits;
 typedef CGAL::Orthogonal_k_neighbor_search<TreeTraits>      Neighbor_search;
 typedef Neighbor_search::Tree                               Point_tree;
+typedef CGAL::AABB_tree<CGAL::AABB_traits<K, CGAL::AABB_triangle_primitive<K, std::vector<K::Triangle_3>::iterator>>> Triangle_tree;
+
 namespace SMS = CGAL::Surface_mesh_simplification;
 
 void add_label(Surface_mesh &mesh, const Point_set &point_cloud, std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face) {
@@ -158,7 +163,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 				if (isborder[ph]) {
 					points_in_faces.insert(ph);
 				}
-				count_face_label[int(label[ph])]++;
+				count_face_label[label[ph]]++;
 			}
 			auto argmax = std::max_element(count_face_label, count_face_label+LABELS.size()); // face label
 			count_collapse_label[argmax - count_face_label]++;
@@ -546,16 +551,74 @@ class Custom_placement {
 };
 
 class Custom_cost {
+	const K::FT alpha, beta, gamma;
+	const Point_set &point_cloud;
 	std::map<Surface_mesh::Halfedge_index, K::FT> &costs;
+	std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face;
 
 	public:
-		Custom_cost (std::map<Surface_mesh::Halfedge_index, K::FT> &costs) : costs(costs) {}
+		Custom_cost (const K::FT alpha, const K::FT beta, const K::FT gamma, std::map<Surface_mesh::Halfedge_index, K::FT> &costs, const Point_set &point_cloud, std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face) : alpha(alpha), beta(beta), gamma(gamma), point_cloud(point_cloud), costs(costs), point_in_face(point_in_face) {}
 
 		boost::optional<SMS::Edge_profile<Surface_mesh>::FT> operator()(const SMS::Edge_profile<Surface_mesh>& profile, const boost::optional<SMS::Edge_profile<Surface_mesh>::Point>& placement) const {
 			typedef boost::optional<SMS::Edge_profile<Surface_mesh>::FT> result_type;
+			CGAL::Cartesian_converter<Exact_predicates_kernel,K> type_converter;
+
+			Point_set::Property_map<unsigned char> label;
+			bool has_label;
+			boost::tie(label, has_label) = point_cloud.property_map<unsigned char>("p:label");
+			assert(has_label);
 
 			if (placement) {
-				return result_type(costs[profile.v0_v1()]);
+				
+				std::set<Point_set::Index> points_to_be_change;
+				for(auto face: profile.triangles()) {
+					auto fh = profile.surface_mesh().face(profile.surface_mesh().halfedge(face.v0, face.v1));
+					points_to_be_change.insert(point_in_face[fh].begin(), point_in_face[fh].end());
+				}
+
+				std::vector<K::Triangle_3> new_faces;
+				Point_3 C = *placement;
+				for (auto he : CGAL::halfedges_around_source(profile.v0(), profile.surface_mesh())) {
+					if (he != profile.v0_v1() && he != profile.v0_vR()) {
+						Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
+						Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
+						new_faces.push_back(K::Triangle_3(A, B, C));
+					}
+				}
+				for (auto he : CGAL::halfedges_around_source(profile.v1(), profile.surface_mesh())) {
+					if (he != profile.v1_v0() && he != profile.v1_vL()) {
+						Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
+						Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
+						new_faces.push_back(K::Triangle_3(A, B, C));
+					}
+				}
+
+				// geometric error
+				K::FT squared_distance = 0;
+				std::vector<std::list<Point_set::Index>> points_in_new_face (new_faces.size());
+				Triangle_tree tree(new_faces.begin(), new_faces.end());
+				for(auto ph: points_to_be_change) {
+					auto point = type_converter(point_cloud.point(ph));
+					auto point_and_id = tree.closest_point_and_primitive(point);
+
+					points_in_new_face[point_and_id.second - new_faces.begin()].push_back(ph);
+					squared_distance += CGAL::squared_distance(point, point_and_id.first);
+				}
+
+				// semantic error
+				int count_semantic_error = 0;
+				for(std::size_t i = 0; i < new_faces.size(); i++) {
+					int face_label[LABELS.size()] = {0};
+					int sum_face_label = 0;
+					for (auto ph: points_in_new_face.at(i)) {
+						sum_face_label++;
+						face_label[label[ph]]++;
+					}
+					auto argmax = std::max_element(face_label, face_label+LABELS.size());
+					count_semantic_error += sum_face_label - *argmax;
+				}
+
+				return result_type(alpha * squared_distance + beta * count_semantic_error + gamma * costs[profile.v0_v1()]);
 			}
 
 			return result_type();
@@ -863,18 +926,18 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, cons
 		CGAL::Polygon_mesh_processing::reverse_face_orientations(mesh); 	
 	}
 
-	auto created = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("label",0);
-	assert(created.second);
+	auto created_label = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("label",0);
+	assert(created_label.second);
 
 	add_label(mesh, point_cloud, point_in_face);
 	mesh_info.save_mesh(mesh, "initial-mesh.ply");
 
-	//Cost_stop_predicate stop(10);
-	SMS::Count_stop_predicate<Surface_mesh> stop(50);
-	const LindstromTurk_param params (1,1,1,1,0,5);
+	Cost_stop_predicate stop(5);
+	//SMS::Count_stop_predicate<Surface_mesh> stop(50);
+	const LindstromTurk_param params (1,1,1,1,0.1,1);
 	std::map<Surface_mesh::Halfedge_index, K::FT> costs;
 	Custom_placement pf(params, costs, point_cloud, point_in_face);
-	Custom_cost cf(costs);
+	Custom_cost cf(1, 1, 0.01, costs, point_cloud, point_in_face);
 	SMS::Bounded_normal_change_filter<> filter;
 	SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).filter(filter).get_placement(pf).visitor(My_visitor(mesh, mesh_info, point_cloud, point_in_face)));
 	std::cout << "\rMesh simplified                                               " << std::endl;
