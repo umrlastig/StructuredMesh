@@ -62,7 +62,7 @@ endif()
 # Creating entries for target: compute-LOD2
 # ############################
 
-add_executable( compute-LOD2  main.cpp raster.cpp code.cpp edge_collapse2.cpp path.cpp bridge.cpp)
+add_executable( compute-LOD2  main.cpp raster.cpp code.cpp edge_collapse.cpp path.cpp bridge.cpp)
 
 add_to_cached_list( CGAL_EXECUTABLE_TARGETS compute-LOD2 )
 
