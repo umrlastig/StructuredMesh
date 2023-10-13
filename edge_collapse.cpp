@@ -787,7 +787,7 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, cons
 	Point_set point_cloud;
 	bool created_point_label;
 	Point_set::Property_map<unsigned char> label;
-	boost::tie (label, created_point_label) = point_cloud.add_property_map<unsigned char>("p:label", 0);
+	boost::tie (label, created_point_label) = point_cloud.add_property_map<unsigned char>("p:label", LABEL_OTHER);
 	assert(created_point_label);
 	bool created_point_isborder;
 	Point_set::Property_map<bool> isborder;
@@ -851,7 +851,7 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, cons
 		CGAL::Polygon_mesh_processing::reverse_face_orientations(mesh); 	
 	}
 
-	auto created_label = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("label",0);
+	auto created_label = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("label", LABEL_OTHER);
 	assert(created_label.second);
 
 	add_label(mesh, point_cloud, point_in_face);
