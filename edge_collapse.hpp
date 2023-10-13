@@ -57,7 +57,7 @@ namespace SMS = CGAL::Surface_mesh_simplification;
 
 #include "edge_collapse.hpp"
 
-void add_label(Surface_mesh &mesh, const Point_set &point_cloud, std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face);
+void add_label(Surface_mesh &mesh, const Point_set &point_cloud, std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face, int min_surface = 0);
 
 struct LindstromTurk_param {
 	float volume_preservation;

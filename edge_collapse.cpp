@@ -1,6 +1,6 @@
 #include "edge_collapse.hpp"
 
-void add_label(Surface_mesh &mesh, const Point_set &point_cloud, std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face) {
+void add_label(Surface_mesh &mesh, const Point_set &point_cloud, std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face, int min_surface) {
 	//Update mesh label
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_label;
 	bool has_mesh_label;
@@ -12,6 +12,24 @@ void add_label(Surface_mesh &mesh, const Point_set &point_cloud, std::map<Surfac
 	boost::tie(point_cloud_label, has_point_cloud_label) = point_cloud.property_map<unsigned char>("p:label");
 	assert(has_point_cloud_label);
 
+	// Compute face_area and mean_point_per_area to filter face with less point than 1 / min_surface of mean point
+	std::map<Surface_mesh::Face_index, K::FT> face_area;
+	K::FT mean_point_per_area = 0;
+	if (min_surface > 0) {
+		K::FT point_per_area = 0;
+		for(auto face: mesh.faces()) {
+			CGAL::Vertex_around_face_iterator<Surface_mesh> vbegin, vend;
+			boost::tie(vbegin, vend) = vertices_around_face(mesh.halfedge(face), mesh);
+			auto p0 = mesh.point(*(vbegin++));
+			auto p1 = mesh.point(*(vbegin++));
+			auto p2 = mesh.point(*(vbegin++));
+			K::FT area = CGAL::sqrt(K::Triangle_3(p0, p1, p2).squared_area());
+			point_per_area += point_in_face[face].size() / area;
+			face_area[face] = area;
+		}
+		mean_point_per_area = point_per_area / mesh.number_of_faces();
+	}
+
 	for(auto face: mesh.faces()) {
 		int face_label[LABELS.size()] = {0};
 
@@ -19,8 +37,13 @@ void add_label(Surface_mesh &mesh, const Point_set &point_cloud, std::map<Surfac
 			face_label[point_cloud_label[point]]++;
 		}
 
+		int min_point = 0;
+		if (min_surface > 0) {
+			min_point = int(mean_point_per_area * face_area[face] / min_surface);
+		}
+
 		auto argmax = std::max_element(face_label, face_label+LABELS.size());
-		if (*argmax > 0) {
+		if (*argmax > min_point) {
 			mesh_label[face] = argmax - face_label;
 		} else {
 			mesh_label[face] = LABEL_OTHER;
@@ -844,7 +867,7 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, cons
 	SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).filter(filter).get_placement(pf).visitor(My_visitor(mesh, mesh_info, point_cloud, point_in_face)));
 	std::cout << "\rMesh simplified                                               " << std::endl;
 
-	add_label(mesh, point_cloud, point_in_face);
+	add_label(mesh, point_cloud, point_in_face, 2);
 	mesh_info.save_mesh(mesh, "final-mesh.ply");
 
 	return std::make_tuple(terrain_mesh, mesh);
