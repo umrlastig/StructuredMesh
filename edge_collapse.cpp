@@ -390,10 +390,14 @@ Custom_placement::Custom_placement (const LindstromTurk_param &params, std::map<
 boost::optional<SMS::Edge_profile<Surface_mesh>::Point> Custom_placement::operator()(const SMS::Edge_profile<Surface_mesh>& profile) const {
 	typedef boost::optional<SMS::Edge_profile<Surface_mesh>::Point> result_type;
 
-	auto r1 = volume_preservation_and_optimisation(profile);
-	auto r2 = boundary_preservation_and_optimisation(profile);
-	auto r3 = triangle_shape_optimization(profile);
-	auto r4 = label_preservation(profile, point_cloud, point_in_face);
+	std::list<std::pair <K::Vector_3, K::FT>> r1;
+	if (params.volume_preservation > 0 || params.volume_optimisation > 0) r1 = volume_preservation_and_optimisation(profile);
+	std::list<std::pair <K::Vector_3, K::Vector_3>> r2;
+	if (params.boundary_preservation > 0 || params.boundary_optimization > 0) r2 = boundary_preservation_and_optimisation(profile);
+	std::list<K::Vector_3> r3;
+	if (params.triangle_shape_optimization > 0) r3 = triangle_shape_optimization(profile);
+	std::list<std::pair <K::Vector_3, K::FT>> r4;
+	if (params.label_preservation > 0) r4 = label_preservation(profile, point_cloud, point_in_face);
 
 	Eigen_vector B(((params.volume_preservation > 0) ? 1 : 0) + ((params.volume_optimisation > 0) ? r1.size() : 0) + ((params.boundary_preservation > 0 && r2.size() > 0) ? 3 : 0) + ((params.boundary_optimization > 0) ? 3*r2.size() : 0) + ((params.triangle_shape_optimization > 0) ? 3*r3.size() : 0) + ((params.label_preservation > 0) ? r4.size() : 0));
 	Eigen_matrix A(((params.volume_preservation > 0) ? 1 : 0) + ((params.volume_optimisation > 0) ? r1.size() : 0) + ((params.boundary_preservation > 0 && r2.size() > 0) ? 3 : 0) + ((params.boundary_optimization > 0) ? 3*r2.size() : 0) + ((params.triangle_shape_optimization > 0) ? 3*r3.size() : 0) + ((params.label_preservation > 0) ? r4.size() : 0), 3);
@@ -511,59 +515,64 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 	typedef boost::optional<SMS::Edge_profile<Surface_mesh>::FT> result_type;
 	CGAL::Cartesian_converter<Exact_predicates_kernel,K> type_converter;
 
-	Point_set::Property_map<unsigned char> label;
-	bool has_label;
-	boost::tie(label, has_label) = point_cloud.property_map<unsigned char>("p:label");
-	assert(has_label);
-
 	if (placement) {
-		
-		std::set<Point_set::Index> points_to_be_change;
-		for(auto face: profile.triangles()) {
-			auto fh = profile.surface_mesh().face(profile.surface_mesh().halfedge(face.v0, face.v1));
-			points_to_be_change.insert(point_in_face[fh].begin(), point_in_face[fh].end());
-		}
 
-		std::vector<K::Triangle_3> new_faces;
-		Point_3 C = *placement;
-		for (auto he : CGAL::halfedges_around_source(profile.v0(), profile.surface_mesh())) {
-			if (he != profile.v0_v1() && he != profile.v0_vR()) {
-				Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
-				Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
-				new_faces.push_back(K::Triangle_3(A, B, C));
-			}
-		}
-		for (auto he : CGAL::halfedges_around_source(profile.v1(), profile.surface_mesh())) {
-			if (he != profile.v1_v0() && he != profile.v1_vL()) {
-				Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
-				Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
-				new_faces.push_back(K::Triangle_3(A, B, C));
-			}
-		}
-
-		// geometric error
 		K::FT squared_distance = 0;
-		std::vector<std::list<Point_set::Index>> points_in_new_face (new_faces.size());
-		Triangle_tree tree(new_faces.begin(), new_faces.end());
-		for(auto ph: points_to_be_change) {
-			auto point = type_converter(point_cloud.point(ph));
-			auto point_and_id = tree.closest_point_and_primitive(point);
-
-			points_in_new_face[point_and_id.second - new_faces.begin()].push_back(ph);
-			squared_distance += CGAL::squared_distance(point, point_and_id.first);
-		}
-
-		// semantic error
 		int count_semantic_error = 0;
-		for(std::size_t i = 0; i < new_faces.size(); i++) {
-			int face_label[LABELS.size()] = {0};
-			int sum_face_label = 0;
-			for (auto ph: points_in_new_face.at(i)) {
-				sum_face_label++;
-				face_label[label[ph]]++;
+		if (alpha > 0 || beta > 0) {
+
+			Point_set::Property_map<unsigned char> label;
+			bool has_label;
+			boost::tie(label, has_label) = point_cloud.property_map<unsigned char>("p:label");
+			assert(has_label);
+
+			std::set<Point_set::Index> points_to_be_change;
+			for(auto face: profile.triangles()) {
+				auto fh = profile.surface_mesh().face(profile.surface_mesh().halfedge(face.v0, face.v1));
+				points_to_be_change.insert(point_in_face[fh].begin(), point_in_face[fh].end());
 			}
-			auto argmax = std::max_element(face_label, face_label+LABELS.size());
-			count_semantic_error += sum_face_label - *argmax;
+
+			std::vector<K::Triangle_3> new_faces;
+			Point_3 C = *placement;
+			for (auto he : CGAL::halfedges_around_source(profile.v0(), profile.surface_mesh())) {
+				if (he != profile.v0_v1() && he != profile.v0_vR()) {
+					Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
+					Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
+					new_faces.push_back(K::Triangle_3(A, B, C));
+				}
+			}
+			for (auto he : CGAL::halfedges_around_source(profile.v1(), profile.surface_mesh())) {
+				if (he != profile.v1_v0() && he != profile.v1_vL()) {
+					Point_3 A = get(profile.vertex_point_map(),CGAL::target(he, profile.surface_mesh()));
+					Point_3 B = get(profile.vertex_point_map(),CGAL::target(CGAL::next(he, profile.surface_mesh()), profile.surface_mesh()));
+					new_faces.push_back(K::Triangle_3(A, B, C));
+				}
+			}
+
+			// geometric error
+			std::vector<std::list<Point_set::Index>> points_in_new_face (new_faces.size());
+			Triangle_tree tree(new_faces.begin(), new_faces.end());
+			for(auto ph: points_to_be_change) {
+				auto point = type_converter(point_cloud.point(ph));
+				auto point_and_id = tree.closest_point_and_primitive(point);
+
+				points_in_new_face[point_and_id.second - new_faces.begin()].push_back(ph);
+				if (alpha > 0) squared_distance += CGAL::squared_distance(point, point_and_id.first);
+			}
+
+			// semantic error
+			if (beta > 0) {
+				for(std::size_t i = 0; i < new_faces.size(); i++) {
+					int face_label[LABELS.size()] = {0};
+					int sum_face_label = 0;
+					for (auto ph: points_in_new_face.at(i)) {
+						sum_face_label++;
+						face_label[label[ph]]++;
+					}
+					auto argmax = std::max_element(face_label, face_label+LABELS.size());
+					count_semantic_error += sum_face_label - *argmax;
+				}
+			}
 		}
 
 		return result_type(alpha * squared_distance + beta * count_semantic_error + gamma * costs[profile.v0_v1()]);
