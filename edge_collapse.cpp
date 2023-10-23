@@ -717,24 +717,24 @@ void My_visitor::OnCollapsed (const SMS::Edge_profile<Surface_mesh>&, const Surf
 	for(auto ph: points_to_be_change) {
 		K::FT min_d = std::numeric_limits<K::FT>::max();
 		std::map<Surface_mesh::Face_index, K::FT> nearest_face;
-		K::FT threshold = 0.001;
+		K::FT threshold = 1.01;
 		for(auto face: mesh.faces_around_target(mesh.halfedge(vd))) {
 			if (face != mesh.null_face()) {
 				auto r = mesh.vertices_around_face(mesh.halfedge(face)).begin();
 				auto d = CGAL::squared_distance(K::Triangle_3(mesh.point(*r++), mesh.point(*r++), mesh.point(*r++)), type_converter(point_cloud.point(ph)));
 				if (d < min_d) {
-					if (d < min_d - threshold) {
+					if (d*threshold < min_d) {
 						nearest_face.clear();
 					}
 					nearest_face[face] = d;
 					min_d = d;
-				} else if (d < min_d + threshold) {
+				} else if (d < min_d*threshold) {
 					nearest_face[face] = d;
 				}
 			}
 		}
 		for (auto face_d: nearest_face) {
-			if (face_d.second < min_d + threshold) {
+			if (face_d.second < min_d*threshold) {
 				assert(face_d.first.is_valid());
 				point_in_face[face_d.first].push_back(ph);
 			}
