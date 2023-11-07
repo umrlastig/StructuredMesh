@@ -6,7 +6,6 @@
 
 #include <chrono>
 #include <list>
-#include <map>
 #include <vector>
 #include <set>
 #include <limits>
@@ -57,7 +56,7 @@ namespace SMS = CGAL::Surface_mesh_simplification;
 
 #include "edge_collapse.hpp"
 
-K::FT add_label(Surface_mesh &mesh, const Point_set &point_cloud, std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face, int min_surface = 0, K::FT mean_point_per_area = 0);
+K::FT add_label(Surface_mesh &mesh, const Point_set &point_cloud, int min_surface = 0, K::FT mean_point_per_area = 0);
 
 struct LindstromTurk_param {
 	float volume_preservation;
@@ -79,12 +78,11 @@ struct LindstromTurk_param {
 
 class Custom_placement {
 	const LindstromTurk_param &params;
-	std::map<Surface_mesh::Halfedge_index, K::FT> &costs;
+	Surface_mesh::Property_map<Surface_mesh::Halfedge_index, K::FT> placement_costs;
 	const Point_set &point_cloud;
-	std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face;
 
 	public:
-		Custom_placement (const LindstromTurk_param &params, std::map<Surface_mesh::Halfedge_index, K::FT> &costs, const Point_set &point_cloud, std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face);
+		Custom_placement (const LindstromTurk_param &params, Surface_mesh &mesh, const Point_set &point_cloud);
 
 		boost::optional<SMS::Edge_profile<Surface_mesh>::Point> operator()(const SMS::Edge_profile<Surface_mesh>& profile) const;
 };
@@ -94,12 +92,11 @@ class Custom_cost {
 	int min_surface;
 	K::FT mean_point_per_area;
 	const Point_set &point_cloud;
-	std::map<Surface_mesh::Halfedge_index, K::FT> &costs;
-	std::map<Surface_mesh::Face_index, K::FT> &face_costs;
-	std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face;
+	Surface_mesh::Property_map<Surface_mesh::Halfedge_index, K::FT> placement_costs;
+	Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> face_costs;
 
 	public:
-		Custom_cost (const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT delta, int min_surface, K::FT mean_point_per_area, std::map<Surface_mesh::Halfedge_index, K::FT> &costs, std::map<Surface_mesh::Face_index, K::FT> &face_costs, const Point_set &point_cloud, std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face);
+		Custom_cost (const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT delta, int min_surface, K::FT mean_point_per_area, Surface_mesh &mesh, const Point_set &point_cloud);
 
 		boost::optional<SMS::Edge_profile<Surface_mesh>::FT> operator()(const SMS::Edge_profile<Surface_mesh>& profile, const boost::optional<SMS::Edge_profile<Surface_mesh>::Point>& placement) const;
 };
@@ -127,13 +124,13 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 		const K::FT alpha, beta;
 		int min_surface;
 		K::FT mean_point_per_area;
-		std::map<Surface_mesh::Face_index, K::FT> &face_costs;
+		Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> face_costs;
+		Surface_mesh::Property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>> point_in_face;
 		const Point_set &point_cloud;
-		std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face;
 		std::set<Point_set::Index> points_to_be_change;
 
 	public:
-		My_visitor(const K::FT alpha, const K::FT beta, int min_surface, K::FT mean_point_per_area, Surface_mesh &mesh, const Surface_mesh_info &mesh_info, std::map<Surface_mesh::Face_index, K::FT> &face_costs, const Point_set &point_cloud, std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face);
+		My_visitor(const K::FT alpha, const K::FT beta, int min_surface, K::FT mean_point_per_area, Surface_mesh &mesh, const Surface_mesh_info &mesh_info, const Point_set &point_cloud);
 
 		void OnStarted (Surface_mesh&);
 

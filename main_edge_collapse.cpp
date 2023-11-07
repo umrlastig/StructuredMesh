@@ -204,11 +204,16 @@ int main(int argc, char **argv) {
 	assert(created_point_label);
 
 	// Create point_in_face
-	std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> point_in_face;
-	std::map<Surface_mesh::Face_index, K::FT> face_costs;
-	for (auto face: mesh.faces()) {
-		face_costs[face] = 0;
-	}
+	Surface_mesh::Property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>> point_in_face;
+	bool created_point_in_face;
+	boost::tie(point_in_face, created_point_in_face) = mesh.add_property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>("f:points", std::vector<Point_set::Index>());
+	assert(created_point_in_face);
+
+	Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> face_costs;
+	bool created_face_costs;
+	boost::tie(face_costs, created_face_costs) = mesh.add_property_map<Surface_mesh::Face_index, K::FT>("f:points", 0);
+	assert(created_face_costs);
+
 	AABB_tree mesh_tree;
 	PMP::build_AABB_tree(mesh, mesh_tree);
 	CGAL::Cartesian_converter<Exact_predicates_kernel,K> type_converter;
@@ -283,7 +288,7 @@ int main(int argc, char **argv) {
 	assert(created_label.second);
 
 	int min_surface = 10;
-	K::FT mean_point_per_area = add_label(mesh, point_cloud, point_in_face, min_surface);
+	K::FT mean_point_per_area = add_label(mesh, point_cloud, min_surface);
 	mesh_info.save_mesh(mesh, "initial-mesh.ply");
 	
 	if(baseline >= 0) {
@@ -318,12 +323,16 @@ int main(int argc, char **argv) {
 		mesh_info.save_mesh(mesh, "final-mesh.ply");
 		return EXIT_SUCCESS;
 	}
+
+	Surface_mesh::Property_map<Surface_mesh::Halfedge_index, K::FT> placement_costs;
+	bool created_placement_costs;
+	boost::tie(placement_costs, created_placement_costs) = mesh.add_property_map<Surface_mesh::Halfedge_index, K::FT>("h:p_cost", 0);
+	assert(created_placement_costs);
 	
 	const LindstromTurk_param params (l1,l2,l3,l4,l5,l6,l7);
-	std::map<Surface_mesh::Halfedge_index, K::FT> placement_costs;
-	Custom_placement pf(params, placement_costs, point_cloud, point_in_face);
-	Custom_cost cf(c1, c2, c3, c4, min_surface, mean_point_per_area, placement_costs, face_costs, point_cloud, point_in_face);
-	My_visitor mv(c1, c2, min_surface, mean_point_per_area, mesh, mesh_info, face_costs, point_cloud, point_in_face);
+	Custom_placement pf(params, mesh, point_cloud);
+	Custom_cost cf(c1, c2, c3, c4, min_surface, mean_point_per_area, mesh, point_cloud);
+	My_visitor mv(c1, c2, min_surface, mean_point_per_area, mesh, mesh_info, point_cloud);
 	SMS::Bounded_normal_change_filter<> filter;
 	if (ns > 0) {
 		SMS::Count_stop_predicate<Surface_mesh> stop(ns);
@@ -334,7 +343,7 @@ int main(int argc, char **argv) {
 	}
 	std::cout << "\rMesh simplified                                               " << std::endl;
 
-	// add_label(mesh, point_cloud, point_in_face, min_surface, mean_point_per_area);
+	// add_label(mesh, point_cloud, min_surface, mean_point_per_area);
 	mesh_info.save_mesh(mesh, "final-mesh.ply");
 
 	return EXIT_SUCCESS;

@@ -1,6 +1,6 @@
 #include "edge_collapse.hpp"
 
-K::FT add_label(Surface_mesh &mesh, const Point_set &point_cloud, std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face, int min_surface, K::FT mean_point_per_area) {
+K::FT add_label(Surface_mesh &mesh, const Point_set &point_cloud, int min_surface, K::FT mean_point_per_area) {
 	//Update mesh label
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_label;
 	bool has_mesh_label;
@@ -12,21 +12,35 @@ K::FT add_label(Surface_mesh &mesh, const Point_set &point_cloud, std::map<Surfa
 	boost::tie(point_cloud_label, has_point_cloud_label) = point_cloud.property_map<unsigned char>("p:label");
 	assert(has_point_cloud_label);
 
+	Surface_mesh::Property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>> point_in_face;
+	bool has_point_in_face;
+	boost::tie(point_in_face, has_point_in_face) = mesh.property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>("f:points");
+	assert(has_point_in_face);
+
 	// Compute face_area and mean_point_per_area to filter face with less point than 1 / min_surface of mean point
-	std::map<Surface_mesh::Face_index, K::FT> face_area;
-	if (min_surface > 0 && mean_point_per_area == 0) {
-		K::FT point_per_area = 0;
-		for(auto face: mesh.faces()) {
-			CGAL::Vertex_around_face_iterator<Surface_mesh> vbegin, vend;
-			boost::tie(vbegin, vend) = vertices_around_face(mesh.halfedge(face), mesh);
-			auto p0 = mesh.point(*(vbegin++));
-			auto p1 = mesh.point(*(vbegin++));
-			auto p2 = mesh.point(*(vbegin++));
-			K::FT area = CGAL::sqrt(K::Triangle_3(p0, p1, p2).squared_area());
-			if (area > 0) point_per_area += point_in_face[face].size() / area;
-			face_area[face] = area;
+	Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> face_area;
+
+	if (min_surface > 0) {
+		bool created_face_area;
+		boost::tie(face_area, created_face_area) = mesh.add_property_map<Surface_mesh::Face_index, K::FT>("f:area", 0);
+		if (created_face_area) {
+			for(auto face: mesh.faces()) {
+				CGAL::Vertex_around_face_iterator<Surface_mesh> vbegin, vend;
+				boost::tie(vbegin, vend) = vertices_around_face(mesh.halfedge(face), mesh);
+				auto p0 = mesh.point(*(vbegin++));
+				auto p1 = mesh.point(*(vbegin++));
+				auto p2 = mesh.point(*(vbegin++));
+				face_area[face] = CGAL::sqrt(K::Triangle_3(p0, p1, p2).squared_area());
+			}
 		}
-		if (mesh.number_of_faces() > 0) mean_point_per_area = point_per_area / mesh.number_of_faces();
+
+		if (mean_point_per_area == 0) {
+			K::FT point_per_area = 0;
+			for(auto face: mesh.faces()) {
+				if (face_area[face] > 0) point_per_area += point_in_face[face].size() / face_area[face];
+			}
+			if (mesh.number_of_faces() > 0) mean_point_per_area = point_per_area / mesh.number_of_faces();
+		}
 	}
 
 	std::set<Surface_mesh::Face_index> faces_with_no_label;
@@ -138,7 +152,7 @@ std::list<K::Vector_3> triangle_shape_optimization (const SMS::Edge_profile<Surf
 
 }
 
-std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_profile<Surface_mesh>& profile, const Point_set &point_cloud, std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face) {
+std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_profile<Surface_mesh>& profile, const Point_set &point_cloud) {
 
 	std::list<std::pair <K::Vector_3, K::FT>> result;
 
@@ -151,6 +165,11 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 	bool has_isborder;
 	boost::tie(isborder, has_isborder) = point_cloud.property_map<bool>("p:isborder");
 	assert(has_isborder);
+
+	Surface_mesh::Property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>> point_in_face;
+	bool has_point_in_face;
+	boost::tie(point_in_face, has_point_in_face) = profile.surface_mesh().property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>("f:points");
+	assert(has_point_in_face);
 
 	std::set<Point_set::Index> points_in_faces;
 	int count_collapse_label[LABELS.size()] = {0};
@@ -398,7 +417,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 
 }
 
-std::list<K::Vector_3> semantic_border_optimization (const SMS::Edge_profile<Surface_mesh>& profile, const Point_set &point_cloud, std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face) {
+std::list<K::Vector_3> semantic_border_optimization (const SMS::Edge_profile<Surface_mesh>& profile, const Point_set &point_cloud) {
 
 	std::list<K::Vector_3> result;
 
@@ -411,6 +430,11 @@ std::list<K::Vector_3> semantic_border_optimization (const SMS::Edge_profile<Sur
 	bool has_mesh_label;
 	boost::tie(mesh_label, has_mesh_label) = profile.surface_mesh().property_map<Surface_mesh::Face_index, unsigned char>("label");
 	assert(has_mesh_label);
+
+	Surface_mesh::Property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>> point_in_face;
+	bool has_point_in_face;
+	boost::tie(point_in_face, has_point_in_face) = profile.surface_mesh().property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>("f:points");
+	assert(has_point_in_face);
 
 	for (auto h: profile.surface_mesh().halfedges_around_target(profile.v1_v0())) {
 		if (h != profile.v1_v0() && h != profile.vL_v0() && !profile.surface_mesh().is_border(Surface_mesh::Edge_index(h))) {
@@ -448,7 +472,11 @@ LindstromTurk_param::LindstromTurk_param(
 	label_preservation(label_preservation),
 	semantic_border_optimization(semantic_border_optimization) {}
 
-Custom_placement::Custom_placement (const LindstromTurk_param &params, std::map<Surface_mesh::Halfedge_index, K::FT> &costs, const Point_set &point_cloud, std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face) : params(params), costs(costs), point_cloud(point_cloud), point_in_face(point_in_face) {}
+Custom_placement::Custom_placement (const LindstromTurk_param &params, Surface_mesh &mesh, const Point_set &point_cloud) : params(params), point_cloud(point_cloud) {
+	bool has_placement_costs;
+	boost::tie(placement_costs, has_placement_costs) = mesh.property_map<Surface_mesh::Halfedge_index, K::FT>("h:p_cost");
+	assert(has_placement_costs);
+}
 
 
 boost::optional<SMS::Edge_profile<Surface_mesh>::Point> Custom_placement::operator()(const SMS::Edge_profile<Surface_mesh>& profile) const {
@@ -461,9 +489,9 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::Point> Custom_placement::operat
 	std::list<K::Vector_3> r3;
 	if (params.triangle_shape_optimization > 0) r3 = triangle_shape_optimization(profile);
 	std::list<std::pair <K::Vector_3, K::FT>> r4;
-	if (params.label_preservation > 0) r4 = label_preservation(profile, point_cloud, point_in_face);
+	if (params.label_preservation > 0) r4 = label_preservation(profile, point_cloud);
 	std::list<K::Vector_3> r5;
-	if (params.semantic_border_optimization > 0) r5 = semantic_border_optimization(profile, point_cloud, point_in_face);
+	if (params.semantic_border_optimization > 0) r5 = semantic_border_optimization(profile, point_cloud);
 
 	Eigen_vector B(((params.volume_preservation > 0) ? 1 : 0) + ((params.volume_optimisation > 0) ? r1.size() : 0) + ((params.boundary_preservation > 0 && r2.size() > 0) ? 3 : 0) + ((params.boundary_optimization > 0) ? 3*r2.size() : 0) + ((params.triangle_shape_optimization > 0) ? 3*r3.size() : 0) + ((params.label_preservation > 0) ? r4.size() : 0) + ((params.semantic_border_optimization > 0) ? 3*r5.size() : 0));
 	Eigen_matrix A(((params.volume_preservation > 0) ? 1 : 0) + ((params.volume_optimisation > 0) ? r1.size() : 0) + ((params.boundary_preservation > 0 && r2.size() > 0) ? 3 : 0) + ((params.boundary_optimization > 0) ? 3*r2.size() : 0) + ((params.triangle_shape_optimization > 0) ? 3*r3.size() : 0) + ((params.label_preservation > 0) ? r4.size() : 0) + ((params.semantic_border_optimization > 0) ? 3*r5.size() : 0), 3);
@@ -588,12 +616,20 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::Point> Custom_placement::operat
 	
 	// Save cost
 	Point_3 placement(B.vector()[0], B.vector()[1], B.vector()[2]);
-	costs[profile.v0_v1()] = (R.transpose()*R)(0,0);
+	placement_costs[profile.v0_v1()] = (R.transpose()*R)(0,0);
 
 	return result_type(placement);
 }
 
-Custom_cost::Custom_cost (const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT delta, int min_surface, K::FT mean_point_per_area, std::map<Surface_mesh::Halfedge_index, K::FT> &costs, std::map<Surface_mesh::Face_index, K::FT> &face_costs, const Point_set &point_cloud, std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face) : alpha(alpha), beta(beta), gamma(gamma), delta(delta), min_surface(min_surface), mean_point_per_area(mean_point_per_area), costs(costs), face_costs(face_costs), point_cloud(point_cloud), point_in_face(point_in_face) {}
+Custom_cost::Custom_cost (const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT delta, int min_surface, K::FT mean_point_per_area, Surface_mesh &mesh, const Point_set &point_cloud) : alpha(alpha), beta(beta), gamma(gamma), delta(delta), min_surface(min_surface), mean_point_per_area(mean_point_per_area), point_cloud(point_cloud) {
+	bool has_face_costs;
+	boost::tie(face_costs, has_face_costs) = mesh.property_map<Surface_mesh::Face_index, K::FT>("f:points");
+	assert(has_face_costs);
+	
+	bool has_placement_costs;
+	boost::tie(placement_costs, has_placement_costs) = mesh.property_map<Surface_mesh::Halfedge_index, K::FT>("h:p_cost");
+	assert(has_placement_costs);
+}
 
 boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(const SMS::Edge_profile<Surface_mesh>& profile, const boost::optional<SMS::Edge_profile<Surface_mesh>::Point>& placement) const {
 	typedef boost::optional<SMS::Edge_profile<Surface_mesh>::FT> result_type;
@@ -611,6 +647,11 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 			bool has_label;
 			boost::tie(point_cloud_label, has_label) = point_cloud.property_map<unsigned char>("p:label");
 			assert(has_label);
+
+			Surface_mesh::Property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>> point_in_face;
+			bool has_point_in_face;
+			boost::tie(point_in_face, has_point_in_face) = profile.surface_mesh().property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>("f:points");
+			assert(has_point_in_face);
 
 			std::set<Point_set::Index> points_to_be_change;
 			for(auto face: profile.triangles()) {
@@ -730,7 +771,7 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 			}
 		}
 
-		return result_type(- old_cost + alpha * squared_distance + beta * count_semantic_error + gamma * semantic_border_length + delta * costs[profile.v0_v1()]);
+		return result_type(- old_cost + alpha * squared_distance + beta * count_semantic_error + gamma * semantic_border_length + delta * placement_costs[profile.v0_v1()]);
 	}
 
 	return result_type();
@@ -742,7 +783,15 @@ bool Cost_stop_predicate::operator()(const SMS::Edge_profile<Surface_mesh>::FT &
 	return current_cost > cost;
 }
 
-My_visitor::My_visitor(const K::FT alpha, const K::FT beta, int min_surface, K::FT mean_point_per_area, Surface_mesh &mesh, const Surface_mesh_info &mesh_info, std::map<Surface_mesh::Face_index, K::FT> &face_costs, const Point_set &point_cloud, std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> &point_in_face) : alpha(alpha), beta(beta), min_surface(min_surface), mean_point_per_area(mean_point_per_area), mesh(mesh), mesh_info(mesh_info), face_costs(face_costs), point_cloud(point_cloud), point_in_face(point_in_face) {}
+My_visitor::My_visitor(const K::FT alpha, const K::FT beta, int min_surface, K::FT mean_point_per_area, Surface_mesh &mesh, const Surface_mesh_info &mesh_info, const Point_set &point_cloud) : alpha(alpha), beta(beta), min_surface(min_surface), mean_point_per_area(mean_point_per_area), mesh(mesh), mesh_info(mesh_info), point_cloud(point_cloud) {
+	bool has_point_in_face;
+	boost::tie(point_in_face, has_point_in_face) = mesh.property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>("f:points");
+	assert(has_point_in_face);
+
+	bool has_face_costs;
+	boost::tie(face_costs, has_face_costs) = mesh.property_map<Surface_mesh::Face_index, K::FT>("f:points");
+	assert(has_face_costs);
+}
 
 void My_visitor::OnStarted (Surface_mesh&) {
 	start_collecte = std::chrono::system_clock::now();
@@ -764,93 +813,6 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 		std::cout << "\rCollapse: " << (initial_edge_count-current_edge_count) << "/" << initial_edge_count << " (" << ((int) (((float) (initial_edge_count-current_edge_count))/initial_edge_count*100)) << "%)" << " still " << (((float) current_edge_count) * diff.count() / (initial_edge_count-current_edge_count)) << "s" << " (" << (((float) (initial_edge_count-current_edge_count)) / diff.count()) << " op/s)";
 		if (cost) {
 			std::cout << " - cost: " << *cost << "     " << std::flush;
-		}
-	}
-
-if (cost) {
-		int cost_id = -1;
-		if(*cost > 100 && !output[++cost_id]) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-c100.ply");
-		} else if(*cost > 10 && !output[++cost_id]) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-c10.ply");
-		} else if(*cost > 0.3 && !output[++cost_id]) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-c0.03.ply");
-		} else if(*cost > 0.2 && !output[++cost_id]) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-c0.02.ply");
-		} else if(*cost > 0.1 && !output[++cost_id]) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-c0.01.ply");
-		} else if(*cost > 0.001 && !output[++cost_id]) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-c0.001.ply");
-		} else if(*cost > 0 && !output[++cost_id]) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-c0.ply");
-		}
-		cost_id = 8;
-		if(!output[++cost_id] && current_edge_count <= 1000000) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-1000000.ply");
-		} else if(!output[++cost_id] && current_edge_count <= 250000) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-250000.ply");
-		} else if(!output[++cost_id] && current_edge_count <= 100000) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-100000.ply");
-		} else if(!output[++cost_id] && current_edge_count <= 50000) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-50000.ply");
-		} else if(!output[++cost_id] && current_edge_count <= 10000) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-10000.ply");
-		} else if(!output[++cost_id] && current_edge_count <= 5000) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-5000.ply");
-		} else if(!output[++cost_id] && current_edge_count <= 2500) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-2500.ply");
-		} else if(!output[++cost_id] && current_edge_count <= 2000) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-2000.ply");
-		} else if(!output[++cost_id] && current_edge_count <= 1000) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-1000.ply");
-		} else if(!output[++cost_id] && current_edge_count <= 500) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-500.ply");
-		} else if(!output[++cost_id] && current_edge_count <= 100) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-100.ply");
-		} else if(!output[++cost_id] && current_edge_count <= 50) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-50.ply");
-		} else if(!output[++cost_id] && current_edge_count <= 10) {
-			output[cost_id] = true;
-			add_label(mesh, point_cloud, point_in_face);
-			mesh_info.save_mesh(mesh,"mesh-10.ply");
 		}
 	}
 
@@ -900,24 +862,18 @@ void My_visitor::OnCollapsed (const SMS::Edge_profile<Surface_mesh>&, const Surf
 		if (prof.v0_v1().idx() == 144548) std::cerr << ph << " " << type_converter(point_cloud.point(ph)) << " (alpha x p_distance): " << alpha * min_d << "\n";
 	}
 
-	std::map<Surface_mesh::Face_index, K::FT> face_area;
-	if (min_surface > 0 && mean_point_per_area != 0) {
-		for(auto face: mesh.faces()) {
-			CGAL::Vertex_around_face_iterator<Surface_mesh> vbegin, vend;
-			boost::tie(vbegin, vend) = vertices_around_face(mesh.halfedge(face), mesh);
-			auto p0 = mesh.point(*(vbegin++));
-			auto p1 = mesh.point(*(vbegin++));
-			auto p2 = mesh.point(*(vbegin++));
-			face_area[face] = CGAL::sqrt(K::Triangle_3(p0, p1, p2).squared_area());
-		}
-	}
-
 	std::set<Surface_mesh::Face_index> faces_with_no_label;
 	for(auto face: mesh.faces_around_target(mesh.halfedge(vd))) {
 		if (face != mesh.null_face()) {
 			K::FT min_point = 0;
 			if (min_surface > 0 && mean_point_per_area != 0) {
-				min_point = mean_point_per_area * face_area[face] / min_surface;
+				CGAL::Vertex_around_face_iterator<Surface_mesh> vbegin, vend;
+				boost::tie(vbegin, vend) = vertices_around_face(mesh.halfedge(face), mesh);
+				auto p0 = mesh.point(*(vbegin++));
+				auto p1 = mesh.point(*(vbegin++));
+				auto p2 = mesh.point(*(vbegin++));
+				K::FT area = CGAL::sqrt(K::Triangle_3(p0, p1, p2).squared_area());
+				min_point = mean_point_per_area * area / min_surface;
 			}	
 			if (point_in_face[face].size() > 0) {
 
@@ -1012,9 +968,16 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, cons
 
 	std::cout << "Surface mesh" << std::endl;
 	Surface_mesh mesh;
-	std::map<Surface_mesh::Face_index, std::vector<Point_set::Index>> point_in_face;
-	std::map<Surface_mesh::Face_index, K::FT> face_costs;
 
+	Surface_mesh::Property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>> point_in_face;
+	bool created_point_in_face;
+	boost::tie(point_in_face, created_point_in_face) = mesh.add_property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>("f:points", std::vector<Point_set::Index>());
+	assert(created_point_in_face);
+
+	Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> face_costs;
+	bool created_face_costs;
+	boost::tie(face_costs, created_face_costs) = mesh.add_property_map<Surface_mesh::Face_index, K::FT>("f:points", 0);
+	assert(created_face_costs);
 
 	Point_set point_cloud;
 	bool created_point_label;
@@ -1106,22 +1069,26 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, cons
 	auto created_label = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("label", LABEL_OTHER);
 	assert(created_label.second);
 
-	int min_surface = 10;
-	K::FT mean_point_per_area = add_label(mesh, point_cloud, point_in_face, min_surface);
+	int min_surface = 2;
+	K::FT mean_point_per_area = add_label(mesh, point_cloud, min_surface);
 	mesh_info.save_mesh(mesh, "initial-mesh.ply");
+
+	Surface_mesh::Property_map<Surface_mesh::Halfedge_index, K::FT> placement_costs;
+	bool created_placement_costs;
+	boost::tie(placement_costs, created_placement_costs) = mesh.add_property_map<Surface_mesh::Halfedge_index, K::FT>("h:p_cost", 0);
+	assert(created_placement_costs);
 
 	Cost_stop_predicate stop(5);
 	//SMS::Count_stop_predicate<Surface_mesh> stop(50);
 	const LindstromTurk_param params (1,1,1,1,0.1,1,1);
-	std::map<Surface_mesh::Halfedge_index, K::FT> placement_costs;
-	Custom_placement pf(params, placement_costs, point_cloud, point_in_face);
-	Custom_cost cf(alpha, beta, 1, 1, min_surface, mean_point_per_area, placement_costs, face_costs, point_cloud, point_in_face);
-	My_visitor mv (alpha, beta, min_surface, mean_point_per_area, mesh, mesh_info, face_costs, point_cloud, point_in_face);
+	Custom_placement pf(params, mesh, point_cloud);
+	Custom_cost cf(alpha, beta, 1, 1, min_surface, mean_point_per_area, mesh, point_cloud);
+	My_visitor mv (alpha, beta, min_surface, mean_point_per_area, mesh, mesh_info, point_cloud);
 	SMS::Bounded_normal_change_filter<> filter;
 	SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).filter(filter).get_placement(pf).visitor(mv));
 	std::cout << "\rMesh simplified                                               " << std::endl;
 
-	add_label(mesh, point_cloud, point_in_face, min_surface, mean_point_per_area);
+	add_label(mesh, point_cloud, min_surface, mean_point_per_area);
 	mesh_info.save_mesh(mesh, "final-mesh.ply");
 
 	return std::make_tuple(terrain_mesh, mesh);
