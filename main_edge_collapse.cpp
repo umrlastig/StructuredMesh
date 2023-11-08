@@ -211,7 +211,7 @@ int main(int argc, char **argv) {
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> face_costs;
 	bool created_face_costs;
-	boost::tie(face_costs, created_face_costs) = mesh.add_property_map<Surface_mesh::Face_index, K::FT>("f:points", 0);
+	boost::tie(face_costs, created_face_costs) = mesh.add_property_map<Surface_mesh::Face_index, K::FT>("f:cost", 0);
 	assert(created_face_costs);
 
 	AABB_tree mesh_tree;

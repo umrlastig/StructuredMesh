@@ -623,7 +623,7 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::Point> Custom_placement::operat
 
 Custom_cost::Custom_cost (const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT delta, int min_surface, K::FT mean_point_per_area, Surface_mesh &mesh, const Point_set &point_cloud) : alpha(alpha), beta(beta), gamma(gamma), delta(delta), min_surface(min_surface), mean_point_per_area(mean_point_per_area), point_cloud(point_cloud) {
 	bool has_face_costs;
-	boost::tie(face_costs, has_face_costs) = mesh.property_map<Surface_mesh::Face_index, K::FT>("f:points");
+	boost::tie(face_costs, has_face_costs) = mesh.property_map<Surface_mesh::Face_index, K::FT>("f:cost");
 	assert(has_face_costs);
 	
 	bool has_placement_costs;
@@ -767,6 +767,22 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 							semantic_border_length += CGAL::sqrt(CGAL::squared_distance(new_faces[face_id].vertex(1), C));
 						}
 					}
+
+					for(std::size_t face_id = 0; face_id < new_faces_border_halfedge.size(); face_id++) {
+						if (!profile.surface_mesh().is_border(profile.surface_mesh().opposite(new_faces_border_halfedge[face_id]))) {
+							bool old_diff = (mesh_label[profile.surface_mesh().face(new_faces_border_halfedge[face_id])] != mesh_label[profile.surface_mesh().face(profile.surface_mesh().opposite(new_faces_border_halfedge[face_id]))]);
+							bool new_diff = (new_face_label[face_id] != mesh_label[profile.surface_mesh().face(profile.surface_mesh().opposite(new_faces_border_halfedge[face_id]))]);
+
+							if (old_diff != new_diff) {
+								K::FT length = CGAL::sqrt(CGAL::squared_distance(new_faces[face_id].vertex(0), new_faces[face_id].vertex(1)));
+								if (new_diff) {
+									semantic_border_length += length;
+								} else {
+									semantic_border_length -= length;
+								}
+							}
+						}
+					}
 				}
 			}
 		}
@@ -789,7 +805,7 @@ My_visitor::My_visitor(const K::FT alpha, const K::FT beta, int min_surface, K::
 	assert(has_point_in_face);
 
 	bool has_face_costs;
-	boost::tie(face_costs, has_face_costs) = mesh.property_map<Surface_mesh::Face_index, K::FT>("f:points");
+	boost::tie(face_costs, has_face_costs) = mesh.property_map<Surface_mesh::Face_index, K::FT>("f:cost");
 	assert(has_face_costs);
 }
 
@@ -976,7 +992,7 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, cons
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> face_costs;
 	bool created_face_costs;
-	boost::tie(face_costs, created_face_costs) = mesh.add_property_map<Surface_mesh::Face_index, K::FT>("f:points", 0);
+	boost::tie(face_costs, created_face_costs) = mesh.add_property_map<Surface_mesh::Face_index, K::FT>("f:cost", 0);
 	assert(created_face_costs);
 
 	Point_set point_cloud;
