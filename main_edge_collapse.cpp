@@ -248,15 +248,6 @@ int main(int argc, char **argv) {
 			if (label[it->first] != l) isborder[point] = true;
 		}
 	}
-	{
-		bool created_point_isborder;
-		Point_set::Property_map<int> isborder2;
-		boost::tie (isborder2, created_point_isborder) = point_cloud.add_property_map<int>("p:isborder2", false);
-		assert(created_point_isborder);
-		for (auto point: point_cloud) {
-			isborder2[point] = isborder[point];
-		}
-	}
 
 	{
 		bool created;
