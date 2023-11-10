@@ -35,11 +35,11 @@ K::FT add_label(Surface_mesh &mesh, const Point_set &point_cloud, int min_surfac
 		}
 
 		if (mean_point_per_area == 0) {
-			K::FT point_per_area = 0;
+			K::FT total_area = 0;
 			for(auto face: mesh.faces()) {
-				if (face_area[face] > 0) point_per_area += point_in_face[face].size() / face_area[face];
+				total_area += face_area[face];
 			}
-			if (mesh.number_of_faces() > 0) mean_point_per_area = point_per_area / mesh.number_of_faces();
+			if (total_area > 0) mean_point_per_area = point_cloud.size() / total_area;
 		}
 	}
 
@@ -73,22 +73,37 @@ K::FT add_label(Surface_mesh &mesh, const Point_set &point_cloud, int min_surfac
 			}
 		}
 	}
-	for(auto face: faces_with_no_label) {
-		K::FT face_label[LABELS.size()] = {0};
-		for (auto he: mesh.halfedges_around_face(mesh.halfedge(face))) {
-			if (!mesh.is_border(Surface_mesh::Edge_index(he))) {
-				if (faces_with_no_label.count(mesh.face(mesh.opposite(he))) == 0) {
-					face_label[mesh_label[mesh.face(mesh.opposite(he))]] += CGAL::sqrt(CGAL::squared_distance(mesh.point(mesh.source(he)), mesh.point(mesh.target(he))));
+	while(faces_with_no_label.size() > 0) {
+		std::list<Surface_mesh::Face_index> face_to_be_removed;
+		for(auto face: faces_with_no_label) {
+			K::FT face_label[LABELS.size()] = {0};
+			bool no_neighbor = true;
+			for (auto he: mesh.halfedges_around_face(mesh.halfedge(face))) {
+				if (!mesh.is_border(Surface_mesh::Edge_index(he))) {
+					no_neighbor = false;
+					if (faces_with_no_label.count(mesh.face(mesh.opposite(he))) == 0) {
+						face_label[mesh_label[mesh.face(mesh.opposite(he))]] += CGAL::sqrt(CGAL::squared_distance(mesh.point(mesh.source(he)), mesh.point(mesh.target(he))));
+					}
+				}
+			}
+			if (no_neighbor) {
+				mesh_label[face] = LABEL_OTHER;
+				face_to_be_removed.push_back(face);
+			} else {
+				auto argmax = std::max_element(face_label, face_label+LABELS.size());
+				if (*argmax > 0) {
+					mesh_label[face] = argmax - face_label;
+					face_to_be_removed.push_back(face);
 				}
 			}
 		}
-		auto argmax = std::max_element(face_label, face_label+LABELS.size());
-		if (*argmax > 0) {
-			mesh_label[face] = argmax - face_label;
-		} else { // No neighbor with known label
-			mesh_label[face] = LABEL_OTHER;
+		for (auto face: face_to_be_removed) {
+			faces_with_no_label.erase(face);
 		}
+		face_to_be_removed.clear();
 	}
+
+	mesh.remove_property_map<Surface_mesh::Face_index, K::FT>(face_area);
 
 	return mean_point_per_area;
 }
@@ -723,25 +738,45 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 						}
 					}
 				}
-				for(auto face_id: faces_with_no_label) {
-					K::FT face_label[LABELS.size()] = {0};
-					// Outside face
-					auto border_he = profile.surface_mesh().opposite(new_faces_border_halfedge[face_id]);
-					if (!profile.surface_mesh().is_border(border_he)) {
-						face_label[mesh_label[profile.surface_mesh().face(border_he)]] += CGAL::sqrt(CGAL::squared_distance(new_faces[face_id].vertex(0), new_faces[face_id].vertex(1)));
+				while(faces_with_no_label.size() > 0) {
+					std::list<std::size_t> face_to_be_removed;
+
+					for(auto face_id: faces_with_no_label) {
+						K::FT face_label[LABELS.size()] = {0};
+						bool no_neighbor = true;
+						// Outside face
+						auto border_he = profile.surface_mesh().opposite(new_faces_border_halfedge[face_id]);
+						if (!profile.surface_mesh().is_border(border_he)) {
+							no_neighbor = false;
+							face_label[mesh_label[profile.surface_mesh().face(border_he)]] += CGAL::sqrt(CGAL::squared_distance(new_faces[face_id].vertex(0), new_faces[face_id].vertex(1)));
+						}
+						if (profile.surface_mesh().target(new_faces_border_halfedge[(face_id - 1 + new_faces_border_halfedge.size()) % new_faces_border_halfedge.size()]) == profile.surface_mesh().source(new_faces_border_halfedge[face_id])) {
+							no_neighbor = false;
+							if(faces_with_no_label.count((face_id - 1 + new_faces.size()) % new_faces.size()) == 0) {
+								face_label[new_face_label[(face_id - 1 + new_faces.size()) % new_faces.size()]] += CGAL::sqrt(CGAL::squared_distance(new_faces[face_id].vertex(0), C));
+							}
+						}
+						if (profile.surface_mesh().source(new_faces_border_halfedge[(face_id + 1) % new_faces_border_halfedge.size()]) == profile.surface_mesh().target(new_faces_border_halfedge[face_id])) {
+							no_neighbor = false;
+							if(faces_with_no_label.count((face_id + 1) % new_faces.size()) == 0) {
+								face_label[new_face_label[(face_id + 1) % new_faces.size()]] += CGAL::sqrt(CGAL::squared_distance(new_faces[face_id].vertex(1), C));
+							}
+						}
+						if (no_neighbor) {
+							new_face_label[face_id] = LABEL_OTHER;
+							face_to_be_removed.push_back(face_id);
+						} else {
+							auto argmax = std::max_element(face_label, face_label+LABELS.size());
+							if (*argmax > 0) {
+								new_face_label[face_id] = argmax - face_label;
+								face_to_be_removed.push_back(face_id);
+							}
+						}
 					}
-					if (profile.surface_mesh().target(new_faces_border_halfedge[(face_id - 1 + new_faces_border_halfedge.size()) % new_faces_border_halfedge.size()]) == profile.surface_mesh().source(new_faces_border_halfedge[face_id]) && faces_with_no_label.count((face_id - 1 + new_faces.size()) % new_faces.size()) == 0) {
-						face_label[new_face_label[(face_id - 1 + new_faces.size()) % new_faces.size()]] += CGAL::sqrt(CGAL::squared_distance(new_faces[face_id].vertex(0), C));
+					for (auto face_id: face_to_be_removed) {
+						faces_with_no_label.erase(face_id);
 					}
-					if (profile.surface_mesh().source(new_faces_border_halfedge[(face_id + 1) % new_faces_border_halfedge.size()]) == profile.surface_mesh().target(new_faces_border_halfedge[face_id]) && faces_with_no_label.count((face_id + 1) % new_faces.size()) == 0) {
-						face_label[new_face_label[(face_id + 1) % new_faces.size()]] += CGAL::sqrt(CGAL::squared_distance(new_faces[face_id].vertex(1), C));
-					}
-					auto argmax = std::max_element(face_label, face_label+LABELS.size());
-					if (*argmax > 0) {
-						new_face_label[face_id] = argmax - face_label;
-					} else { // No neighbor with known label
-						new_face_label[face_id] = LABEL_OTHER;
-					}
+					face_to_be_removed.clear();
 				}
 
 				// semantic border length error
@@ -917,21 +952,34 @@ void My_visitor::OnCollapsed (const SMS::Edge_profile<Surface_mesh>&, const Surf
 			}
 		}
 	}
-	for(auto face: faces_with_no_label) {
-		K::FT face_label[LABELS.size()] = {0};
-		for (auto he: mesh.halfedges_around_face(mesh.halfedge(face))) {
-			if (!mesh.is_border(Surface_mesh::Edge_index(he))) {
-				if (faces_with_no_label.count(mesh.face(mesh.opposite(he))) == 0) {
-					face_label[mesh_label[mesh.face(mesh.opposite(he))]] += CGAL::sqrt(CGAL::squared_distance(mesh.point(mesh.source(he)), mesh.point(mesh.target(he))));
+	while(faces_with_no_label.size() > 0) {
+		std::list<Surface_mesh::Face_index> face_to_be_removed;
+		for(auto face: faces_with_no_label) {
+			K::FT face_label[LABELS.size()] = {0};
+			bool no_neighbor = true;
+			for (auto he: mesh.halfedges_around_face(mesh.halfedge(face))) {
+				if (!mesh.is_border(Surface_mesh::Edge_index(he))) {
+					no_neighbor = false;
+					if (faces_with_no_label.count(mesh.face(mesh.opposite(he))) == 0) {
+						face_label[mesh_label[mesh.face(mesh.opposite(he))]] += CGAL::sqrt(CGAL::squared_distance(mesh.point(mesh.source(he)), mesh.point(mesh.target(he))));
+					}
+				}
+			}
+			if (no_neighbor) {
+				mesh_label[face] = LABEL_OTHER;
+				face_to_be_removed.push_back(face);
+			} else {
+				auto argmax = std::max_element(face_label, face_label+LABELS.size());
+				if (*argmax > 0) {
+					mesh_label[face] = argmax - face_label;
+					face_to_be_removed.push_back(face);
 				}
 			}
 		}
-		auto argmax = std::max_element(face_label, face_label+LABELS.size());
-		if (*argmax > 0) {
-			mesh_label[face] = argmax - face_label;
-		} else { // No neighbor with known label
-			mesh_label[face] = LABEL_OTHER;
+		for (auto face: face_to_be_removed) {
+			faces_with_no_label.erase(face);
 		}
+		face_to_be_removed.clear();
 	}
 
 	points_to_be_change.clear();

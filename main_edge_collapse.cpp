@@ -31,11 +31,8 @@ void Surface_mesh_info::save_mesh(const Surface_mesh &mesh, const char *filename
 		Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> green;
 		Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> blue;
 		boost::tie(red, created) = output_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("red",0);
-		assert(created);
 		boost::tie(green, created) = output_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("green",0);
-		assert(created);
 		boost::tie(blue, created) = output_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("blue",0);
-		assert(created);
 
 		for (auto face : output_mesh.faces()) {
 			red[face] = LABELS[label[face]].red;
@@ -194,14 +191,12 @@ int main(int argc, char **argv) {
 	// Get or create created_point_label
 	bool created_point_label;
 	Point_set::Property_map<unsigned char> label;
-	if (point_cloud.has_property_map<unsigned char>("p:label")) {
-		boost::tie (label, created_point_label) = point_cloud.property_map<unsigned char>("p:label");
-		std::cout << "Point cloud has label" << std::endl;
-	} else {
-		boost::tie (label, created_point_label) = point_cloud.add_property_map<unsigned char>("p:label", LABEL_OTHER);
+	boost::tie (label, created_point_label) = point_cloud.add_property_map<unsigned char>("p:label", LABEL_OTHER);
+	if (created_point_label) {
 		std::cout << "Point cloud has no label" << std::endl;
+	} else {
+		std::cout << "Point cloud has label" << std::endl;
 	}
-	assert(created_point_label);
 
 	// Create point_in_face
 	Surface_mesh::Property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>> point_in_face;
@@ -209,6 +204,7 @@ int main(int argc, char **argv) {
 	boost::tie(point_in_face, created_point_in_face) = mesh.add_property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>("f:points", std::vector<Point_set::Index>());
 	assert(created_point_in_face);
 
+	// Create face_costs
 	Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> face_costs;
 	bool created_face_costs;
 	boost::tie(face_costs, created_face_costs) = mesh.add_property_map<Surface_mesh::Face_index, K::FT>("f:cost", 0);
@@ -342,6 +338,10 @@ int main(int argc, char **argv) {
 		SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).filter(filter).get_placement(pf).visitor(mv));
 	}
 	std::cout << "\rMesh simplified                                               " << std::endl;
+
+	mesh.remove_property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>(point_in_face);
+	mesh.remove_property_map<Surface_mesh::Face_index, K::FT>(face_costs);
+	mesh.remove_property_map<Surface_mesh::Halfedge_index, K::FT>(placement_costs);
 
 	// add_label(mesh, point_cloud, min_surface, mean_point_per_area);
 	mesh_info.save_mesh(mesh, "final-mesh.ply");
