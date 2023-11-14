@@ -58,23 +58,25 @@ endif()
 
 # include for local package
 
+add_library (EdgeCollapse edge_collapse.cpp)
+target_link_libraries(EdgeCollapse PRIVATE CGAL::CGAL Eigen3::Eigen)
 
 # Creating entries for target: compute-LOD2
 # ############################
 
-add_executable( compute-LOD2  main.cpp raster.cpp code.cpp edge_collapse.cpp path.cpp bridge.cpp)
+add_executable( compute-LOD2  main.cpp raster.cpp code.cpp path.cpp bridge.cpp)
 
 add_to_cached_list( CGAL_EXECUTABLE_TARGETS compute-LOD2 )
 
 # Link the executable to CGAL and third-party libraries
-target_link_libraries(compute-LOD2 PRIVATE CGAL::CGAL GDAL::GDAL Ceres::ceres Eigen3::Eigen)
+target_link_libraries(compute-LOD2 PRIVATE CGAL::CGAL GDAL::GDAL Ceres::ceres Eigen3::Eigen EdgeCollapse)
 
 # Creating entries for target: do-edge-collapse
 # ############################
 
-add_executable( do-edge-collapse  main_edge_collapse.cpp edge_collapse.cpp)
+add_executable( do-edge-collapse  main_edge_collapse.cpp)
 
 add_to_cached_list( CGAL_EXECUTABLE_TARGETS do-edge-collapse )
 
 # Link the executable to CGAL and third-party libraries
-target_link_libraries(do-edge-collapse PRIVATE CGAL::CGAL GDAL::GDAL Eigen3::Eigen)
+target_link_libraries(do-edge-collapse PRIVATE CGAL::CGAL GDAL::GDAL Eigen3::Eigen EdgeCollapse)
