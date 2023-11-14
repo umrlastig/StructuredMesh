@@ -1,10 +1,13 @@
 #include "header.hpp"
 #include "raster.hpp"
+#include "edge_collapse.hpp"
+
+#include <CGAL/Polygon_mesh_processing/orientation.h>
+#include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Bounded_normal_change_filter.h>
+#include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Count_stop_predicate.h>
 
 #include <getopt.h>
 #include <cstdlib>
-
-std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, const Surface_mesh_info &mesh_info);
 
 void add_label(const Raster &raster, Surface_mesh &mesh);
 
@@ -73,6 +76,159 @@ void Surface_mesh_info::save_mesh(const Surface_mesh &mesh, const char *filename
 	CGAL::IO::set_binary_mode (mesh_ofile);
 	CGAL::IO::write_PLY (mesh_ofile, output_mesh, "crs " + crs_as_string + "\nx0 " + std::to_string(x_0) + "\ny0 " + std::to_string(y_0) );
 	mesh_ofile.close();
+}
+
+std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, const Surface_mesh_info &mesh_info) {
+
+	std::cout << "Terrain mesh" << std::endl;
+	Surface_mesh terrain_mesh;
+	
+	double x, y;
+	
+	// Add points
+	std::vector<std::vector<Surface_mesh::Vertex_index>> terrain_vertex_index(raster.ySize, std::vector<Surface_mesh::Vertex_index>(raster.xSize, Surface_mesh::Vertex_index()));
+	for (int L = 0; L < raster.ySize; L++) {
+		for (int P = 0; P < raster.xSize; P++) {
+			raster.grid_to_coord(P, L, x, y);
+			terrain_vertex_index[L][P] = terrain_mesh.add_vertex(Point_3(x - mesh_info.x_0, y - mesh_info.y_0, raster.dtm[L][P]));
+		}
+	}
+	std::cout << "Point added" << std::endl;
+	// Add faces
+	for (int L = 0; L < raster.ySize-1; L++) {
+		for (int P = 0; P < raster.xSize-1; P++) {
+			if (pow(raster.dtm[L][P]-raster.dtm[L+1][P+1], 2) < pow(raster.dtm[L+1][P]-raster.dtm[L][P+1], 2)) {
+				terrain_mesh.add_face(terrain_vertex_index[L][P], terrain_vertex_index[L+1][P+1], terrain_vertex_index[L+1][P]);
+				terrain_mesh.add_face(terrain_vertex_index[L][P], terrain_vertex_index[L][P+1], terrain_vertex_index[L+1][P+1]);
+			} else {
+				terrain_mesh.add_face(terrain_vertex_index[L][P], terrain_vertex_index[L][P+1], terrain_vertex_index[L+1][P]);
+				terrain_mesh.add_face(terrain_vertex_index[L][P+1], terrain_vertex_index[L+1][P+1], terrain_vertex_index[L+1][P]);
+			}
+		}
+	}
+	std::cout << "Faces added" << std::endl;
+
+	// Return mesh if coords are in reverse order
+	double x_0, y_0, x_1, y_1;	
+	raster.grid_to_coord(0, 0, x_0, y_0);
+	raster.grid_to_coord(1, 1, x_1, y_1);
+	if ((x_1-x_0)*(y_1-y_0) < 0) {
+		CGAL::Polygon_mesh_processing::reverse_face_orientations(terrain_mesh); 	
+	}
+
+	mesh_info.save_mesh(terrain_mesh, "initial-terrain-mesh.ply");
+
+	SMS::edge_collapse(terrain_mesh, Cost_stop_predicate(10));
+	std::cout << "Terrain mesh simplified" << std::endl;
+
+	mesh_info.save_mesh(terrain_mesh, "terrain-mesh.ply");
+
+	std::cout << "Surface mesh" << std::endl;
+	Surface_mesh mesh;
+
+	Surface_mesh::Property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>> point_in_face;
+	bool created_point_in_face;
+	boost::tie(point_in_face, created_point_in_face) = mesh.add_property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>("f:points", std::vector<Point_set::Index>());
+	assert(created_point_in_face);
+
+	Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> face_costs;
+	bool created_face_costs;
+	boost::tie(face_costs, created_face_costs) = mesh.add_property_map<Surface_mesh::Face_index, K::FT>("f:cost", 0);
+	assert(created_face_costs);
+
+	Point_set point_cloud;
+	bool created_point_label;
+	Point_set::Property_map<unsigned char> point_cloud_label;
+	boost::tie (point_cloud_label, created_point_label) = point_cloud.add_property_map<unsigned char>("p:label", LABEL_OTHER);
+	assert(created_point_label);
+
+	// Add points
+	std::vector<std::vector<Surface_mesh::Vertex_index>> vertex_index(raster.ySize, std::vector<Surface_mesh::Vertex_index>(raster.xSize, Surface_mesh::Vertex_index()));
+	std::vector<std::vector<Point_set::Index>> point_index(raster.ySize, std::vector<Point_set::Index>(raster.xSize, Point_set::Index()));
+	for (int L = 0; L < raster.ySize; L++) {
+		for (int P = 0; P < raster.xSize; P++) {
+			raster.grid_to_coord(P, L, x, y);
+			vertex_index[L][P] = mesh.add_vertex(Point_3(x - mesh_info.x_0, y - mesh_info.y_0, raster.dsm[L][P]));
+			point_index[L][P] = *(point_cloud.insert(Point_set::Point_3(x - mesh_info.x_0, y - mesh_info.y_0, raster.dsm[L][P])));
+			point_cloud_label[point_index[L][P]] = raster.land_cover[L][P];
+		}
+	}
+	std::cout << "Point added" << std::endl;
+
+	// Add faces
+	for (int L = 0; L < raster.ySize-1; L++) {
+		for (int P = 0; P < raster.xSize-1; P++) {
+			if (pow(raster.dsm[L][P]-raster.dsm[L+1][P+1], 2) < pow(raster.dsm[L+1][P]-raster.dsm[L][P+1], 2)) {
+				auto f1 = mesh.add_face(vertex_index[L][P], vertex_index[L+1][P+1], vertex_index[L+1][P]);
+				point_in_face[f1].push_back(point_index[L][P]);
+				point_in_face[f1].push_back(point_index[L+1][P+1]);
+				point_in_face[f1].push_back(point_index[L+1][P]);
+				face_costs[f1] = 0;
+				auto f2 = mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P+1]);
+				point_in_face[f2].push_back(point_index[L][P]);
+				point_in_face[f2].push_back(point_index[L][P+1]);
+				point_in_face[f2].push_back(point_index[L+1][P+1]);
+				face_costs[f2] = 0;
+			} else {
+				auto f1 = mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P]);
+				point_in_face[f1].push_back(point_index[L][P]);
+				point_in_face[f1].push_back(point_index[L][P+1]);
+				point_in_face[f1].push_back(point_index[L+1][P]);
+				face_costs[f1] = 0;
+				auto f2 = mesh.add_face(vertex_index[L][P+1], vertex_index[L+1][P+1], vertex_index[L+1][P]);
+				point_in_face[f2].push_back(point_index[L][P+1]);
+				point_in_face[f2].push_back(point_index[L+1][P+1]);
+				point_in_face[f2].push_back(point_index[L+1][P]);
+				face_costs[f2] = 0;
+			}
+		}
+	}
+	std::cout << "Faces added" << std::endl;
+
+	float alpha = 1, beta = 1;
+
+	K::FT mean_point_per_area = get_mean_point_per_area(mesh, point_cloud);
+	K::FT min_point_per_area = mean_point_per_area / 2;
+
+	for(auto face: mesh.faces()) {
+		K::FT min_point = 0;
+		if (min_point_per_area > 0) {
+			auto r = mesh.vertices_around_face(mesh.halfedge(face)).begin();
+			K::FT face_area = CGAL::sqrt(K::Triangle_3(mesh.point(*r++), mesh.point(*r++), mesh.point(*r++)).squared_area());
+			min_point = min_point_per_area * face_area;
+		}	
+		if (point_in_face[face].size() > 0) {
+			if (point_in_face[face].size() > min_point) {
+				int face_label[LABELS.size()] = {0};
+				for (auto point: point_in_face[face]) {
+					face_label[point_cloud_label[point]]++;
+				}
+				auto argmax = std::max_element(face_label, face_label+LABELS.size());
+				face_costs[face] += beta * (point_in_face[face].size() - *argmax);
+			} else { // We don't have information about this face.
+				face_costs[face] += beta * point_in_face[face].size();
+			}
+		}
+	}
+	std::cout << "Faces cost" << std::endl;
+
+	// Return mesh if coords are in reverse order
+	if ((x_1-x_0)*(y_1-y_0) < 0) {
+		CGAL::Polygon_mesh_processing::reverse_face_orientations(mesh); 	
+	}
+
+	Cost_stop_predicate stop(5);
+	//SMS::Count_stop_predicate<Surface_mesh> stop(50);
+	const LindstromTurk_param params (1,1,1,1,0,1,1);
+	Custom_placement pf(params, mesh, point_cloud);
+	Custom_cost cf(alpha, beta, 0.01, 1, min_point_per_area, mesh, point_cloud);
+	My_visitor mv (alpha, beta, min_point_per_area, mesh, mesh_info, point_cloud);
+	SMS::Bounded_normal_change_filter<> filter;
+	SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).filter(filter).get_placement(pf).visitor(mv));
+
+	mesh_info.save_mesh(mesh, "final-mesh.ply");
+
+	return std::make_tuple(terrain_mesh, mesh);
 }
 
 int main(int argc, char **argv) {

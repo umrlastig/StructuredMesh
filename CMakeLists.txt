@@ -72,7 +72,7 @@ target_link_libraries(compute-LOD2 PRIVATE CGAL::CGAL GDAL::GDAL Ceres::ceres Ei
 # Creating entries for target: do-edge-collapse
 # ############################
 
-add_executable( do-edge-collapse  main_edge_collapse.cpp raster.cpp edge_collapse.cpp)
+add_executable( do-edge-collapse  main_edge_collapse.cpp edge_collapse.cpp)
 
 add_to_cached_list( CGAL_EXECUTABLE_TARGETS do-edge-collapse )
 

@@ -1,20 +1,12 @@
 #include "header.hpp"
 #include "edge_collapse.hpp"
 
-#include <CGAL/Point_set_3/IO.h>
-#include <CGAL/Polygon_mesh_processing/locate.h>
-#include <CGAL/AABB_face_graph_triangle_primitive.h>
-#include <CGAL/AABB_tree.h>
-#include <CGAL/AABB_traits.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/GarlandHeckbert_policies.h>
+#include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Bounded_normal_change_filter.h>
+#include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Count_stop_predicate.h>
 
 #include <getopt.h>
 #include <cstdlib>
-
-namespace PMP = CGAL::Polygon_mesh_processing;
-typedef CGAL::AABB_face_graph_triangle_primitive<Surface_mesh> AABB_face_graph_primitive;
-typedef CGAL::AABB_traits<K, AABB_face_graph_primitive>        AABB_face_graph_traits;
-typedef CGAL::AABB_tree<AABB_face_graph_traits>                AABB_tree;
 
 Surface_mesh_info::Surface_mesh_info() : x_0(0), y_0(0) {}
 
@@ -198,86 +190,6 @@ int main(int argc, char **argv) {
 		std::cout << "Point cloud has label" << std::endl;
 	}
 
-	// Create point_in_face
-	Surface_mesh::Property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>> point_in_face;
-	bool created_point_in_face;
-	boost::tie(point_in_face, created_point_in_face) = mesh.add_property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>("f:points", std::vector<Point_set::Index>());
-	assert(created_point_in_face);
-
-	// Create face_costs
-	Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> face_costs;
-	bool created_face_costs;
-	boost::tie(face_costs, created_face_costs) = mesh.add_property_map<Surface_mesh::Face_index, K::FT>("f:cost", 0);
-	assert(created_face_costs);
-
-	AABB_tree mesh_tree;
-	PMP::build_AABB_tree(mesh, mesh_tree);
-	CGAL::Cartesian_converter<Exact_predicates_kernel,K> type_converter;
-	for(auto ph: point_cloud) {
-		auto p = type_converter(point_cloud.point(ph));
-		auto location = PMP::locate_with_AABB_tree(p, mesh_tree, mesh);
-		point_in_face[location.first].push_back(ph);
-		face_costs[location.first] += c1 * CGAL::squared_distance(p, PMP::construct_point(location, mesh));
-	}
-	for(auto face: mesh.faces()) {
-		if (point_in_face[face].size() > 0) {
-			int face_label[LABELS.size()] = {0};
-			int sum_face_label = 0;
-			for (auto ph: point_in_face[face]) {
-				sum_face_label++;
-				face_label[label[ph]]++;
-			}
-			auto argmax = std::max_element(face_label, face_label+LABELS.size());
-			face_costs[face] += c2 * (sum_face_label - *argmax);
-		}
-	}
-	
-	bool created_point_isborder;
-	Point_set::Property_map<bool> isborder;
-	boost::tie (isborder, created_point_isborder) = point_cloud.add_property_map<bool>("p:isborder", false);
-	assert(created_point_isborder);
-
-	// Set isBorder
-	int N = 10;
-	Point_tree point_tree(point_cloud.begin(), point_cloud.end(), Point_tree::Splitter(), TreeTraits(point_cloud.point_map()));
-	Neighbor_search::Distance tr_dist(point_cloud.point_map());
-	for (auto point: point_cloud) {
-		Neighbor_search search(point_tree, point_cloud.point(point), N, 0, true, tr_dist, false);
-		unsigned char l = label[search.begin()->first];
-		for(auto it = search.begin() + 1; it != search.end() && !isborder[point]; ++it) {
-			if (label[it->first] != l) isborder[point] = true;
-		}
-	}
-
-	{
-		bool created;
-		Point_set::Property_map<unsigned char> red;
-		Point_set::Property_map<unsigned char> green;
-		Point_set::Property_map<unsigned char> blue;
-		boost::tie(red, created) = point_cloud.add_property_map<unsigned char>("red",0);
-		assert(created);
-		boost::tie(green, created) = point_cloud.add_property_map<unsigned char>("green",0);
-		assert(created);
-		boost::tie(blue, created) = point_cloud.add_property_map<unsigned char>("blue",0);
-		assert(created);
-
-		for (auto point: point_cloud) {
-			red[point] = LABELS[label[point]].red;
-			green[point] = LABELS[label[point]].green;
-			blue[point] = LABELS[label[point]].blue;
-		}
-	}
-
-	CGAL::IO::write_point_set("pc_with_border.ply", point_cloud);
-	std::cout << "Border points found" << std::endl;
-
-	auto created_label = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("label", LABEL_OTHER);
-	assert(created_label.second);
-
-	int min_surface = 10;
-	K::FT mean_point_per_area = add_label(mesh, point_cloud, min_surface);
-	mesh_info.save_mesh(mesh, "initial-mesh.ply");
-	
 	if(baseline >= 0) {
 		SMS::Bounded_normal_change_filter<> filter;
 		if (baseline == 0) {
@@ -311,15 +223,13 @@ int main(int argc, char **argv) {
 		return EXIT_SUCCESS;
 	}
 
-	Surface_mesh::Property_map<Surface_mesh::Halfedge_index, K::FT> placement_costs;
-	bool created_placement_costs;
-	boost::tie(placement_costs, created_placement_costs) = mesh.add_property_map<Surface_mesh::Halfedge_index, K::FT>("h:p_cost", 0);
-	assert(created_placement_costs);
+	K::FT mean_point_per_area = get_mean_point_per_area(mesh, point_cloud);
+	K::FT min_point_per_area = mean_point_per_area / 10;
 	
 	const LindstromTurk_param params (l1,l2,l3,l4,l5,l6,l7);
 	Custom_placement pf(params, mesh, point_cloud);
-	Custom_cost cf(c1, c2, c3, c4, min_surface, mean_point_per_area, mesh, point_cloud);
-	My_visitor mv(c1, c2, min_surface, mean_point_per_area, mesh, mesh_info, point_cloud);
+	Custom_cost cf(c1, c2, c3, c4, min_point_per_area, mesh, point_cloud);
+	My_visitor mv(c1, c2, min_point_per_area, mesh, mesh_info, point_cloud);
 	SMS::Bounded_normal_change_filter<> filter;
 	if (ns > 0) {
 		SMS::Count_stop_predicate<Surface_mesh> stop(ns);
@@ -328,13 +238,7 @@ int main(int argc, char **argv) {
 		Cost_stop_predicate stop(cs);
 		SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).filter(filter).get_placement(pf).visitor(mv));
 	}
-	std::cout << "\rMesh simplified                                               " << std::endl;
 
-	mesh.remove_property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>(point_in_face);
-	mesh.remove_property_map<Surface_mesh::Face_index, K::FT>(face_costs);
-	mesh.remove_property_map<Surface_mesh::Halfedge_index, K::FT>(placement_costs);
-
-	// add_label(mesh, point_cloud, min_surface, mean_point_per_area);
 	mesh_info.save_mesh(mesh, "final-mesh.ply");
 
 	return EXIT_SUCCESS;

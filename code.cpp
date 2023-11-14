@@ -6,7 +6,6 @@
 
 #include <ogrsf_frmts.h>
 #include <CGAL/IO/WKT.h>
-#include <CGAL/Polygon_mesh_processing/orientation.h>
 
 std::list<Polygon> get_LOD0_from_shapefile(char *path) {
 	GDALAllRegister();

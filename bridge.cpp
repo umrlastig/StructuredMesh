@@ -5,7 +5,6 @@
 #include <CGAL/Polygon_mesh_processing/intersection.h>
 #include <CGAL/Polygon_mesh_processing/border.h>
 #include <CGAL/Polygon_mesh_processing/triangulate_hole.h>
-#include <CGAL/Polygon_mesh_processing/orientation.h>
 #include <CGAL/Polygon_mesh_processing/corefinement.h>
 #include <CGAL/Polygon_mesh_processing/extrude.h>
 #include <CGAL/Side_of_triangle_mesh.h>
