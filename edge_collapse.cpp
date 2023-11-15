@@ -961,10 +961,7 @@ void My_visitor::OnStarted (Surface_mesh&) {
 		boost::tie(blue, created) = output_point_cloud.add_property_map<unsigned char>("blue",0);
 		assert(created);
 
-		for (auto point: point_cloud) {
-			// red[point] = LABELS[output_label[point]].red;
-			// green[point] = LABELS[output_label[point]].green;
-			// blue[point] = LABELS[output_label[point]].blue;
+		for (auto point: output_point_cloud) {
 			if (output_isborder[point]) {
 				red[point] = 255;
 				green[point] = 255;
@@ -976,15 +973,15 @@ void My_visitor::OnStarted (Surface_mesh&) {
 			}
 		}
 
-		CGAL::IO::write_point_set("pc_with_border.ply", point_cloud);
+		CGAL::IO::write_point_set("pc_with_border.ply", output_point_cloud);
 
-		for (auto point: point_cloud) {
-			red[point] = LABELS[point_cloud_label[point]].red;
-			green[point] = LABELS[point_cloud_label[point]].green;
-			blue[point] = LABELS[point_cloud_label[point]].blue;
+		for (auto point: output_point_cloud) {
+			red[point] = LABELS[output_label[point]].red;
+			green[point] = LABELS[output_label[point]].green;
+			blue[point] = LABELS[output_label[point]].blue;
 		}
 
-		CGAL::IO::write_point_set("pc_with_color.ply", point_cloud);
+		CGAL::IO::write_point_set("pc_with_color.ply", output_point_cloud);
 	}
 
 	Surface_mesh::Property_map<Surface_mesh::Halfedge_index, K::FT> placement_costs;
