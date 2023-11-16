@@ -126,9 +126,9 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, cons
 	std::cout << "Surface mesh" << std::endl;
 	Surface_mesh mesh;
 
-	Surface_mesh::Property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>> point_in_face;
+	Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
 	bool created_point_in_face;
-	boost::tie(point_in_face, created_point_in_face) = mesh.add_property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>("f:points", std::vector<Point_set::Index>());
+	boost::tie(point_in_face, created_point_in_face) = mesh.add_property_map<Surface_mesh::Face_index, std::list<Point_set::Index>>("f:points", std::list<Point_set::Index>());
 	assert(created_point_in_face);
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> face_costs;

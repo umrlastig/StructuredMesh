@@ -35,9 +35,21 @@ struct LindstromTurk_param {
 						float semantic_border_optimization);
 };
 
+struct CollapseDataElement{
+	Surface_mesh::Halfedge_index halfedge;
+	unsigned char label;
+	K::FT cost;
+	std::list<Point_set::Index> points;
+};
+
+struct CollapseData {
+	K::FT cost;
+	std::list<CollapseDataElement> elements;
+};
+
 class Custom_placement {
 	const LindstromTurk_param &params;
-	Surface_mesh::Property_map<Surface_mesh::Halfedge_index, K::FT> placement_costs;
+	Surface_mesh::Property_map<Surface_mesh::Edge_index, CollapseData> collapse_datas;
 	const Point_set &point_cloud;
 
 	public:
@@ -50,7 +62,7 @@ class Custom_cost {
 	const K::FT alpha, beta, gamma, delta;
 	const K::FT min_point_per_area;
 	const Point_set &point_cloud;
-	Surface_mesh::Property_map<Surface_mesh::Halfedge_index, K::FT> placement_costs;
+	Surface_mesh::Property_map<Surface_mesh::Edge_index, CollapseData> collapse_datas;
 
 	public:
 		Custom_cost (const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT delta, K::FT min_point_per_area, Surface_mesh &mesh, const Point_set &point_cloud);
@@ -76,7 +88,6 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 		std::chrono::time_point<std::chrono::system_clock> start_collapse;
 		bool output[30] = {false};
 		CGAL::Cartesian_converter<Exact_predicates_kernel,K> type_converter;
-		std::set<Point_set::Index> points_to_be_change;
 		
 		const K::FT alpha, beta;
 		const K::FT min_point_per_area;
@@ -86,7 +97,8 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 
 		Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_label;
 		Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> face_costs;
-		Surface_mesh::Property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>> point_in_face;
+		Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
+		Surface_mesh::Property_map<Surface_mesh::Edge_index, CollapseData> collapse_datas;
 		Point_set::Property_map<unsigned char> point_cloud_label;
 
 	public:

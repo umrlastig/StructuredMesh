@@ -69,9 +69,9 @@ void add_label(Surface_mesh &mesh, const Point_set &point_cloud, const K::FT min
 	boost::tie(point_cloud_label, has_point_cloud_label) = point_cloud.property_map<unsigned char>("p:label");
 	assert(has_point_cloud_label);
 
-	Surface_mesh::Property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>> point_in_face;
+	Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
 	bool has_point_in_face;
-	boost::tie(point_in_face, has_point_in_face) = mesh.property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>("f:points");
+	boost::tie(point_in_face, has_point_in_face) = mesh.property_map<Surface_mesh::Face_index, std::list<Point_set::Index>>("f:points");
 	assert(has_point_in_face);
 
 	std::set<Surface_mesh::Face_index> faces_with_no_label;
@@ -210,9 +210,9 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 	boost::tie(isborder, has_isborder) = point_cloud.property_map<bool>("p:isborder");
 	assert(has_isborder);
 
-	Surface_mesh::Property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>> point_in_face;
+	Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
 	bool has_point_in_face;
-	boost::tie(point_in_face, has_point_in_face) = profile.surface_mesh().property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>("f:points");
+	boost::tie(point_in_face, has_point_in_face) = profile.surface_mesh().property_map<Surface_mesh::Face_index, std::list<Point_set::Index>>("f:points");
 	assert(has_point_in_face);
 
 	std::set<Point_set::Index> points_in_faces;
@@ -475,9 +475,9 @@ std::list<K::Vector_3> semantic_border_optimization (const SMS::Edge_profile<Sur
 	boost::tie(mesh_label, has_mesh_label) = profile.surface_mesh().property_map<Surface_mesh::Face_index, unsigned char>("label");
 	assert(has_mesh_label);
 
-	Surface_mesh::Property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>> point_in_face;
+	Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
 	bool has_point_in_face;
-	boost::tie(point_in_face, has_point_in_face) = profile.surface_mesh().property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>("f:points");
+	boost::tie(point_in_face, has_point_in_face) = profile.surface_mesh().property_map<Surface_mesh::Face_index, std::list<Point_set::Index>>("f:points");
 	assert(has_point_in_face);
 
 	for (auto h: profile.surface_mesh().halfedges_around_target(profile.v1_v0())) {
@@ -517,8 +517,8 @@ LindstromTurk_param::LindstromTurk_param(
 	semantic_border_optimization(semantic_border_optimization) {}
 
 Custom_placement::Custom_placement (const LindstromTurk_param &params, Surface_mesh &mesh, const Point_set &point_cloud) : params(params), point_cloud(point_cloud) {
-	bool created_placement_costs;
-	boost::tie(placement_costs, created_placement_costs) = mesh.add_property_map<Surface_mesh::Halfedge_index, K::FT>("h:p_cost", 0);
+	bool created_collapse_datas;
+	boost::tie(collapse_datas, created_collapse_datas) = mesh.add_property_map<Surface_mesh::Edge_index, CollapseData>("e:c_datas");
 }
 
 
@@ -659,14 +659,14 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::Point> Custom_placement::operat
 	
 	// Save cost
 	Point_3 placement(B.vector()[0], B.vector()[1], B.vector()[2]);
-	placement_costs[profile.v0_v1()] = (R.transpose()*R)(0,0);
+	collapse_datas[Surface_mesh::Edge_index(profile.v0_v1())].cost = (R.transpose()*R)(0,0);
 
 	return result_type(placement);
 }
 
 Custom_cost::Custom_cost (const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT delta, const K::FT min_point_per_area, Surface_mesh &mesh, const Point_set &point_cloud) : alpha(alpha), beta(beta), gamma(gamma), delta(delta), min_point_per_area(min_point_per_area), point_cloud(point_cloud) {
-	bool created_placement_costs;
-	boost::tie(placement_costs, created_placement_costs) = mesh.add_property_map<Surface_mesh::Halfedge_index, K::FT>("h:p_cost", 0);
+	bool created_collapse_datas;
+	boost::tie(collapse_datas, created_collapse_datas) = mesh.add_property_map<Surface_mesh::Edge_index, CollapseData>("e:c_datas");
 }
 
 boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(const SMS::Edge_profile<Surface_mesh>& profile, const boost::optional<SMS::Edge_profile<Surface_mesh>::Point>& placement) const {
@@ -677,6 +677,8 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 	bool has_face_costs;
 	boost::tie(face_costs, has_face_costs) = profile.surface_mesh().property_map<Surface_mesh::Face_index, K::FT>("f:cost");
 	assert(has_face_costs);
+
+	collapse_datas[Surface_mesh::Edge_index(profile.v0_v1())].elements.clear();
 
 	if (placement) {
 
@@ -691,9 +693,9 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 			boost::tie(point_cloud_label, has_label) = point_cloud.property_map<unsigned char>("p:label");
 			assert(has_label);
 
-			Surface_mesh::Property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>> point_in_face;
+			Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
 			bool has_point_in_face;
-			boost::tie(point_in_face, has_point_in_face) = profile.surface_mesh().property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>("f:points");
+			boost::tie(point_in_face, has_point_in_face) = profile.surface_mesh().property_map<Surface_mesh::Face_index, std::list<Point_set::Index>>("f:points");
 			assert(has_point_in_face);
 
 			std::set<Point_set::Index> points_to_be_change;
@@ -716,6 +718,8 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 				}
 			}
 
+			std::vector<K::FT> new_face_cost (new_faces.size(), 0);
+
 			// geometric error
 			std::vector<std::list<Point_set::Index>> points_in_new_face (new_faces.size());
 			Triangle_tree tree(new_faces.begin(), new_faces.end());
@@ -724,12 +728,16 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 				auto point_and_id = tree.closest_point_and_primitive(point);
 
 				points_in_new_face[point_and_id.second - new_faces.begin()].push_back(ph);
-				if (alpha > 0) squared_distance += CGAL::squared_distance(point, point_and_id.first);
+				if (alpha > 0) {
+					K::FT distance = CGAL::squared_distance(point, point_and_id.first);
+					squared_distance += distance;
+					new_face_cost[point_and_id.second - new_faces.begin()] += alpha * distance;
+				}
 			}
 
 			// semantic error
 			if (beta > 0 || gamma > 0) {
-				std::vector<int> new_face_label(new_faces.size(), LABEL_OTHER);
+				std::vector<unsigned char> new_face_label(new_faces.size(), LABEL_OTHER);
 				Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_label;
 				bool has_mesh_label;
 				boost::tie(mesh_label, has_mesh_label) = profile.surface_mesh().property_map<Surface_mesh::Face_index, unsigned char>("label");
@@ -753,11 +761,13 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 
 							auto argmax = std::max_element(face_label, face_label+LABELS.size());
 							count_semantic_error += points_in_new_face[face_id].size() - *argmax;
+							new_face_cost[face_id] += beta * (points_in_new_face[face_id].size() - *argmax);
 							new_face_label[face_id] = argmax - face_label;
 
 						} else { // We don't have information about this face.
 							new_face_label[face_id] = LABEL_OTHER;
 							count_semantic_error += points_in_new_face[face_id].size();
+							new_face_cost[face_id] += beta * points_in_new_face[face_id].size();
 						}
 					} else {
 						if (min_point <= 1) { // It's probable that there is no point
@@ -848,10 +858,27 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 						}
 					}
 				}
+
+				for(std::size_t face_id = 0; face_id < new_faces.size(); face_id++) {
+					CollapseDataElement r;
+					r.halfedge = new_faces_border_halfedge[face_id];
+					r.label = new_face_label[face_id];
+					r.cost = new_face_cost[face_id];
+					for(auto ph: points_in_new_face[face_id]) r.points.push_back(ph);
+					collapse_datas[Surface_mesh::Edge_index(profile.v0_v1())].elements.push_back(r);
+				}
+			} else {
+				for(std::size_t face_id = 0; face_id < new_faces.size(); face_id++) {
+					CollapseDataElement r;
+					r.halfedge = new_faces_border_halfedge[face_id];
+					r.cost = new_face_cost[face_id];
+					for(auto ph: points_in_new_face[face_id]) r.points.push_back(ph);
+					collapse_datas[Surface_mesh::Edge_index(profile.v0_v1())].elements.push_back(r);
+				}
 			}
 		}
 
-		return result_type(- old_cost + alpha * squared_distance + beta * count_semantic_error + gamma * semantic_border_length + delta * placement_costs[profile.v0_v1()]);
+		return result_type(- old_cost + alpha * squared_distance + beta * count_semantic_error + gamma * semantic_border_length + delta * collapse_datas[Surface_mesh::Edge_index(profile.v0_v1())].cost);
 	}
 
 	return result_type();
@@ -863,7 +890,10 @@ bool Cost_stop_predicate::operator()(const SMS::Edge_profile<Surface_mesh>::FT &
 	return current_cost > cost;
 }
 
-My_visitor::My_visitor(const K::FT alpha, const K::FT beta, const K::FT min_point_per_area, Surface_mesh &mesh, const Surface_mesh_info &mesh_info, Point_set &point_cloud) : alpha(alpha), beta(beta), min_point_per_area(min_point_per_area), mesh(mesh), mesh_info(mesh_info), point_cloud(point_cloud) {}
+My_visitor::My_visitor(const K::FT alpha, const K::FT beta, const K::FT min_point_per_area, Surface_mesh &mesh, const Surface_mesh_info &mesh_info, Point_set &point_cloud) : alpha(alpha), beta(beta), min_point_per_area(min_point_per_area), mesh(mesh), mesh_info(mesh_info), point_cloud(point_cloud) {
+	bool created_collapse_datas;
+	boost::tie(collapse_datas, created_collapse_datas) = mesh.add_property_map<Surface_mesh::Edge_index, CollapseData>("e:c_datas");
+}
 
 void My_visitor::OnStarted (Surface_mesh&) {
 	
@@ -879,7 +909,7 @@ void My_visitor::OnStarted (Surface_mesh&) {
 
 	// Create point_in_face
 	bool created_point_in_face;
-	boost::tie(point_in_face, created_point_in_face) = mesh.add_property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>("f:points", std::vector<Point_set::Index>());
+	boost::tie(point_in_face, created_point_in_face) = mesh.add_property_map<Surface_mesh::Face_index, std::list<Point_set::Index>>("f:points", std::list<Point_set::Index>());
 
 	// Create face_costs
 	bool created_face_costs;
@@ -984,9 +1014,9 @@ void My_visitor::OnStarted (Surface_mesh&) {
 		CGAL::IO::write_point_set("pc_with_color.ply", output_point_cloud);
 	}
 
-	Surface_mesh::Property_map<Surface_mesh::Halfedge_index, K::FT> placement_costs;
-	bool created_placement_costs;
-	boost::tie(placement_costs, created_placement_costs) = mesh.add_property_map<Surface_mesh::Halfedge_index, K::FT>("h:p_cost", 0);
+	Surface_mesh::Property_map<Surface_mesh::Edge_index, CollapseData> collapse_datas;
+	bool created_collapse_datas;
+	boost::tie(collapse_datas, created_collapse_datas) = mesh.add_property_map<Surface_mesh::Edge_index, CollapseData>("e:c_datas");
 
 	add_label(mesh, point_cloud, min_point_per_area);
 	mesh_info.save_mesh(mesh, "initial-mesh.ply");
@@ -997,9 +1027,9 @@ void My_visitor::OnStarted (Surface_mesh&) {
 void My_visitor::OnFinished (Surface_mesh &mesh) {
 	std::cout << "\rMesh simplified                                               " << std::endl;
 
-	Surface_mesh::Property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>> point_in_face;
+	Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
 	bool has_point_in_face;
-	boost::tie(point_in_face, has_point_in_face) = mesh.property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>("f:points");
+	boost::tie(point_in_face, has_point_in_face) = mesh.property_map<Surface_mesh::Face_index, std::list<Point_set::Index>>("f:points");
 	assert(has_point_in_face);
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> face_costs;
@@ -1007,14 +1037,14 @@ void My_visitor::OnFinished (Surface_mesh &mesh) {
 	boost::tie(face_costs, has_face_costs) = mesh.property_map<Surface_mesh::Face_index, K::FT>("f:cost");
 	assert(has_face_costs);
 
-	Surface_mesh::Property_map<Surface_mesh::Halfedge_index, K::FT> placement_costs;
-	bool has_placement_costs;
-	boost::tie(placement_costs, has_placement_costs) = mesh.property_map<Surface_mesh::Halfedge_index, K::FT>("h:p_cost");
-	assert(has_placement_costs);
+	Surface_mesh::Property_map<Surface_mesh::Edge_index, CollapseData> collapse_datas;
+	bool has_collapse_datas;
+	boost::tie(collapse_datas, has_collapse_datas) = mesh.property_map<Surface_mesh::Edge_index, CollapseData>("e:c_datas");
+	assert(has_collapse_datas);
 
-	mesh.remove_property_map<Surface_mesh::Face_index, std::vector<Point_set::Index>>(point_in_face);
+	mesh.remove_property_map<Surface_mesh::Face_index, std::list<Point_set::Index>>(point_in_face);
 	mesh.remove_property_map<Surface_mesh::Face_index, K::FT>(face_costs);
-	mesh.remove_property_map<Surface_mesh::Halfedge_index, K::FT>(placement_costs);
+	mesh.remove_property_map<Surface_mesh::Edge_index, CollapseData>(collapse_datas);
 }
 
 void My_visitor::OnCollected(const SMS::Edge_profile<Surface_mesh>&, const boost::optional< SMS::Edge_profile<Surface_mesh>::FT >&) {
@@ -1124,99 +1154,19 @@ void My_visitor::OnCollapsing (const SMS::Edge_profile<Surface_mesh> &profile, c
 	// Called when an edge is about to be collapsed and replaced by a vertex whose position is *placement
 	for(auto face: profile.triangles()) {
 		auto fh = mesh.face(mesh.halfedge(face.v0, face.v1));
-		points_to_be_change.insert(point_in_face[fh].begin(), point_in_face[fh].end());
 		point_in_face[fh].clear();
 		face_costs[fh] = 0;
 	}
 }
 
-void My_visitor::OnCollapsed (const SMS::Edge_profile<Surface_mesh>&, const Surface_mesh::Vertex_index vd) {
+void My_visitor::OnCollapsed (const SMS::Edge_profile<Surface_mesh>& prof, const Surface_mesh::Vertex_index vd) {
 	// Called when an edge has been collapsed and replaced by the vertex vd
 
 	// change point_in_face and face_costs
-	for(auto ph: points_to_be_change) {
-		K::FT min_d = std::numeric_limits<K::FT>::max();
-		Surface_mesh::Face_index nearest_face;
-		for(auto face: mesh.faces_around_target(mesh.halfedge(vd))) {
-			if (face != mesh.null_face()) {
-				auto r = mesh.vertices_around_face(mesh.halfedge(face)).begin();
-				auto d = CGAL::squared_distance(K::Triangle_3(mesh.point(*r++), mesh.point(*r++), mesh.point(*r++)), type_converter(point_cloud.point(ph)));
-				if (d < min_d) {
-					nearest_face = face;
-					min_d = d;
-				}
-			}
-		}
-		assert(nearest_face != mesh.null_face());
-		point_in_face[nearest_face].push_back(ph);
-		face_costs[nearest_face] += alpha * min_d;
+	for (auto element: collapse_datas[Surface_mesh::Edge_index(prof.v0_v1())].elements) {
+		auto face = mesh.face(element.halfedge);
+		for (auto ph: element.points) point_in_face[face].push_back(ph);
+		face_costs[face] = element.cost;
+		if (beta > 0 || gamma > 0) mesh_label[face] = element.label;
 	}
-
-	std::set<Surface_mesh::Face_index> faces_with_no_label;
-	for(auto face: mesh.faces_around_target(mesh.halfedge(vd))) {
-		if (face != mesh.null_face()) {
-			K::FT min_point = 0;
-			if (min_point_per_area > 0) {
-				auto r = mesh.vertices_around_face(mesh.halfedge(face)).begin();
-				K::FT face_area = CGAL::sqrt(K::Triangle_3(mesh.point(*r++), mesh.point(*r++), mesh.point(*r++)).squared_area());
-				min_point = min_point_per_area * face_area;
-			}	
-			if (point_in_face[face].size() > 0) {
-
-				if (point_in_face[face].size() > min_point) {
-
-					int face_label[LABELS.size()] = {0};
-
-					for (auto point: point_in_face[face]) {
-						face_label[point_cloud_label[point]]++;
-					}
-
-					auto argmax = std::max_element(face_label, face_label+LABELS.size());
-					mesh_label[face] = argmax - face_label;
-					face_costs[face] += beta * (point_in_face[face].size() - *argmax);
-
-				} else { // We don't have information about this face.
-					mesh_label[face] = LABEL_OTHER;
-					face_costs[face] += beta * point_in_face[face].size();
-				}
-			} else {
-				if (min_point <= 1) { // It's probable that there is no point
-					faces_with_no_label.insert(face);
-				} else { // We don't have information about this face.
-					mesh_label[face] = LABEL_OTHER;
-				}
-			}
-		}
-	}
-	while(faces_with_no_label.size() > 0) {
-		std::list<Surface_mesh::Face_index> face_to_be_removed;
-		for(auto face: faces_with_no_label) {
-			K::FT face_label[LABELS.size()] = {0};
-			bool no_neighbor = true;
-			for (auto he: mesh.halfedges_around_face(mesh.halfedge(face))) {
-				if (!mesh.is_border(Surface_mesh::Edge_index(he))) {
-					no_neighbor = false;
-					if (faces_with_no_label.count(mesh.face(mesh.opposite(he))) == 0) {
-						face_label[mesh_label[mesh.face(mesh.opposite(he))]] += CGAL::sqrt(CGAL::squared_distance(mesh.point(mesh.source(he)), mesh.point(mesh.target(he))));
-					}
-				}
-			}
-			if (no_neighbor) {
-				mesh_label[face] = LABEL_OTHER;
-				face_to_be_removed.push_back(face);
-			} else {
-				auto argmax = std::max_element(face_label, face_label+LABELS.size());
-				if (*argmax > 0) {
-					mesh_label[face] = argmax - face_label;
-					face_to_be_removed.push_back(face);
-				}
-			}
-		}
-		for (auto face: face_to_be_removed) {
-			faces_with_no_label.erase(face);
-		}
-		face_to_be_removed.clear();
-	}
-
-	points_to_be_change.clear();
 }
