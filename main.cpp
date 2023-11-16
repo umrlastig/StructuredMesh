@@ -160,26 +160,22 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, cons
 		for (int P = 0; P < raster.xSize-1; P++) {
 			if (pow(raster.dsm[L][P]-raster.dsm[L+1][P+1], 2) < pow(raster.dsm[L+1][P]-raster.dsm[L][P+1], 2)) {
 				auto f1 = mesh.add_face(vertex_index[L][P], vertex_index[L+1][P+1], vertex_index[L+1][P]);
-				point_in_face[f1].push_back(point_index[L][P]);
-				point_in_face[f1].push_back(point_index[L+1][P+1]);
-				point_in_face[f1].push_back(point_index[L+1][P]);
 				face_costs[f1] = 0;
 				auto f2 = mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P+1]);
-				point_in_face[f2].push_back(point_index[L][P]);
-				point_in_face[f2].push_back(point_index[L][P+1]);
-				point_in_face[f2].push_back(point_index[L+1][P+1]);
 				face_costs[f2] = 0;
+				point_in_face[f1].push_back(point_index[L][P]);
+				if (L == raster.ySize - 2) point_in_face[f1].push_back(point_index[L+1][P]);
+				if (P == raster.xSize - 2) point_in_face[f2].push_back(point_index[L][P+1]);
+				if (L == raster.ySize - 2 && P == raster.xSize - 2) point_in_face[f2].push_back(point_index[L+1][P+1]);
 			} else {
 				auto f1 = mesh.add_face(vertex_index[L][P], vertex_index[L][P+1], vertex_index[L+1][P]);
-				point_in_face[f1].push_back(point_index[L][P]);
-				point_in_face[f1].push_back(point_index[L][P+1]);
-				point_in_face[f1].push_back(point_index[L+1][P]);
 				face_costs[f1] = 0;
 				auto f2 = mesh.add_face(vertex_index[L][P+1], vertex_index[L+1][P+1], vertex_index[L+1][P]);
-				point_in_face[f2].push_back(point_index[L][P+1]);
-				point_in_face[f2].push_back(point_index[L+1][P+1]);
-				point_in_face[f2].push_back(point_index[L+1][P]);
 				face_costs[f2] = 0;
+				point_in_face[f1].push_back(point_index[L][P]);
+				if (L == raster.ySize - 2) point_in_face[f1].push_back(point_index[L+1][P]);
+				if (P == raster.xSize - 2) point_in_face[f2].push_back(point_index[L][P+1]);
+				if (L == raster.ySize - 2 && P == raster.xSize - 2) point_in_face[f2].push_back(point_index[L+1][P+1]);
 			}
 		}
 	}
