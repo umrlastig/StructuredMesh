@@ -215,7 +215,7 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, cons
 
 	Cost_stop_predicate stop(5);
 	//SMS::Count_stop_predicate<Surface_mesh> stop(50);
-	const LindstromTurk_param params (1,1,1,1,0,1,1);
+	const LindstromTurk_param params (1,1,1,1,0,1,0.01);
 	Custom_placement pf(params, mesh, point_cloud);
 	Custom_cost cf(alpha, beta, 0.01, 1, min_point_per_area, mesh, point_cloud);
 	My_visitor mv (alpha, beta, min_point_per_area, mesh, mesh_info, point_cloud);
