@@ -710,7 +710,7 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 			Point_3 C = *placement;
 			for (std::size_t face_id = 0; face_id < profile.link().size(); face_id++) {
 				auto he = profile.surface_mesh().halfedge(profile.link()[face_id], profile.link()[(face_id + 1) % profile.link().size()]);
-				if (he != Surface_mesh::null_halfedge()) {
+				if (he != Surface_mesh::null_halfedge() && !profile.surface_mesh().is_border(he)) {
 					Point_3 A = get(profile.vertex_point_map(), profile.link()[face_id]);
 					Point_3 B = get(profile.vertex_point_map(), profile.link()[(face_id + 1) % profile.link().size()]);
 					new_faces.push_back(K::Triangle_3(A, B, C));
