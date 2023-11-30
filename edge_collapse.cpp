@@ -1006,9 +1006,9 @@ void My_visitor::OnStarted (Surface_mesh&) {
 		CGAL::IO::write_point_set("pc_with_border.ply", output_point_cloud);
 
 		for (auto point: output_point_cloud) {
-			red[point] = LABELS[output_label[point]].red;
-			green[point] = LABELS[output_label[point]].green;
-			blue[point] = LABELS[output_label[point]].blue;
+			red[point] = LABELS.at(output_label[point]).red;
+			green[point] = LABELS.at(output_label[point]).green;
+			blue[point] = LABELS.at(output_label[point]).blue;
 		}
 
 		CGAL::IO::write_point_set("pc_with_color.ply", output_point_cloud);

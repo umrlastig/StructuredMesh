@@ -44,9 +44,9 @@ void Surface_mesh_info::save_mesh(const Surface_mesh &mesh, const char *filename
 		assert(created);
 
 		for (auto face : output_mesh.faces()) {
-			red[face] = LABELS[label[face]].red;
-			green[face] = LABELS[label[face]].green;
-			blue[face] = LABELS[label[face]].blue;
+			red[face] = LABELS.at(label[face]).red;
+			green[face] = LABELS.at(label[face]).green;
+			blue[face] = LABELS.at(label[face]).blue;
 		}
 	}
 

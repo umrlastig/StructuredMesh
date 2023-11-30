@@ -260,13 +260,13 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_ax
 				boost::tie(edge_prop, created) = skeleton.add_property_map<Surface_mesh::Edge_index, int>("prop",0);
 				assert(created);
 				Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> red;
-				boost::tie(red, created) = skeleton.add_property_map<Surface_mesh::Vertex_index, unsigned char>("red", LABELS[lab].red);
+				boost::tie(red, created) = skeleton.add_property_map<Surface_mesh::Vertex_index, unsigned char>("red", LABELS.at(lab).red);
 				assert(created);
 				Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> green;
-				boost::tie(green, created) = skeleton.add_property_map<Surface_mesh::Vertex_index, unsigned char>("green", LABELS[lab].green);
+				boost::tie(green, created) = skeleton.add_property_map<Surface_mesh::Vertex_index, unsigned char>("green", LABELS.at(lab).green);
 				assert(created);
 				Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> blue;
-				boost::tie(blue, created) = skeleton.add_property_map<Surface_mesh::Vertex_index, unsigned char>("blue", LABELS[lab].blue);
+				boost::tie(blue, created) = skeleton.add_property_map<Surface_mesh::Vertex_index, unsigned char>("blue", LABELS.at(lab).blue);
 				assert(created);
 
 				std::stringstream skeleton_name;
