@@ -243,7 +243,7 @@ int main(int argc, char **argv) {
 	
 	const LindstromTurk_param params (l1,l2,l3,l4,l5,l6,l7);
 	Custom_placement pf(params, mesh, point_cloud);
-	Custom_cost cf(c1, c2, c3, c4, min_point_per_area, mesh, point_cloud);
+	Custom_cost cf(params, c1, c2, c3, c4, min_point_per_area, mesh, point_cloud);
 	My_visitor mv(params, c1, c2, c3, min_point_per_area, mesh, mesh_info, point_cloud);
 	SMS::Bounded_normal_change_filter<> filter;
 	if (ns > 0) {

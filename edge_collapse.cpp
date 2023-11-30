@@ -664,7 +664,7 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::Point> Custom_placement::operat
 	return result_type(placement);
 }
 
-Custom_cost::Custom_cost (const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT delta, const K::FT min_point_per_area, Surface_mesh &mesh, const Point_set &point_cloud) : alpha(alpha), beta(beta), gamma(gamma), delta(delta), min_point_per_area(min_point_per_area), point_cloud(point_cloud) {
+Custom_cost::Custom_cost (const LindstromTurk_param &params, const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT delta, const K::FT min_point_per_area, Surface_mesh &mesh, const Point_set &point_cloud) : params(params), alpha(alpha), beta(beta), gamma(gamma), delta(delta), min_point_per_area(min_point_per_area), point_cloud(point_cloud) {
 	bool created_collapse_datas;
 	boost::tie(collapse_datas, created_collapse_datas) = mesh.add_property_map<Surface_mesh::Edge_index, CollapseData>("e:c_datas");
 }
@@ -686,12 +686,7 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 		int count_semantic_error = 0;
 		K::FT semantic_border_length = 0;
 		K::FT old_cost = 0;
-		if (alpha > 0 || beta > 0 || gamma > 0) {
-
-			Point_set::Property_map<unsigned char> point_cloud_label;
-			bool has_label;
-			boost::tie(point_cloud_label, has_label) = point_cloud.property_map<unsigned char>("p:label");
-			assert(has_label);
+		if (alpha > 0 || beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) {
 
 			Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
 			bool has_point_in_face;
@@ -738,13 +733,20 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 			}
 
 			// semantic error
-			if (beta > 0 || gamma > 0) {
-				std::vector<unsigned char> new_face_label(new_faces.size(), LABEL_OTHER);
+			if (beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) {
 				Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_label;
 				bool has_mesh_label;
 				boost::tie(mesh_label, has_mesh_label) = profile.surface_mesh().property_map<Surface_mesh::Face_index, unsigned char>("label");
 				assert(has_mesh_label);
+				
+				Point_set::Property_map<unsigned char> point_cloud_label;
+				bool has_label;
+				boost::tie(point_cloud_label, has_label) = point_cloud.property_map<unsigned char>("p:label");
+				assert(has_label);
 
+				std::vector<unsigned char> new_face_label(new_faces.size(), LABEL_OTHER);
+
+				// label new face and semantic error
 				std::set<std::size_t> faces_with_no_label;
 				for(std::size_t face_id = 0; face_id < new_faces.size(); face_id++) {
 					K::FT min_point = 0;
@@ -901,15 +903,19 @@ void My_visitor::OnStarted (Surface_mesh&) {
 
 	std::cout << "Starting edge_collapse" << std::endl;
 	
-	// Add label to face
-	bool created_label;
-	boost::tie(mesh_label, created_label) = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("label", LABEL_OTHER);
-	assert(created_label);
+	if (beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) {
+		// Add label to face
+		bool created_label;
+		boost::tie(mesh_label, created_label) = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("label", LABEL_OTHER);
+		assert(created_label);
+	}
 
-	// Get point_cloud_label
-	bool has_point_cloud_label;
-	boost::tie(point_cloud_label, has_point_cloud_label) = point_cloud.property_map<unsigned char>("p:label");
-	assert(has_point_cloud_label);
+	if (beta > 0 || gamma > 0 || params.label_preservation > 0 || params.semantic_border_optimization > 0) {
+		// Get point_cloud_label
+		bool has_point_cloud_label;
+		boost::tie(point_cloud_label, has_point_cloud_label) = point_cloud.property_map<unsigned char>("p:label");
+		assert(has_point_cloud_label);
+	}
 
 	// Create point_in_face
 	bool created_point_in_face;
@@ -928,7 +934,7 @@ void My_visitor::OnStarted (Surface_mesh&) {
 			point_in_face[location.first].push_back(ph);
 			if (created_face_costs) face_costs[location.first] += alpha * CGAL::squared_distance(p, PMP::construct_point(location, mesh));
 		}
-		if (created_face_costs) {
+		if (created_face_costs && beta > 0) {
 			for(auto face: mesh.faces()) {
 				K::FT min_point = 0;
 				if (min_point_per_area > 0) {
@@ -951,38 +957,32 @@ void My_visitor::OnStarted (Surface_mesh&) {
 			}
 		}
 	}
-	
-	bool created_point_isborder;
-	Point_set::Property_map<bool> isborder;
-	boost::tie (isborder, created_point_isborder) = point_cloud.add_property_map<bool>("p:isborder", false);
-	if(params.label_preservation > 0 && created_point_isborder) {
-		// Set isBorder
-		int N = 10;
-		Point_tree point_tree(point_cloud.begin(), point_cloud.end(), Point_tree::Splitter(), TreeTraits(point_cloud.point_map()));
-		Neighbor_search::Distance tr_dist(point_cloud.point_map());
-		for (auto point: point_cloud) {
-			Neighbor_search search(point_tree, point_cloud.point(point), N, 0, true, tr_dist, false);
-			unsigned char l = point_cloud_label[search.begin()->first];
-			for(auto it = search.begin() + 1; it != search.end() && !isborder[point]; ++it) {
-				if (point_cloud_label[it->first] != l) isborder[point] = true;
-			}
-		}
 
-		std::cout << "Border points found" << std::endl;
+	// Set isBorder
+	if(params.label_preservation > 0) {
+		bool created_point_isborder;
+		Point_set::Property_map<bool> isborder;
+		boost::tie (isborder, created_point_isborder) = point_cloud.add_property_map<bool>("p:isborder", false);
+		if (created_point_isborder) {
+			int N = 10;
+			Point_tree point_tree(point_cloud.begin(), point_cloud.end(), Point_tree::Splitter(), TreeTraits(point_cloud.point_map()));
+			Neighbor_search::Distance tr_dist(point_cloud.point_map());
+			for (auto point: point_cloud) {
+				Neighbor_search search(point_tree, point_cloud.point(point), N, 0, true, tr_dist, false);
+				unsigned char l = point_cloud_label[search.begin()->first];
+				for(auto it = search.begin() + 1; it != search.end() && !isborder[point]; ++it) {
+					if (point_cloud_label[it->first] != l) isborder[point] = true;
+				}
+			}
+			std::cout << "Border points computed" << std::endl;
+		} else {
+			std::cout << "Border points found" << std::endl;
+		}
 	}
 
 	{// Save point cloud
 		Point_set output_point_cloud(point_cloud);
-		Point_set::Property_map<unsigned char> output_label;
-		bool has_output_label;
-		boost::tie(output_label, has_output_label) = output_point_cloud.property_map<unsigned char>("p:label");
-		assert(has_output_label);
 
-		Point_set::Property_map<bool> output_isborder;
-		bool has_output_isborder;
-		boost::tie(output_isborder, has_output_isborder) = output_point_cloud.property_map<bool>("p:isborder");
-		assert(has_output_isborder);
-	
 		// Color
 		bool created;
 		Point_set::Property_map<unsigned char> red;
@@ -995,24 +995,38 @@ void My_visitor::OnStarted (Surface_mesh&) {
 		boost::tie(blue, created) = output_point_cloud.add_property_map<unsigned char>("blue",0);
 		assert(created);
 
-		for (auto point: output_point_cloud) {
-			if (output_isborder[point]) {
-				red[point] = 255;
-				green[point] = 255;
-				blue[point] = 255;
-			} else {
-				red[point] = 155;
-				green[point] = 155;
-				blue[point] = 155;
+		if(params.label_preservation > 0) {
+			Point_set::Property_map<bool> output_isborder;
+			bool has_output_isborder;
+			boost::tie(output_isborder, has_output_isborder) = output_point_cloud.property_map<bool>("p:isborder");
+			assert(has_output_isborder);
+
+			for (auto point: output_point_cloud) {
+				if (output_isborder[point]) {
+					red[point] = 255;
+					green[point] = 255;
+					blue[point] = 255;
+				} else {
+					red[point] = 155;
+					green[point] = 155;
+					blue[point] = 155;
+				}
 			}
+
+			CGAL::IO::write_point_set("pc_with_border.ply", output_point_cloud);
 		}
 
-		CGAL::IO::write_point_set("pc_with_border.ply", output_point_cloud);
+		if (beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) {
+			Point_set::Property_map<unsigned char> output_label;
+			bool has_output_label;
+			boost::tie(output_label, has_output_label) = output_point_cloud.property_map<unsigned char>("p:label");
+			assert(has_output_label);
 
-		for (auto point: output_point_cloud) {
-			red[point] = LABELS.at(output_label[point]).red;
-			green[point] = LABELS.at(output_label[point]).green;
-			blue[point] = LABELS.at(output_label[point]).blue;
+			for (auto point: output_point_cloud) {
+				red[point] = LABELS.at(output_label[point]).red;
+				green[point] = LABELS.at(output_label[point]).green;
+				blue[point] = LABELS.at(output_label[point]).blue;
+			}
 		}
 
 		CGAL::IO::write_point_set("pc_with_color.ply", output_point_cloud);
@@ -1022,7 +1036,7 @@ void My_visitor::OnStarted (Surface_mesh&) {
 	bool created_collapse_datas;
 	boost::tie(collapse_datas, created_collapse_datas) = mesh.add_property_map<Surface_mesh::Edge_index, CollapseData>("e:c_datas");
 
-	add_label(mesh, point_cloud, min_point_per_area);
+	if (beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) add_label(mesh, point_cloud, min_point_per_area);
 	mesh_info.save_mesh(mesh, "initial-mesh.ply");
 
 	start_collecte = std::chrono::system_clock::now();
@@ -1156,10 +1170,21 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 
 void My_visitor::OnCollapsing (const SMS::Edge_profile<Surface_mesh> &profile, const boost::optional<SMS::Edge_profile<Surface_mesh>::Point>&) {
 	// Called when an edge is about to be collapsed and replaced by a vertex whose position is *placement
-	for(auto face: profile.triangles()) {
-		auto fh = mesh.face(mesh.halfedge(face.v0, face.v1));
-		point_in_face[fh].clear();
-		face_costs[fh] = 0;
+	if (alpha > 0 || beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) {
+		for(auto face: profile.triangles()) {
+			auto fh = mesh.face(mesh.halfedge(face.v0, face.v1));
+			/*std::cerr << fh << "\n";
+			Point_3 p0 = get(profile.vertex_point_map(),face.v0);
+			Point_3 p1 = get(profile.vertex_point_map(),face.v1);
+			Point_3 p2 = get(profile.vertex_point_map(),face.v2);
+			std::cerr << p0 << " " << p1 << " " << p2 << "\n";
+			for (auto v: point_in_face[fh]) {
+				std::cerr << v << " : " << point_cloud.point(v) << "\n";
+			}*/
+
+			point_in_face[fh].clear();
+			face_costs[fh] = 0;
+		}
 	}
 }
 
@@ -1167,10 +1192,13 @@ void My_visitor::OnCollapsed (const SMS::Edge_profile<Surface_mesh>& prof, const
 	// Called when an edge has been collapsed and replaced by the vertex vd
 
 	// change point_in_face and face_costs
-	for (auto element: collapse_datas[Surface_mesh::Edge_index(prof.v0_v1())].elements) {
-		auto face = mesh.face(element.halfedge);
-		for (auto ph: element.points) point_in_face[face].push_back(ph);
-		face_costs[face] = element.cost;
-		if (beta > 0 || gamma > 0) mesh_label[face] = element.label;
+	if (alpha > 0 || beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) {
+		for (auto element: collapse_datas[Surface_mesh::Edge_index(prof.v0_v1())].elements) {
+			auto face = mesh.face(element.halfedge);
+			for (auto ph: element.points) point_in_face[face].push_back(ph);
+			face_costs[face] = element.cost;
+			if (beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) mesh_label[face] = element.label;
+		}
 	}
+
 }
