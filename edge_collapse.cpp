@@ -36,7 +36,7 @@ typedef CGAL::Eigen_svd::Matrix                             Eigen_matrix;
 typedef CGAL::Quadratic_program<ET>                         Program;
 typedef CGAL::Quadratic_program_solution<ET>                Solution;
 
-typedef CGAL::Search_traits_3<Exact_predicates_kernel>      Traits_base;
+typedef CGAL::Search_traits_3<Point_set_kernel>             Traits_base;
 typedef CGAL::Search_traits_adapter<Point_set::Index, Point_set::Point_map, Traits_base> TreeTraits;
 typedef CGAL::Orthogonal_k_neighbor_search<TreeTraits>      Neighbor_search;
 typedef Neighbor_search::Tree                               Point_tree;
@@ -238,7 +238,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 	}
 
 	auto squared_length = K::Vector_3(profile.p0(), profile.p1()).squared_length();
-	CGAL::Cartesian_converter<Exact_predicates_kernel,K> type_converter;
+	CGAL::Cartesian_converter<Point_set_kernel,K> type_converter;
 
 	if (count_diff_label < 2) {
 		return result;
@@ -297,14 +297,14 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 			}
 		}
 
-		Exact_predicates_kernel::FT c = 1;
+		Point_set_kernel::FT c = 1;
 
 		Program qp (CGAL::EQUAL, true, 0, true, c);
 		for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-			auto vr = Exact_predicates_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) * y[i];
+			auto vr = Point_set_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) * y[i];
 			qp.set_d(i, i, CGAL::scalar_product(vr,vr));
 			for (std::size_t j = 0; j < i; j++) {
-				qp.set_d(i, j, CGAL::scalar_product(vr, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[j])) * y[j]));
+				qp.set_d(i, j, CGAL::scalar_product(vr, Point_set_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[j])) * y[j]));
 			}
 			qp.set_c(i, -1);
 			qp.set_a(i, 0,  y[i]);
@@ -314,18 +314,18 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 		if (!s.solves_quadratic_program(qp)) std::cerr << "ALERT !!!!!!!!!!!!!!!!!!!\n";
 		assert (s.solves_quadratic_program(qp));
 
-		Exact_predicates_kernel::Vector_3 w(CGAL::NULL_VECTOR);
+		Point_set_kernel::Vector_3 w(CGAL::NULL_VECTOR);
 		auto value = s.variable_values_begin();
 		for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-			w += y[i] * CGAL::to_double(*(value++)) * Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]));
+			w += y[i] * CGAL::to_double(*(value++)) * Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]));
 		}
 
-		Exact_predicates_kernel::FT b = 0;
+		Point_set_kernel::FT b = 0;
 		int count = 0;
-		Exact_predicates_kernel::FT min_positive = std::numeric_limits<Exact_predicates_kernel::FT>::max();
-		Exact_predicates_kernel::FT max_negative = std::numeric_limits<Exact_predicates_kernel::FT>::lowest();
+		Point_set_kernel::FT min_positive = std::numeric_limits<Point_set_kernel::FT>::max();
+		Point_set_kernel::FT max_negative = std::numeric_limits<Point_set_kernel::FT>::lowest();
 		for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-			Exact_predicates_kernel::FT v = CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+			Point_set_kernel::FT v = CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
 			if (y[i] > 0 && v < min_positive) min_positive = v;
 			if (y[i] < 0 && v > max_negative) max_negative = v;
 		}
@@ -338,7 +338,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 			for (std::size_t i = 0; i < points_for_svm.size(); i++) {
 				double v = CGAL::to_double(*(value++));
 				if (v > 0 && v < c) {
-					b += y[i] - CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+					b += y[i] - CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
 					count++;
 				}
 			}
@@ -347,14 +347,14 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 			value = s.variable_values_begin();
 			for (std::size_t i = 0; i < points_for_svm.size(); i++) {
 				if (CGAL::to_double(*(value++)) > 0) {
-					b += y[i] - CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+					b += y[i] - CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
 					count++;
 				}
 			}
 		}
 		if (count == 0) {
 			for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-				b += y[i] - CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+				b += y[i] - CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
 				count++;
 			}
 		}
@@ -387,14 +387,14 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 
 				if (has_i_label && has_other_label) {
 
-					Exact_predicates_kernel::FT c = 1;
+					Point_set_kernel::FT c = 1;
 
 					Program qp (CGAL::EQUAL, true, 0, true, c);
 					for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-						auto vr = Exact_predicates_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) * y[i];
+						auto vr = Point_set_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) * y[i];
 						qp.set_d(i, i, CGAL::scalar_product(vr,vr));
 						for (std::size_t j = 0; j < i; j++) {
-							qp.set_d(i, j, CGAL::scalar_product(vr, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[j])) * y[j]));
+							qp.set_d(i, j, CGAL::scalar_product(vr, Point_set_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[j])) * y[j]));
 						}
 						qp.set_c(i, -1);
 						qp.set_a(i, 0,  y[i]);
@@ -404,18 +404,18 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 					if (!s.solves_quadratic_program(qp)) std::cerr << "ALERT !!!!!!!!!!!!!!!!!!!\n";
 					assert (s.solves_quadratic_program(qp));
 
-					Exact_predicates_kernel::Vector_3 w(CGAL::NULL_VECTOR);
+					Point_set_kernel::Vector_3 w(CGAL::NULL_VECTOR);
 					auto value = s.variable_values_begin();
 					for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-						w += y[i] * CGAL::to_double(*(value++)) * Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]));
+						w += y[i] * CGAL::to_double(*(value++)) * Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]));
 					}
 
-					Exact_predicates_kernel::FT b = 0;
+					Point_set_kernel::FT b = 0;
 					int count = 0;
-					Exact_predicates_kernel::FT min_positive = std::numeric_limits<Exact_predicates_kernel::FT>::max();
-					Exact_predicates_kernel::FT max_negative = std::numeric_limits<Exact_predicates_kernel::FT>::lowest();
+					Point_set_kernel::FT min_positive = std::numeric_limits<Point_set_kernel::FT>::max();
+					Point_set_kernel::FT max_negative = std::numeric_limits<Point_set_kernel::FT>::lowest();
 					for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-						Exact_predicates_kernel::FT v = CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+						Point_set_kernel::FT v = CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
 						if (y[i] > 0 && v < min_positive) min_positive = v;
 						if (y[i] < 0 && v > max_negative) max_negative = v;
 					}
@@ -428,7 +428,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 						for (std::size_t i = 0; i < points_for_svm.size(); i++) {
 							double v = CGAL::to_double(*(value++));
 							if (v > 0 && v < c) {
-								b += y[i] - CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+								b += y[i] - CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
 								count++;
 							}
 						}
@@ -437,14 +437,14 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 						value = s.variable_values_begin();
 						for (std::size_t i = 0; i < points_for_svm.size(); i++) {
 							if (CGAL::to_double(*(value++)) > 0) {
-								b += y[i] - CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+								b += y[i] - CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
 								count++;
 							}
 						}
 					}
 					if (count == 0) {
 						for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-							b += y[i] - CGAL::scalar_product(w, Exact_predicates_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+							b += y[i] - CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
 							count++;
 						}
 					}
@@ -671,7 +671,7 @@ Custom_cost::Custom_cost (const K::FT alpha, const K::FT beta, const K::FT gamma
 
 boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(const SMS::Edge_profile<Surface_mesh>& profile, const boost::optional<SMS::Edge_profile<Surface_mesh>::Point>& placement) const {
 	typedef boost::optional<SMS::Edge_profile<Surface_mesh>::FT> result_type;
-	CGAL::Cartesian_converter<Exact_predicates_kernel,K> type_converter;
+	CGAL::Cartesian_converter<Point_set_kernel,K> type_converter;
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> face_costs;
 	bool has_face_costs;

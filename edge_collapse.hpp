@@ -11,7 +11,9 @@
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
 #include <CGAL/Surface_mesh_simplification/Edge_collapse_visitor_base.h>
 
-typedef CGAL::Point_set_3<Exact_predicates_kernel::Point_3> Point_set;
+typedef Exact_predicates_kernel Point_set_kernel;
+
+typedef CGAL::Point_set_3<Point_set_kernel::Point_3> Point_set;
 
 namespace SMS = CGAL::Surface_mesh_simplification;
 
@@ -87,7 +89,7 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 		std::chrono::time_point<std::chrono::system_clock> start_collecte;
 		std::chrono::time_point<std::chrono::system_clock> start_collapse;
 		bool output[30] = {false};
-		CGAL::Cartesian_converter<Exact_predicates_kernel,K> type_converter;
+		CGAL::Cartesian_converter<Point_set_kernel,K> type_converter;
 		
 		const LindstromTurk_param &params;
 		const K::FT alpha, beta, gamma;
