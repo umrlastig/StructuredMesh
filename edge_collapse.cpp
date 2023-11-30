@@ -9,10 +9,9 @@
 #include <CGAL/Orthogonal_k_neighbor_search.h>
 #include <CGAL/Search_traits_3.h>
 #include <CGAL/Search_traits_adapter.h>
+#include <CGAL/Polygon_mesh_processing/locate.h>
 #include <CGAL/AABB_tree.h>
 #include <CGAL/AABB_traits.h>
-#include <CGAL/AABB_triangle_primitive.h>
-#include <CGAL/Polygon_mesh_processing/locate.h>
 #include <CGAL/AABB_face_graph_triangle_primitive.h>
 
 #ifdef CGAL_EIGEN3_ENABLED
@@ -38,7 +37,6 @@ typedef CGAL::Search_traits_3<Point_set_kernel>             Traits_base;
 typedef CGAL::Search_traits_adapter<Point_set::Index, Point_set::Point_map, Traits_base> TreeTraits;
 typedef CGAL::Orthogonal_k_neighbor_search<TreeTraits>      Neighbor_search;
 typedef Neighbor_search::Tree                               Point_tree;
-typedef CGAL::AABB_tree<CGAL::AABB_traits<K, CGAL::AABB_triangle_primitive<K, std::vector<K::Triangle_3>::iterator>>> Triangle_tree;
 
 namespace PMP = CGAL::Polygon_mesh_processing;
 typedef CGAL::AABB_face_graph_triangle_primitive<Surface_mesh> AABB_face_graph_primitive;
@@ -717,16 +715,21 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 
 			// geometric error
 			std::vector<std::list<Point_set::Index>> points_in_new_face (new_faces.size());
-			Triangle_tree tree(new_faces.begin(), new_faces.end());
 			for(auto ph: points_to_be_change) {
 				auto point = type_converter(point_cloud.point(ph));
-				auto point_and_id = tree.closest_point_and_primitive(point);
-
-				points_in_new_face[point_and_id.second - new_faces.begin()].push_back(ph);
+				K::FT min_d = std::numeric_limits<K::FT>::max();
+				std::size_t closest_face = 0;
+				for(std::size_t face_id = 0; face_id < new_faces.size(); face_id++) {
+					auto d = CGAL::squared_distance(point, new_faces[face_id]);
+					if (d < min_d) {
+						min_d = d;
+						closest_face = face_id;
+					}
+				}
+				points_in_new_face[closest_face].push_back(ph);
 				if (alpha > 0) {
-					K::FT distance = CGAL::squared_distance(point, point_and_id.first);
-					squared_distance += distance;
-					new_face_cost[point_and_id.second - new_faces.begin()] += alpha * distance;
+					squared_distance += min_d;
+					new_face_cost[closest_face] += alpha * min_d;
 				}
 			}
 
