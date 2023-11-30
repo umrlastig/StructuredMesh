@@ -14,8 +14,6 @@
 #include <CGAL/AABB_triangle_primitive.h>
 #include <CGAL/Polygon_mesh_processing/locate.h>
 #include <CGAL/AABB_face_graph_triangle_primitive.h>
-#include <CGAL/AABB_tree.h>
-#include <CGAL/AABB_traits.h>
 
 #ifdef CGAL_EIGEN3_ENABLED
 #include <CGAL/Eigen_matrix.h>
@@ -81,7 +79,7 @@ void add_label(Surface_mesh &mesh, const Point_set &point_cloud, const K::FT min
 			auto r = mesh.vertices_around_face(mesh.halfedge(face)).begin();
 			K::FT face_area = CGAL::sqrt(K::Triangle_3(mesh.point(*r++), mesh.point(*r++), mesh.point(*r++)).squared_area());
 			min_point = min_point_per_area * face_area;
-		}	
+		}
 		if (point_in_face[face].size() > 0) {
 
 			if (point_in_face[face].size() > min_point) {
@@ -151,7 +149,7 @@ std::list<std::pair <K::Vector_3, K::FT>> volume_preservation_and_optimisation (
 			/*std::cerr << "triangle: " << p0 << ", " << p1 << ", " << p2 << "\n";
 			std::cerr << "normal: " << CGAL::normal(p0, p1, p2) << "\n";
 			std::cerr << "determinant: " << CGAL::determinant(K::Vector_3(Point_3(CGAL::ORIGIN), p0), K::Vector_3(Point_3(CGAL::ORIGIN), p1), K::Vector_3(Point_3(CGAL::ORIGIN), p2)) << "\n";*/
-			
+
 			K::Vector_3 n = CGAL::normal(p0, p1, p2) / 2;
 			K::FT det = CGAL::scalar_product (n, K::Vector_3(Point_3(CGAL::ORIGIN), p0));
 
@@ -243,7 +241,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 	if (count_diff_label < 2) {
 		return result;
 	} else if (count_diff_label == 2) {
-		
+
 		unsigned char label1, label2;
 		bool first = true;
 		for (std::size_t i = 0; i < LABELS.size(); i++) {
@@ -367,7 +365,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 
 		for (std::size_t i_label = 0; i_label < LABELS.size(); i_label++) {
 			if (count_collapse_label[i_label] > 0) {
-				
+
 				std::vector<int> y;
 				std::vector<Point_set::Index> points_for_svm;
 				y.reserve(points_in_faces.size());
@@ -656,7 +654,7 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::Point> Custom_placement::operat
 	CGAL::Eigen_svd::solve(A, B);
 
 	auto R = A*B - C;
-	
+
 	// Save cost
 	Point_3 placement(B.vector()[0], B.vector()[1], B.vector()[2]);
 	collapse_datas[Surface_mesh::Edge_index(profile.v0_v1())].cost = (R.transpose()*R)(0,0);
@@ -738,7 +736,7 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 				bool has_mesh_label;
 				boost::tie(mesh_label, has_mesh_label) = profile.surface_mesh().property_map<Surface_mesh::Face_index, unsigned char>("label");
 				assert(has_mesh_label);
-				
+
 				Point_set::Property_map<unsigned char> point_cloud_label;
 				bool has_label;
 				boost::tie(point_cloud_label, has_label) = point_cloud.property_map<unsigned char>("p:label");
@@ -752,7 +750,7 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 					K::FT min_point = 0;
 					if (min_point_per_area > 0) {
 						min_point = min_point_per_area * CGAL::sqrt(new_faces[face_id].squared_area());
-					}	
+					}
 					if (points_in_new_face[face_id].size() > 0) {
 
 						if (points_in_new_face[face_id].size() > min_point) {
@@ -902,7 +900,7 @@ My_visitor::My_visitor(const LindstromTurk_param &params, const K::FT alpha, con
 void My_visitor::OnStarted (Surface_mesh&) {
 
 	std::cout << "Starting edge_collapse" << std::endl;
-	
+
 	if (beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) {
 		// Add label to face
 		bool created_label;
@@ -941,7 +939,7 @@ void My_visitor::OnStarted (Surface_mesh&) {
 					auto r = mesh.vertices_around_face(mesh.halfedge(face)).begin();
 					K::FT face_area = CGAL::sqrt(K::Triangle_3(mesh.point(*r++), mesh.point(*r++), mesh.point(*r++)).squared_area());
 					min_point = min_point_per_area * face_area;
-				}	
+				}
 				if (point_in_face[face].size() > 0) {
 					if (point_in_face[face].size() > min_point) {
 						int face_label[LABELS.size()] = {0};
