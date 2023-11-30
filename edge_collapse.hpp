@@ -89,7 +89,8 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 		bool output[30] = {false};
 		CGAL::Cartesian_converter<Exact_predicates_kernel,K> type_converter;
 		
-		const K::FT alpha, beta;
+		const LindstromTurk_param &params;
+		const K::FT alpha, beta, gamma;
 		const K::FT min_point_per_area;
 		Surface_mesh &mesh;
 		const Surface_mesh_info &mesh_info;
@@ -102,7 +103,7 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 		Point_set::Property_map<unsigned char> point_cloud_label;
 
 	public:
-		My_visitor(const K::FT alpha, const K::FT beta, const K::FT min_point_per_area, Surface_mesh &mesh, const Surface_mesh_info &mesh_info, Point_set &point_cloud);
+		My_visitor(const LindstromTurk_param &params, const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT min_point_per_area, Surface_mesh &mesh, const Surface_mesh_info &mesh_info, Point_set &point_cloud);
 
 		void OnStarted (Surface_mesh&);
 

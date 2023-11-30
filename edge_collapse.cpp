@@ -718,6 +718,8 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 				}
 			}
 
+			if (new_faces.size() == 0) return result_type();
+
 			std::vector<K::FT> new_face_cost (new_faces.size(), 0);
 
 			// geometric error
@@ -890,12 +892,14 @@ bool Cost_stop_predicate::operator()(const SMS::Edge_profile<Surface_mesh>::FT &
 	return current_cost > cost;
 }
 
-My_visitor::My_visitor(const K::FT alpha, const K::FT beta, const K::FT min_point_per_area, Surface_mesh &mesh, const Surface_mesh_info &mesh_info, Point_set &point_cloud) : alpha(alpha), beta(beta), min_point_per_area(min_point_per_area), mesh(mesh), mesh_info(mesh_info), point_cloud(point_cloud) {
+My_visitor::My_visitor(const LindstromTurk_param &params, const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT min_point_per_area, Surface_mesh &mesh, const Surface_mesh_info &mesh_info, Point_set &point_cloud) : params(params), alpha(alpha), beta(beta), gamma(gamma), min_point_per_area(min_point_per_area), mesh(mesh), mesh_info(mesh_info), point_cloud(point_cloud) {
 	bool created_collapse_datas;
 	boost::tie(collapse_datas, created_collapse_datas) = mesh.add_property_map<Surface_mesh::Edge_index, CollapseData>("e:c_datas");
 }
 
 void My_visitor::OnStarted (Surface_mesh&) {
+
+	std::cout << "Starting edge_collapse" << std::endl;
 	
 	// Add label to face
 	bool created_label;
@@ -951,7 +955,7 @@ void My_visitor::OnStarted (Surface_mesh&) {
 	bool created_point_isborder;
 	Point_set::Property_map<bool> isborder;
 	boost::tie (isborder, created_point_isborder) = point_cloud.add_property_map<bool>("p:isborder", false);
-	if(created_point_isborder) {
+	if(params.label_preservation > 0 && created_point_isborder) {
 		// Set isBorder
 		int N = 10;
 		Point_tree point_tree(point_cloud.begin(), point_cloud.end(), Point_tree::Splitter(), TreeTraits(point_cloud.point_map()));

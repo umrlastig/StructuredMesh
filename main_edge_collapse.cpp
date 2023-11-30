@@ -70,7 +70,7 @@ int main(int argc, char **argv) {
 
 	char *mesh_file = NULL;
 	char *point_cloud_file = NULL;
-	float l1=10, l2=1, l3=10, l4=1, l5=0.001, l6=1, l7=1, c1=1, c2=1, c3=1, c4=1, cs=1;
+	float l1=10, l2=1, l3=10, l4=1, l5=0.00001, l6=1, l7=0.01, c1=1, c2=1, c3=0.01, c4=1, cs=1;
 	int ns = 0;
 	int baseline = -1;
 
@@ -229,7 +229,7 @@ int main(int argc, char **argv) {
 	const LindstromTurk_param params (l1,l2,l3,l4,l5,l6,l7);
 	Custom_placement pf(params, mesh, point_cloud);
 	Custom_cost cf(c1, c2, c3, c4, min_point_per_area, mesh, point_cloud);
-	My_visitor mv(c1, c2, min_point_per_area, mesh, mesh_info, point_cloud);
+	My_visitor mv(params, c1, c2, c3, min_point_per_area, mesh, mesh_info, point_cloud);
 	SMS::Bounded_normal_change_filter<> filter;
 	if (ns > 0) {
 		SMS::Count_stop_predicate<Surface_mesh> stop(ns);
