@@ -129,7 +129,14 @@ void add_label(Surface_mesh &mesh, const Point_set &point_cloud, const K::FT min
 		for (auto face: face_to_be_removed) {
 			faces_with_no_label.erase(face);
 		}
-		face_to_be_removed.clear();
+		if (face_to_be_removed.size() == 0) {
+			for(auto face_id: faces_with_no_label) {
+				mesh_label[face_id] = LABEL_OTHER;
+			}
+			break;
+		} else {
+			face_to_be_removed.clear();
+		}
 	}
 }
 
@@ -820,7 +827,14 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 					for (auto face_id: face_to_be_removed) {
 						faces_with_no_label.erase(face_id);
 					}
-					face_to_be_removed.clear();
+					if (face_to_be_removed.size() == 0) {
+						for(auto face_id: faces_with_no_label) {
+							new_face_label[face_id] = LABEL_OTHER;
+						}
+						break;
+					} else {
+						face_to_be_removed.clear();
+					}
 				}
 
 				// semantic border length error
