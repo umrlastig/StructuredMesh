@@ -4,9 +4,28 @@
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/GarlandHeckbert_policies.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Bounded_normal_change_filter.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Count_stop_predicate.h>
+#include <CGAL/Orthogonal_k_neighbor_search.h>
+#include <CGAL/Search_traits_3.h>
+#include <CGAL/Search_traits_adapter.h>
+#include <CGAL/Polygon_mesh_processing/locate.h>
+#include <CGAL/AABB_tree.h>
+#include <CGAL/AABB_traits.h>
+#include <CGAL/AABB_face_graph_triangle_primitive.h>
 
 #include <getopt.h>
 #include <cstdlib>
+#include <random>
+
+typedef CGAL::Search_traits_3<Point_set_kernel>             Traits_base;
+typedef CGAL::Search_traits_adapter<Point_set::Index, Point_set::Point_map, Traits_base> TreeTraits;
+typedef CGAL::Orthogonal_k_neighbor_search<TreeTraits>      Neighbor_search;
+typedef Neighbor_search::Tree                               Point_tree;
+
+typedef CGAL::AABB_face_graph_triangle_primitive<Surface_mesh> AABB_face_graph_primitive;
+typedef CGAL::AABB_traits<K, AABB_face_graph_primitive>        AABB_face_graph_traits;
+typedef CGAL::AABB_tree<AABB_face_graph_traits>                AABB_tree;
+
+namespace PMP = CGAL::Polygon_mesh_processing;
 
 Surface_mesh_info::Surface_mesh_info() : x_0(0), y_0(0) {}
 
@@ -64,7 +83,9 @@ int main(int argc, char **argv) {
 		{"c4", required_argument, NULL, 0},
 		{"cs", required_argument, NULL, 0},
 		{"ns", required_argument, NULL, 0},
+		{"subsample", required_argument, NULL, 0},
 		{"baseline", required_argument, NULL, 0},
+		{"min_point_factor", required_argument, NULL, 0},
 		{NULL, 0, 0, '\0'}
 	};
 
@@ -72,7 +93,9 @@ int main(int argc, char **argv) {
 	char *point_cloud_file = NULL;
 	float l1=10, l2=1, l3=10, l4=1, l5=0.00001, l6=1, l7=0.01, c1=1, c2=1, c3=0.01, c4=1, cs=1;
 	int ns = 0;
+	int subsample = -1;
 	int baseline = -1;
+	float min_point_factor = 10;
 
 	while ((opt = getopt_long(argc, argv, "hm:p:", options, &option_index)) != -1) {
 		switch(opt) {
@@ -118,7 +141,13 @@ int main(int argc, char **argv) {
 						ns = atoi(optarg);
 						break;
 					case 16:
+						subsample = atoi(optarg);
+						break;
+					case 17:
 						baseline = atoi(optarg);
+						break;
+					case 18:
+						min_point_factor = atof(optarg);
 						break;
 				}
 				break;
@@ -155,6 +184,11 @@ int main(int argc, char **argv) {
 	} else {
 		std::cout << "cs=" << cs << "\n";
 	}
+	if (subsample != -1) {
+		std::cout << "subsample=" << subsample << "\n";
+	}
+	std::cout << "min_point_factor=" << min_point_factor << "\n";
+	
 	myfile << "Mesh=" << mesh_file << std::endl;
 	if (point_cloud_file != NULL) {
 		myfile << "Point cloud=" << point_cloud_file << std::endl;
@@ -177,6 +211,8 @@ int main(int argc, char **argv) {
 	} else {
 		myfile << "cs=" << cs << "\n";
 	}
+	myfile << "subsample=" << subsample << "\n";
+	myfile << "min_point_factor=" << min_point_factor << "\n";
 	myfile.close();
 
 	// Load mesh
@@ -252,8 +288,105 @@ int main(int argc, char **argv) {
 		return EXIT_SUCCESS;
 	}
 
-	K::FT mean_point_per_area = get_mean_point_per_area(mesh, point_cloud);
-	K::FT min_point_per_area = mean_point_per_area / 10;
+	K::FT min_point_per_area;
+	if (min_point_factor > 0) {
+		K::FT mean_point_per_area = get_mean_point_per_area(mesh, point_cloud);
+		min_point_per_area = mean_point_per_area / min_point_factor;
+	} else {
+		min_point_per_area = 0;
+	}
+
+	if (subsample >= 0) {
+		//subsample point cloud
+
+		// Create point_in _face
+		bool created_point_in_face;
+		Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
+		boost::tie(point_in_face, created_point_in_face) = mesh.add_property_map<Surface_mesh::Face_index, std::list<Point_set::Index>>("f:points", std::list<Point_set::Index>());
+
+		// Create face_costs
+		bool created_face_costs;
+		Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> face_costs;
+		boost::tie(face_costs, created_face_costs) = mesh.add_property_map<Surface_mesh::Face_index, K::FT>("f:cost", 0);
+
+		CGAL::Cartesian_converter<Point_set_kernel,K> type_converter;
+		float alpha = c1;
+		float beta = c2;
+
+		if(created_point_in_face || created_face_costs) {
+			AABB_tree mesh_tree;
+			PMP::build_AABB_tree(mesh, mesh_tree);
+			for(auto ph: point_cloud) {
+				auto p = type_converter(point_cloud.point(ph));
+				auto location = PMP::locate_with_AABB_tree(p, mesh_tree, mesh);
+				point_in_face[location.first].push_back(ph);
+				if (created_face_costs) face_costs[location.first] += alpha * CGAL::squared_distance(p, PMP::construct_point(location, mesh));
+			}
+			if (created_face_costs && beta > 0) {
+				for(auto face: mesh.faces()) {
+					K::FT min_point = 0;
+					if (min_point_per_area > 0) {
+						auto r = mesh.vertices_around_face(mesh.halfedge(face)).begin();
+						K::FT face_area = CGAL::sqrt(K::Triangle_3(mesh.point(*r++), mesh.point(*r++), mesh.point(*r++)).squared_area());
+						min_point = min_point_per_area * face_area;
+					}
+					if (point_in_face[face].size() > 0) {
+						if (point_in_face[face].size() > min_point) {
+							int face_label[LABELS.size()] = {0};
+							for (auto point: point_in_face[face]) {
+								face_label[point_cloud_label[point]]++;
+							}
+							auto argmax = std::max_element(face_label, face_label+LABELS.size());
+							face_costs[face] += beta * (point_in_face[face].size() - *argmax);
+						} else { // We don't have information about this face.
+							face_costs[face] += beta * point_in_face[face].size();
+						}
+					}
+//if (face.idx() == 58591) std::cerr << "face_costs[58521] = " << face_costs[face] << "\n";
+				}
+			}
+		}
+
+		//get border point
+		bool created_point_isborder;
+		Point_set::Property_map<bool> isborder;
+		boost::tie (isborder, created_point_isborder) = point_cloud.add_property_map<bool>("p:isborder", false);
+		if (created_point_isborder) {
+			int N = 10;
+			Point_tree point_tree(point_cloud.begin(), point_cloud.end(), Point_tree::Splitter(), TreeTraits(point_cloud.point_map()));
+			Neighbor_search::Distance tr_dist(point_cloud.point_map());
+			for (auto point: point_cloud) {
+				Neighbor_search search(point_tree, point_cloud.point(point), N, 0, true, tr_dist, false);
+				unsigned char l = point_cloud_label[search.begin()->first];
+				for(auto it = search.begin() + 1; it != search.end() && !isborder[point]; ++it) {
+					if (point_cloud_label[it->first] != l) isborder[point] = true;
+				}
+			}
+			std::cout << "Border points computed" << std::endl;
+		}
+
+		// drop points in face to keep only subsample points per face
+		std::random_device rd;
+    	std::mt19937 g(rd());
+		for (auto face: mesh.faces()) {
+			std::vector<Point_set::Index> temp(point_in_face[face].begin(), point_in_face[face].end());
+			std::shuffle(temp.begin(), temp.end(), g);
+
+			point_in_face[face].clear();
+			for(std::size_t i = 0; i < temp.size(); i++) {
+				if (i < subsample) {
+					point_in_face[face].push_back(temp[i]);
+				} else if (isborder[temp[i]]) {
+					point_in_face[face].push_back(temp[i]);
+				}
+			}
+		}
+
+		std::cout << "Points subsampled" << std::endl;
+
+		min_point_per_area = 0;
+
+	}
 	
 	const LindstromTurk_param params (l1,l2,l3,l4,l5,l6,l7);
 	Custom_placement pf(params, mesh, point_cloud);
