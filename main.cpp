@@ -217,7 +217,7 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, cons
 	//SMS::Count_stop_predicate<Surface_mesh> stop(50);
 	const LindstromTurk_param params (10,1,10,1,0.000001,1,0.01);
 	Custom_placement pf(params, mesh, point_cloud);
-	Custom_cost cf(params, alpha, beta, gamma, 1, min_point_per_area, mesh, point_cloud);
+	Custom_cost cf(params, alpha, beta, gamma, 0.01, min_point_per_area, mesh, point_cloud);
 	My_visitor mv (params, alpha, beta, gamma, min_point_per_area, mesh, mesh_info, point_cloud);
 	SMS::Bounded_normal_change_filter<> filter;
 	SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).filter(filter).get_placement(pf).visitor(mv));

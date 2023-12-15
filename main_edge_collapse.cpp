@@ -91,7 +91,7 @@ int main(int argc, char **argv) {
 
 	char *mesh_file = NULL;
 	char *point_cloud_file = NULL;
-	float l1=10, l2=1, l3=10, l4=1, l5=0.00001, l6=1, l7=0.01, c1=1, c2=1, c3=0.01, c4=1, cs=1;
+	float l1=10, l2=1, l3=10, l4=1, l5=0.00001, l6=1, l7=0.01, c1=1, c2=1, c3=0.01, c4=0.01, cs=1;
 	int ns = 0;
 	int subsample = -1;
 	int baseline = -1;
