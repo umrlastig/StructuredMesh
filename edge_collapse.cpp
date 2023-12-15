@@ -1054,7 +1054,7 @@ void My_visitor::OnStarted (Surface_mesh&) {
 	if (beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) add_label(mesh, point_cloud, min_point_per_area);
 	mesh_info.save_mesh(mesh, "initial-mesh.ply");
 
-	start_collecte = std::chrono::system_clock::now();
+	collected_timer.start();
 }
 
 void My_visitor::OnFinished (Surface_mesh &mesh) {
@@ -1081,19 +1081,18 @@ void My_visitor::OnFinished (Surface_mesh &mesh) {
 }
 
 void My_visitor::OnCollected(const SMS::Edge_profile<Surface_mesh>&, const boost::optional< SMS::Edge_profile<Surface_mesh>::FT >&) {
-	start_collapse = std::chrono::system_clock::now();
+	collapsing_timer.start();
 	i_collecte++;
 	if (i_collecte%1000 == 0) {
-		std::chrono::duration<double> diff = start_collapse - start_collecte;
-		std::cout << "\rCollecte: " << i_collecte << "/" << mesh.number_of_edges() << " (" << ((int) (((float) i_collecte)/mesh.number_of_edges()*100)) << "%)" << " still " << (((float) mesh.number_of_edges() - i_collecte) * diff.count() / i_collecte) << "s" << " (" << (((float) i_collecte) / diff.count()) << " op/s)" << std::flush;
+		auto time = collected_timer.getElapsedTime();
+		std::cout << "\rCollecte: " << i_collecte << "/" << mesh.number_of_edges() << " (" << ((int) (((float) i_collecte)/mesh.number_of_edges()*100)) << "%)" << " still " << (((float) mesh.number_of_edges() - i_collecte) * time / i_collecte) << "s" << " (" << (((float) i_collecte) / time) << " op/s)" << std::flush;
 	}
 }
 
 void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::optional< SMS::Edge_profile<Surface_mesh>::FT > cost, const SMS::Edge_profile<Surface_mesh>::edges_size_type initial_edge_count, const SMS::Edge_profile<Surface_mesh>::edges_size_type current_edge_count) {
 	if (current_edge_count%100 == 0) {
-		auto end = std::chrono::system_clock::now();
-		std::chrono::duration<double> diff = end - start_collapse;
-		std::cout << "\rCollapse: " << (initial_edge_count-current_edge_count) << "/" << initial_edge_count << " (" << ((int) (((float) (initial_edge_count-current_edge_count))/initial_edge_count*100)) << "%)" << " still " << (((float) current_edge_count) * diff.count() / (initial_edge_count-current_edge_count)) << "s" << " (" << (((float) (initial_edge_count-current_edge_count)) / diff.count()) << " op/s)";
+		auto time = collapsing_timer.getElapsedTime();
+		std::cout << "\rCollapse: " << (initial_edge_count-current_edge_count) << "/" << initial_edge_count << " (" << ((int) (((float) (initial_edge_count-current_edge_count))/initial_edge_count*100)) << "%)" << " still " << (((float) current_edge_count) * time / (initial_edge_count-current_edge_count)) << "s" << " (" << (((float) (initial_edge_count-current_edge_count)) / time) << " op/s)";
 		if (cost) {
 			std::cout << " - cost: " << *cost << "     " << std::flush;
 		}

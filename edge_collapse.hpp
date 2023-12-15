@@ -2,6 +2,7 @@
 #define EDGE_COLLAPSE_H_
 
 #include "header.hpp"
+#include "timer.hpp"
 
 #include <chrono>
 #include <vector>
@@ -87,8 +88,8 @@ class Cost_stop_predicate {
 struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 	private:
 		int i_collecte = 0;
-		std::chrono::time_point<std::chrono::system_clock> start_collecte;
-		std::chrono::time_point<std::chrono::system_clock> start_collapse;
+		TimerUtils::Timer collected_timer;
+		TimerUtils::Timer collapsing_timer;
 		bool output[30] = {false};
 		CGAL::Cartesian_converter<Point_set_kernel,K> type_converter;
 		
