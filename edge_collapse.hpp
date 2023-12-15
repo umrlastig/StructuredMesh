@@ -91,6 +91,7 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 		int i_collecte = 0;
 		TimerUtils::Timer collected_timer;
 		TimerUtils::Timer collapsing_timer;
+		TimerUtils::Timer total_timer;
 		bool output[30] = {false};
 		CGAL::Cartesian_converter<Point_set_kernel,K> type_converter;
 		
@@ -106,6 +107,8 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 		Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
 		Surface_mesh::Property_map<Surface_mesh::Edge_index, CollapseData> collapse_datas;
 		Point_set::Property_map<unsigned char> point_cloud_label;
+
+		Surface_mesh ground_truth_surface_mesh;
 
 	public:
 		My_visitor(const LindstromTurk_param &params, const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT min_point_per_area, Surface_mesh &mesh, const Surface_mesh_info &mesh_info, Point_set &point_cloud);

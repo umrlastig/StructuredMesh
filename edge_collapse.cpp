@@ -2,6 +2,7 @@
 
 #include <list>
 #include <limits>
+#include <algorithm>
 
 #include <CGAL/Point_set_3/IO.h>
 #include <CGAL/QP_models.h>
@@ -10,6 +11,7 @@
 #include <CGAL/Search_traits_3.h>
 #include <CGAL/Search_traits_adapter.h>
 #include <CGAL/Polygon_mesh_processing/locate.h>
+#include <CGAL/Polygon_mesh_processing/distance.h>
 #include <CGAL/AABB_tree.h>
 #include <CGAL/AABB_traits.h>
 #include <CGAL/AABB_face_graph_triangle_primitive.h>
@@ -42,6 +44,80 @@ namespace PMP = CGAL::Polygon_mesh_processing;
 typedef CGAL::AABB_face_graph_triangle_primitive<Surface_mesh> AABB_face_graph_primitive;
 typedef CGAL::AABB_traits<K, AABB_face_graph_primitive>        AABB_face_graph_traits;
 typedef CGAL::AABB_tree<AABB_face_graph_traits>                AABB_tree;
+
+void compute_stat(Surface_mesh &mesh, const Point_set &point_cloud, const Surface_mesh &ground_truth_surface_mesh, TimerUtils::Timer &timer, K::FT cost) {
+	AABB_tree mesh_tree;
+	PMP::build_AABB_tree(mesh, mesh_tree);
+	CGAL::Cartesian_converter<Point_set_kernel, K> type_converter;
+
+	K::FT min_distance = std::numeric_limits<K::FT>::max();
+	K::FT max_distance = std::numeric_limits<K::FT>::min();
+	K::FT mean_distance = 0;
+
+	for(auto p: ground_truth_surface_mesh.points()) {
+		auto location = PMP::locate_with_AABB_tree(p, mesh_tree, mesh);
+		K::FT d = CGAL::sqrt(CGAL::squared_distance(p, PMP::construct_point(location, mesh)));
+		if (d < min_distance) min_distance = d;
+		if (d > max_distance) max_distance = d;
+		mean_distance += d / ground_truth_surface_mesh.num_vertices();
+	}
+
+	AABB_tree ground_truth_surface_mesh_tree;
+	PMP::build_AABB_tree(ground_truth_surface_mesh, ground_truth_surface_mesh_tree);
+
+	K::FT min_distance_r = std::numeric_limits<K::FT>::max();
+	K::FT max_distance_r = std::numeric_limits<K::FT>::min();
+	K::FT mean_distance_r = 0;
+
+	std::vector<K::Point_3> samples;
+  	PMP::sample_triangle_mesh(mesh, std::back_inserter(samples), CGAL::parameters::random_seed(0));
+	for(auto p: samples) {
+		auto location = PMP::locate_with_AABB_tree(p, ground_truth_surface_mesh_tree, ground_truth_surface_mesh);
+		K::FT d = CGAL::sqrt(CGAL::squared_distance(p, PMP::construct_point(location, ground_truth_surface_mesh)));
+		if (d < min_distance_r) min_distance_r = d;
+		if (d > max_distance_r) max_distance_r = d;
+		mean_distance_r += d / mesh.num_vertices();
+	}
+
+	Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
+	bool has_point_in_face;
+	boost::tie(point_in_face, has_point_in_face) = mesh.property_map<Surface_mesh::Face_index, std::list<Point_set::Index>>("f:points");
+
+	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_label;
+	bool has_mesh_label;
+	boost::tie(mesh_label, has_mesh_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+
+	Point_set::Property_map<unsigned char> point_cloud_label;
+	bool has_point_cloud_label;
+	boost::tie(point_cloud_label, has_point_cloud_label) = point_cloud.property_map<unsigned char>("p:label");
+
+	std::size_t num_wrong_points = 0;
+	
+	if (has_point_in_face && has_mesh_label && has_point_cloud_label) {
+		for (auto face: mesh.faces()) {
+			for (auto ph: point_in_face[face]) {
+				if (mesh_label[face] != point_cloud_label[ph]) num_wrong_points += 1;
+			}
+		}
+	}
+
+	std::ifstream input_file("commande_line.txt");
+
+	std::ofstream results;
+	results.open ("results.csv", std::ios::app);
+
+	std::string line;
+	std::getline(input_file, line);
+	while (std::getline(input_file, line) && !line.empty()) {
+        size_t equals_pos = line.find('=');
+        if (equals_pos != std::string::npos) {
+            std::string value = line.substr(equals_pos + 1);
+			results << value << ", ";
+        }
+    }
+
+	results << mesh.number_of_vertices() << ", " << min_distance << ", " << max_distance << ", " << mean_distance << ", " << min_distance_r << ", " << max_distance_r << ", " << mean_distance_r << ", " << num_wrong_points << "/" << point_cloud.size() << ", " << timer.getElapsedTime() << ", " << cost << "\n";
+}
 
 K::FT get_mean_point_per_area(Surface_mesh &mesh, const Point_set &point_cloud) {
 	K::FT total_area = 0;
@@ -921,6 +997,7 @@ My_visitor::My_visitor(const LindstromTurk_param &params, const K::FT alpha, con
 void My_visitor::OnStarted (Surface_mesh&) {
 
 	std::cout << "Starting edge_collapse" << std::endl;
+	total_timer.start();
 
 	if (beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) {
 		// Add label to face
@@ -1000,6 +1077,7 @@ void My_visitor::OnStarted (Surface_mesh&) {
 	}
 
 	{// Save point cloud
+		total_timer.pause();
 		Point_set output_point_cloud(point_cloud);
 
 		// Color
@@ -1049,14 +1127,17 @@ void My_visitor::OnStarted (Surface_mesh&) {
 		}
 
 		CGAL::IO::write_point_set("pc_with_color.ply", output_point_cloud);
+		total_timer.resume();
 	}
 
-	Surface_mesh::Property_map<Surface_mesh::Edge_index, CollapseData> collapse_datas;
-	bool created_collapse_datas;
-	boost::tie(collapse_datas, created_collapse_datas) = mesh.add_property_map<Surface_mesh::Edge_index, CollapseData>("e:c_datas");
 
 	if (beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) add_label(mesh, point_cloud, min_point_per_area);
+	
+	total_timer.pause();
 	mesh_info.save_mesh(mesh, "initial-mesh.ply");
+	
+	ground_truth_surface_mesh = mesh;
+	total_timer.resume();
 
 	collected_timer.start();
 }
@@ -1149,82 +1230,207 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 	if (cost) {
 		int cost_id = -1;
 		if(!output[++cost_id] && *cost > 100) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-c100.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && *cost > 10) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-c10.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && *cost > 1) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-c1.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && *cost > 0.3) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-c0.03.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && *cost > 0.2) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-c0.02.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && *cost > 0.1) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-c0.01.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && *cost > 0.001) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-c0.001.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && *cost > 0) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-c0.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		}
 		cost_id = 8;
 		if(!output[++cost_id] && current_edge_count <= 1000000) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-1000000.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 250000) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-250000.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 100000) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-100000.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 50000) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-50000.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 40000) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-40000.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 39000) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-39000.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 10000) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-10000.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 5000) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-5000.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 2500) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-2500.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 2000) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-2000.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 1000) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-1000.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 500) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-500.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 400) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-400.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 300) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-300.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 100) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-100.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 50) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-50.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 10) {
+			total_timer.pause();
+			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-10.ply");
+			compute_stat(mesh, point_cloud, ground_truth_surface_mesh, total_timer, *cost);
+			total_timer.resume();
+			collapsing_timer.resume();
 		}
 	}
 

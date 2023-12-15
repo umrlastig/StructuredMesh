@@ -155,9 +155,23 @@ int main(int argc, char **argv) {
 	} else {
 		std::cout << "cs=" << cs << "\n";
 	}
-	myfile << "Mesh: " << mesh_file << std::endl;
-	if (point_cloud_file != NULL) myfile << "Point cloud: " << point_cloud_file << std::endl;
-	myfile << "l1=" << l1 << ", l2=" << l2 << ", l3=" << l3 << ", l4=" << l4 << ", l5=" << l5 << ", l6=" << l6 << ", l7=" << l7 << ", c1=" << c1 << ", c2=" << c2 << ", c3=" << c3 << ", c4=" << c4 << "\n";
+	myfile << "Mesh=" << mesh_file << std::endl;
+	if (point_cloud_file != NULL) {
+		myfile << "Point cloud=" << point_cloud_file << std::endl;
+	} else {
+		myfile << "Point cloud=" << std::endl;
+	}
+	myfile << "l1=" << l1 << "\n";
+	myfile << "l2=" << l2 << "\n";
+	myfile << "l3=" << l3 << "\n";
+	myfile << "l4=" << l4 << "\n";
+	myfile << "l5=" << l5 << "\n";
+	myfile << "l6=" << l6 << "\n";
+	myfile << "l7=" << l7 << "\n";
+	myfile << "c1=" << c1 << "\n";
+	myfile << "c2=" << c2 << "\n";
+	myfile << "c3=" << c3 << "\n";
+	myfile << "c4=" << c4 << "\n";
 	if (ns > 0) {
 		myfile << "ns=" << ns << "\n";
 	} else {
