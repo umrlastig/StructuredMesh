@@ -47,6 +47,7 @@ struct CollapseDataElement{
 
 struct CollapseData {
 	K::FT cost;
+	K::FT placement_cost;
 	std::list<CollapseDataElement> elements;
 };
 
