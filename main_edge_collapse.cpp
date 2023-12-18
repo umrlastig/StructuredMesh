@@ -93,7 +93,7 @@ int main(int argc, char **argv) {
 	char *point_cloud_file = NULL;
 	float l1=10, l2=1, l3=10, l4=1, l5=0.00001, l6=1, l7=0.01, c1=1, c2=1, c3=0.01, c4=0.01, cs=1;
 	int ns = 0;
-	int subsample = -1;
+	float subsample = -1;
 	int baseline = -1;
 	float min_point_factor = 10;
 
@@ -141,7 +141,7 @@ int main(int argc, char **argv) {
 						ns = atoi(optarg);
 						break;
 					case 16:
-						subsample = atoi(optarg);
+						subsample = atof(optarg);
 						break;
 					case 17:
 						baseline = atoi(optarg);
@@ -185,6 +185,14 @@ int main(int argc, char **argv) {
 		std::cout << "cs=" << cs << "\n";
 	}
 	if (subsample != -1) {
+		if (subsample <= 0) subsample = -1;
+		if (subsample >= 1) {
+			subsample = int(subsample);
+			if (min_point_factor > 0) {
+				std::cout << "subsample >= 1 and min_point_factor > 0 are incompatible, min_point_factor is set to 0.\n";
+				min_point_factor = 0;
+			}
+		}
 		std::cout << "subsample=" << subsample << "\n";
 	}
 	std::cout << "min_point_factor=" << min_point_factor << "\n";
@@ -313,14 +321,28 @@ int main(int argc, char **argv) {
 		float alpha = c1;
 		float beta = c2;
 
-		if(created_point_in_face || created_face_costs) {
-			AABB_tree mesh_tree;
-			PMP::build_AABB_tree(mesh, mesh_tree);
-			for(auto ph: point_cloud) {
-				auto p = type_converter(point_cloud.point(ph));
-				auto location = PMP::locate_with_AABB_tree(p, mesh_tree, mesh);
-				point_in_face[location.first].push_back(ph);
-				if (created_face_costs) face_costs[location.first] += alpha * CGAL::squared_distance(p, PMP::construct_point(location, mesh));
+		if (subsample >= 1) {
+
+			// Keep only {subsample:int} points per face
+
+			if(created_point_in_face) {
+				AABB_tree mesh_tree;
+				PMP::build_AABB_tree(mesh, mesh_tree);
+				for(auto ph: point_cloud) {
+					auto p = type_converter(point_cloud.point(ph));
+					auto location = PMP::locate_with_AABB_tree(p, mesh_tree, mesh);
+					point_in_face[location.first].push_back(ph);
+					if (created_face_costs && alpha > 0) face_costs[location.first] += alpha * CGAL::squared_distance(p, PMP::construct_point(location, mesh));
+				}
+			} else if (created_face_costs && alpha > 0) {
+				for (auto face: mesh.faces()) {
+					auto r = mesh.vertices_around_face(mesh.halfedge(face)).begin();
+					K::Triangle_3 triangle_face(mesh.point(*r++), mesh.point(*r++), mesh.point(*r++));
+					for (auto ph: point_in_face[face]) {
+						auto p = type_converter(point_cloud.point(ph));
+						face_costs[face] += alpha * CGAL::squared_distance(p, triangle_face);
+					}
+				}
 			}
 			if (created_face_costs && beta > 0) {
 				for(auto face: mesh.faces()) {
@@ -345,46 +367,122 @@ int main(int argc, char **argv) {
 //if (face.idx() == 58591) std::cerr << "face_costs[58521] = " << face_costs[face] << "\n";
 				}
 			}
-		}
 
-		//get border point
-		bool created_point_isborder;
-		Point_set::Property_map<bool> isborder;
-		boost::tie (isborder, created_point_isborder) = point_cloud.add_property_map<bool>("p:isborder", false);
-		if (created_point_isborder) {
-			int N = 10;
-			Point_tree point_tree(point_cloud.begin(), point_cloud.end(), Point_tree::Splitter(), TreeTraits(point_cloud.point_map()));
-			Neighbor_search::Distance tr_dist(point_cloud.point_map());
-			for (auto point: point_cloud) {
-				Neighbor_search search(point_tree, point_cloud.point(point), N, 0, true, tr_dist, false);
-				unsigned char l = point_cloud_label[search.begin()->first];
-				for(auto it = search.begin() + 1; it != search.end() && !isborder[point]; ++it) {
-					if (point_cloud_label[it->first] != l) isborder[point] = true;
+			//get border point
+			bool created_point_isborder;
+			Point_set::Property_map<bool> isborder;
+			boost::tie (isborder, created_point_isborder) = point_cloud.add_property_map<bool>("p:isborder", false);
+			if (created_point_isborder) {
+				int N = 10;
+				Point_tree point_tree(point_cloud.begin(), point_cloud.end(), Point_tree::Splitter(), TreeTraits(point_cloud.point_map()));
+				Neighbor_search::Distance tr_dist(point_cloud.point_map());
+				for (auto point: point_cloud) {
+					Neighbor_search search(point_tree, point_cloud.point(point), N, 0, true, tr_dist, false);
+					unsigned char l = point_cloud_label[search.begin()->first];
+					for(auto it = search.begin() + 1; it != search.end() && !isborder[point]; ++it) {
+						if (point_cloud_label[it->first] != l) isborder[point] = true;
+					}
+				}
+				std::cout << "Border points computed" << std::endl;
+			}
+
+			// drop points in face to keep only subsample points per face
+			std::random_device rd;
+			std::mt19937 g(rd());
+			for (auto face: mesh.faces()) {
+				std::vector<Point_set::Index> temp(point_in_face[face].begin(), point_in_face[face].end());
+				std::shuffle(temp.begin(), temp.end(), g);
+
+				point_in_face[face].clear();
+				for(std::size_t i = 0; i < temp.size(); i++) {
+					if (i < subsample) {
+						point_in_face[face].push_back(temp[i]);
+					} else if (isborder[temp[i]]) {
+						point_in_face[face].push_back(temp[i]);
+					}
 				}
 			}
-			std::cout << "Border points computed" << std::endl;
-		}
 
-		// drop points in face to keep only subsample points per face
-		std::random_device rd;
-    	std::mt19937 g(rd());
-		for (auto face: mesh.faces()) {
-			std::vector<Point_set::Index> temp(point_in_face[face].begin(), point_in_face[face].end());
-			std::shuffle(temp.begin(), temp.end(), g);
+			std::cout << "Points subsampled with " << subsample << " points per face." << std::endl;
 
-			point_in_face[face].clear();
-			for(std::size_t i = 0; i < temp.size(); i++) {
-				if (i < subsample) {
-					point_in_face[face].push_back(temp[i]);
-				} else if (isborder[temp[i]]) {
-					point_in_face[face].push_back(temp[i]);
+		} else {
+
+			// Keep only {subsample:proportion} of initial points.
+
+			std::random_device rd;
+			std::mt19937 g(rd());
+			std::vector<Point_set::Index> points_index (point_cloud.begin(), point_cloud.end());
+			std::shuffle(points_index.begin(), points_index.end(), g);
+
+			bool created_point_selected;
+			Point_set::Property_map<bool> selected;
+			boost::tie (selected, created_point_selected) = point_cloud.add_property_map<bool>("p:selected", false);
+
+			for (std::size_t i = 0; i < subsample * point_cloud.size(); i++) {
+				selected[points_index[i]] = true;
+			}
+
+			min_point_per_area *= subsample;
+
+			// Reset point_in_face and face_costs
+			for(auto face: mesh.faces()) {
+				point_in_face[face].clear();
+				face_costs[face] = 0;
+			}
+
+			AABB_tree mesh_tree;
+			PMP::build_AABB_tree(mesh, mesh_tree);
+			for (std::size_t i = 0; i < subsample * point_cloud.size(); i++) {
+				auto ph = points_index[i];
+				auto p = type_converter(point_cloud.point(ph));
+				auto location = PMP::locate_with_AABB_tree(p, mesh_tree, mesh);
+				point_in_face[location.first].push_back(ph);
+				if (alpha > 0) face_costs[location.first] += alpha * CGAL::squared_distance(p, PMP::construct_point(location, mesh));
+			}
+			if (beta > 0) {
+				for(auto face: mesh.faces()) {
+					K::FT min_point = 0;
+					if (min_point_per_area > 0) {
+						auto r = mesh.vertices_around_face(mesh.halfedge(face)).begin();
+						K::FT face_area = CGAL::sqrt(K::Triangle_3(mesh.point(*r++), mesh.point(*r++), mesh.point(*r++)).squared_area());
+						min_point = min_point_per_area * face_area;
+					}
+					if (point_in_face[face].size() > 0) {
+						if (point_in_face[face].size() > min_point) {
+							int face_label[LABELS.size()] = {0};
+							for (auto point: point_in_face[face]) {
+								face_label[point_cloud_label[point]]++;
+							}
+							auto argmax = std::max_element(face_label, face_label+LABELS.size());
+							face_costs[face] += beta * (point_in_face[face].size() - *argmax);
+						} else { // We don't have information about this face.
+							face_costs[face] += beta * point_in_face[face].size();
+						}
+					}
 				}
 			}
+
+			//get border point
+			bool created_point_isborder;
+			Point_set::Property_map<bool> isborder;
+			boost::tie (isborder, created_point_isborder) = point_cloud.add_property_map<bool>("p:isborder", false);
+			if (created_point_isborder) {
+				int N = 10;
+				Point_tree point_tree(point_cloud.begin(), point_cloud.end(), Point_tree::Splitter(), TreeTraits(point_cloud.point_map()));
+				Neighbor_search::Distance tr_dist(point_cloud.point_map());
+				for (auto point: point_cloud) {
+					Neighbor_search search(point_tree, point_cloud.point(point), N, 0, true, tr_dist, false);
+					unsigned char l = point_cloud_label[search.begin()->first];
+					for(auto it = search.begin() + 1; it != search.end() && !isborder[point]; ++it) {
+						if (point_cloud_label[it->first] != l) isborder[point] = true;
+					}
+				}
+				std::cout << "Border points computed" << std::endl;
+			}
+
+			std::cout << "Points subsampled with " << subsample << " points of original point cloud." << std::endl;
+
 		}
-
-		std::cout << "Points subsampled" << std::endl;
-
-		min_point_per_area = 0;
 
 	}
 	

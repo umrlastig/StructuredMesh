@@ -3,6 +3,7 @@
 #include <list>
 #include <limits>
 #include <algorithm>
+#include <filesystem>
 
 #include <CGAL/Point_set_3/IO.h>
 #include <CGAL/QP_models.h>
@@ -92,16 +93,24 @@ void compute_stat(Surface_mesh &mesh, const Point_set &point_cloud, const Surfac
 	boost::tie(point_cloud_label, has_point_cloud_label) = point_cloud.property_map<unsigned char>("p:label");
 
 	std::size_t num_wrong_points = 0;
+	std::size_t total_num_points = 0;
 	
 	if (has_point_in_face && has_mesh_label && has_point_cloud_label) {
 		for (auto face: mesh.faces()) {
 			for (auto ph: point_in_face[face]) {
 				if (mesh_label[face] != point_cloud_label[ph]) num_wrong_points += 1;
 			}
+			total_num_points += point_in_face[face].size();
 		}
 	}
 
 	std::ifstream input_file("commande_line.txt");
+
+	if (!std::filesystem::exists("results.csv")) {
+		std::ofstream results;
+		results.open ("results.csv", std::ios::app);
+		results << "mesh, point cloud, l1, l2, l3, l4, l5, l6, l7, c1, c2, c3, c4, ns / cs, subsample, min_point_factor, num_mesh_vertices, min_distance, max_distance, mean_distance, min_distance_r, max_distance_r, mean_distance_r, num_wrong_points, total_num_points, time, final_cost\n";
+	}
 
 	std::ofstream results;
 	results.open ("results.csv", std::ios::app);
@@ -116,7 +125,7 @@ void compute_stat(Surface_mesh &mesh, const Point_set &point_cloud, const Surfac
         }
     }
 
-	results << mesh.number_of_vertices() << ", " << min_distance << ", " << max_distance << ", " << mean_distance << ", " << min_distance_r << ", " << max_distance_r << ", " << mean_distance_r << ", " << num_wrong_points << "/" << point_cloud.size() << ", " << timer.getElapsedTime() << ", " << cost << "\n";
+	results << mesh.number_of_vertices() << ", " << min_distance << ", " << max_distance << ", " << mean_distance << ", " << min_distance_r << ", " << max_distance_r << ", " << mean_distance_r << ", " << num_wrong_points << ", " << total_num_points << ", " << timer.getElapsedTime() << ", " << cost << "\n";
 }
 
 K::FT get_mean_point_per_area(Surface_mesh &mesh, const Point_set &point_cloud) {
@@ -1021,34 +1030,43 @@ void My_visitor::OnStarted (Surface_mesh&) {
 	bool created_face_costs;
 	boost::tie(face_costs, created_face_costs) = mesh.add_property_map<Surface_mesh::Face_index, K::FT>("f:cost", 0);
 
-	if(created_point_in_face || created_face_costs) {
+	if(created_point_in_face) {
 		AABB_tree mesh_tree;
 		PMP::build_AABB_tree(mesh, mesh_tree);
 		for(auto ph: point_cloud) {
 			auto p = type_converter(point_cloud.point(ph));
 			auto location = PMP::locate_with_AABB_tree(p, mesh_tree, mesh);
 			point_in_face[location.first].push_back(ph);
-			if (created_face_costs) face_costs[location.first] += alpha * CGAL::squared_distance(p, PMP::construct_point(location, mesh));
+			if (created_face_costs && alpha > 0) face_costs[location.first] += alpha * CGAL::squared_distance(p, PMP::construct_point(location, mesh));
 		}
-		if (created_face_costs && beta > 0) {
-			for(auto face: mesh.faces()) {
-				K::FT min_point = 0;
-				if (min_point_per_area > 0) {
-					auto r = mesh.vertices_around_face(mesh.halfedge(face)).begin();
-					K::FT face_area = CGAL::sqrt(K::Triangle_3(mesh.point(*r++), mesh.point(*r++), mesh.point(*r++)).squared_area());
-					min_point = min_point_per_area * face_area;
-				}
-				if (point_in_face[face].size() > 0) {
-					if (point_in_face[face].size() > min_point) {
-						int face_label[LABELS.size()] = {0};
-						for (auto point: point_in_face[face]) {
-							face_label[point_cloud_label[point]]++;
-						}
-						auto argmax = std::max_element(face_label, face_label+LABELS.size());
-						face_costs[face] += beta * (point_in_face[face].size() - *argmax);
-					} else { // We don't have information about this face.
-						face_costs[face] += beta * point_in_face[face].size();
+	} else if (created_face_costs && alpha > 0) {
+		for (auto face: mesh.faces()) {
+			auto r = mesh.vertices_around_face(mesh.halfedge(face)).begin();
+			K::Triangle_3 triangle_face(mesh.point(*r++), mesh.point(*r++), mesh.point(*r++));
+			for (auto ph: point_in_face[face]) {
+				auto p = type_converter(point_cloud.point(ph));
+				face_costs[face] += alpha * CGAL::squared_distance(p, triangle_face);
+			}
+		}
+	}
+	if (created_face_costs && beta > 0) {
+		for(auto face: mesh.faces()) {
+			K::FT min_point = 0;
+			if (min_point_per_area > 0) {
+				auto r = mesh.vertices_around_face(mesh.halfedge(face)).begin();
+				K::FT face_area = CGAL::sqrt(K::Triangle_3(mesh.point(*r++), mesh.point(*r++), mesh.point(*r++)).squared_area());
+				min_point = min_point_per_area * face_area;
+			}
+			if (point_in_face[face].size() > 0) {
+				if (point_in_face[face].size() > min_point) {
+					int face_label[LABELS.size()] = {0};
+					for (auto point: point_in_face[face]) {
+						face_label[point_cloud_label[point]]++;
 					}
+					auto argmax = std::max_element(face_label, face_label+LABELS.size());
+					face_costs[face] += beta * (point_in_face[face].size() - *argmax);
+				} else { // We don't have information about this face.
+					face_costs[face] += beta * point_in_face[face].size();
 				}
 			}
 		}
