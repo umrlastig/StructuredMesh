@@ -68,9 +68,10 @@ class Custom_cost {
 	const K::FT min_point_per_area;
 	const Point_set &point_cloud;
 	Surface_mesh::Property_map<Surface_mesh::Edge_index, CollapseData> collapse_datas;
+	char *next_mesh;
 
 	public:
-		Custom_cost (const LindstromTurk_param &params, const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT delta, K::FT min_point_per_area, Surface_mesh &mesh, const Point_set &point_cloud);
+		Custom_cost (const LindstromTurk_param &params, const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT delta, K::FT min_point_per_area, Surface_mesh &mesh, const Point_set &point_cloud, char *next_mesh = nullptr);
 
 		boost::optional<SMS::Edge_profile<Surface_mesh>::FT> operator()(const SMS::Edge_profile<Surface_mesh>& profile, const boost::optional<SMS::Edge_profile<Surface_mesh>::Point>& placement) const;
 };

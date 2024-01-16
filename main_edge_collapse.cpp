@@ -15,6 +15,7 @@
 #include <getopt.h>
 #include <cstdlib>
 #include <random>
+#include <filesystem>
 
 typedef CGAL::Search_traits_3<Point_set_kernel>             Traits_base;
 typedef CGAL::Search_traits_adapter<Point_set::Index, Point_set::Point_map, Traits_base> TreeTraits;
@@ -86,6 +87,7 @@ int main(int argc, char **argv) {
 		{"subsample", required_argument, NULL, 0},
 		{"baseline", required_argument, NULL, 0},
 		{"min_point_factor", required_argument, NULL, 0},
+		{"next_mesh", required_argument, NULL, 0},
 		{NULL, 0, 0, '\0'}
 	};
 
@@ -96,6 +98,7 @@ int main(int argc, char **argv) {
 	float subsample = -1;
 	int baseline = -1;
 	float min_point_factor = 10;
+	char *next_mesh = NULL;
 
 	while ((opt = getopt_long(argc, argv, "hm:p:", options, &option_index)) != -1) {
 		switch(opt) {
@@ -148,6 +151,9 @@ int main(int argc, char **argv) {
 						break;
 					case 18:
 						min_point_factor = atof(optarg);
+						break;
+					case 19:
+						next_mesh = optarg;
 						break;
 				}
 				break;
@@ -222,6 +228,12 @@ int main(int argc, char **argv) {
 	myfile << "subsample=" << subsample << "\n";
 	myfile << "min_point_factor=" << min_point_factor << "\n";
 	myfile.close();
+
+	if (next_mesh != nullptr) {
+		if (!std::filesystem::exists(next_mesh)) {
+			std::filesystem::create_directory(next_mesh);
+		}
+	}
 
 	// Load mesh
 	Surface_mesh mesh;
@@ -488,7 +500,7 @@ int main(int argc, char **argv) {
 	
 	const LindstromTurk_param params (l1,l2,l3,l4,l5,l6,l7);
 	Custom_placement pf(params, mesh, point_cloud);
-	Custom_cost cf(params, c1, c2, c3, c4, min_point_per_area, mesh, point_cloud);
+	Custom_cost cf(params, c1, c2, c3, c4, min_point_per_area, mesh, point_cloud, next_mesh);
 	My_visitor mv(params, c1, c2, c3, min_point_per_area, mesh, mesh_info, point_cloud);
 	SMS::Bounded_normal_change_filter<> filter;
 	if (ns > 0) {

@@ -71,7 +71,7 @@ void compute_stat(Surface_mesh &mesh, const Point_set &point_cloud, const Surfac
 	K::FT mean_distance_r = 0;
 
 	std::vector<K::Point_3> samples;
-  	PMP::sample_triangle_mesh(mesh, std::back_inserter(samples), CGAL::parameters::random_seed(0));
+	PMP::sample_triangle_mesh(mesh, std::back_inserter(samples), CGAL::parameters::random_seed(0));
 	for(auto p: samples) {
 		auto location = PMP::locate_with_AABB_tree(p, ground_truth_surface_mesh_tree, ground_truth_surface_mesh);
 		K::FT d = CGAL::sqrt(CGAL::squared_distance(p, PMP::construct_point(location, ground_truth_surface_mesh)));
@@ -118,12 +118,12 @@ void compute_stat(Surface_mesh &mesh, const Point_set &point_cloud, const Surfac
 	std::string line;
 	std::getline(input_file, line);
 	while (std::getline(input_file, line) && !line.empty()) {
-        size_t equals_pos = line.find('=');
-        if (equals_pos != std::string::npos) {
-            std::string value = line.substr(equals_pos + 1);
+		size_t equals_pos = line.find('=');
+		if (equals_pos != std::string::npos) {
+			std::string value = line.substr(equals_pos + 1);
 			results << value << ", ";
-        }
-    }
+		}
+	}
 
 	results << mesh.number_of_vertices() << ", " << min_distance << ", " << max_distance << ", " << mean_distance << ", " << min_distance_r << ", " << max_distance_r << ", " << mean_distance_r << ", " << num_wrong_points << ", " << total_num_points << ", " << timer.getElapsedTime() << ", " << cost << "\n";
 }
@@ -752,7 +752,7 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::Point> Custom_placement::operat
 	return result_type(placement);
 }
 
-Custom_cost::Custom_cost (const LindstromTurk_param &params, const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT delta, const K::FT min_point_per_area, Surface_mesh &mesh, const Point_set &point_cloud) : params(params), alpha(alpha), beta(beta), gamma(gamma), delta(delta), min_point_per_area(min_point_per_area), point_cloud(point_cloud) {
+Custom_cost::Custom_cost (const LindstromTurk_param &params, const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT delta, const K::FT min_point_per_area, Surface_mesh &mesh, const Point_set &point_cloud, char *next_mesh) : params(params), alpha(alpha), beta(beta), gamma(gamma), delta(delta), min_point_per_area(min_point_per_area), point_cloud(point_cloud), next_mesh(next_mesh) {
 	bool created_collapse_datas;
 	boost::tie(collapse_datas, created_collapse_datas) = mesh.add_property_map<Surface_mesh::Edge_index, CollapseData>("e:c_datas");
 }
@@ -971,6 +971,53 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 					for(auto ph: points_in_new_face[face_id]) r.points.push_back(ph);
 					collapse_datas[Surface_mesh::Edge_index(profile.v0_v1())].elements.push_back(r);
 				}
+
+				if (next_mesh != nullptr) {
+					// Output collapse surface
+					Surface_mesh output_mesh;
+
+					bool created;
+					Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> red;
+					Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> green;
+					Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> blue;
+					boost::tie(red, created) = output_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("red",0);
+					assert(created);
+					boost::tie(green, created) = output_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("green",0);
+					assert(created);
+					boost::tie(blue, created) = output_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("blue",0);
+					assert(created);
+
+					for(std::size_t face_id = 0; face_id < new_faces.size(); face_id++) {
+						auto t = new_faces[face_id];
+						auto v0 = output_mesh.add_vertex(t.vertex(0));
+						auto v1 = output_mesh.add_vertex(t.vertex(1));
+						auto v2 = output_mesh.add_vertex(t.vertex(2));
+						auto f = output_mesh.add_face(v0, v1, v2);
+
+						red[f] = LABELS.at(new_face_label[face_id]).red;
+						green[f] = LABELS.at(new_face_label[face_id]).green;
+						blue[f] = LABELS.at(new_face_label[face_id]).blue;
+					}
+
+					K::FT export_cost = (- old_cost + alpha * squared_distance + beta * count_semantic_error + gamma * semantic_border_length + delta * collapse_datas[Surface_mesh::Edge_index(profile.v0_v1())].placement_cost);
+
+					std::stringstream output_mesh_name;
+					if (profile.v0().idx() < profile.v1().idx()) {
+						output_mesh_name << next_mesh << "/next_mesh_" << export_cost << "_" << profile.v0().idx() << "_" << profile.v1().idx() << "_" << profile.surface_mesh().point(profile.v0()) << "_" << profile.surface_mesh().point(profile.v1()) << ".ply";
+					} else {
+						output_mesh_name << next_mesh << "/next_mesh_" << export_cost << "_" << profile.v1().idx() << "_" << profile.v0().idx() << "_" << profile.surface_mesh().point(profile.v1()) << "_" << profile.surface_mesh().point(profile.v0()) << ".ply";
+					}
+					std::stringstream output_mesh_coment;
+					output_mesh_coment << "cost: " << export_cost;
+					output_mesh_coment << "\nold_cost: " << old_cost;
+					output_mesh_coment << "\nalpha * squared_distance: " << (alpha * squared_distance);
+					output_mesh_coment << "\nbeta * count_semantic_error: " << (beta * count_semantic_error);
+					output_mesh_coment << "\ngamma * semantic_border_length: " << (gamma * semantic_border_length);
+					output_mesh_coment << "\ndelta * collapse_datas[].placement_cost: " << (delta * collapse_datas[Surface_mesh::Edge_index(profile.v0_v1())].placement_cost);
+					std::ofstream mesh_ofile (output_mesh_name.str().c_str());
+					CGAL::IO::write_PLY (mesh_ofile, output_mesh, output_mesh_coment.str());
+					mesh_ofile.close();
+				}
 			} else {
 				for(std::size_t face_id = 0; face_id < new_faces.size(); face_id++) {
 					CollapseDataElement r;
@@ -1153,7 +1200,7 @@ void My_visitor::OnStarted (Surface_mesh&) {
 	
 	total_timer.pause();
 	mesh_info.save_mesh(mesh, "initial-mesh.ply");
-	
+
 	ground_truth_surface_mesh = mesh;
 	total_timer.resume();
 
