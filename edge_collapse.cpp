@@ -225,6 +225,46 @@ void add_label(Surface_mesh &mesh, const Point_set &point_cloud, const K::FT min
 	}
 }
 
+std::vector<Surface_mesh::Face_index> subdivide_face(Surface_mesh& mesh, Surface_mesh::Face_index face) {
+	int i = 0;
+	auto h0 = mesh.halfedge(face);
+	auto h1 = mesh.next(h0);
+	auto h2 = mesh.next(h1);
+	auto v0 = mesh.target(h0);
+	auto v1 = mesh.target(h1);
+	auto v2 = mesh.target(h2);
+
+	auto vp0 = mesh.target(mesh.next(mesh.opposite(h0)));
+	auto vp1 = mesh.target(mesh.next(mesh.opposite(h1)));
+	auto vp2 = mesh.target(mesh.next(mesh.opposite(h2)));
+	if (mesh.is_border(h0)) vp0 = mesh.null_vertex();
+	if (mesh.is_border(h1)) vp1 = mesh.null_vertex();
+	if (mesh.is_border(h2)) vp2 = mesh.null_vertex();
+
+	auto vm0 = mesh.add_vertex(CGAL::midpoint(mesh.point(v2), mesh.point(v0)));
+	auto vm1 = mesh.add_vertex(CGAL::midpoint(mesh.point(v0), mesh.point(v1)));
+	auto vm2 = mesh.add_vertex(CGAL::midpoint(mesh.point(v1), mesh.point(v2)));
+
+	if (vp0 != mesh.null_vertex()) CGAL::Euler::remove_face(mesh.opposite(h0), mesh);
+	if (vp1 != mesh.null_vertex()) CGAL::Euler::remove_face(mesh.opposite(h1), mesh);
+	if (vp2 != mesh.null_vertex()) CGAL::Euler::remove_face(mesh.opposite(h2), mesh);
+	CGAL::Euler::remove_face(h0, mesh);
+
+	std::vector<Surface_mesh::Face_index> new_faces;
+	new_faces.push_back(mesh.add_face(vm0, vm1, vm2));
+	new_faces.push_back(mesh.add_face(v0, vm1, vm0));
+	new_faces.push_back(mesh.add_face(v1, vm2, vm1));
+	new_faces.push_back(mesh.add_face(v2, vm0, vm2));
+	if (vp0 != mesh.null_vertex()) new_faces.push_back(mesh.add_face(v0, vm0, vp0));
+	if (vp0 != mesh.null_vertex()) new_faces.push_back(mesh.add_face(v2, vp0, vm0));
+	if (vp1 != mesh.null_vertex()) new_faces.push_back(mesh.add_face(v1, vm1, vp1));
+	if (vp1 != mesh.null_vertex()) new_faces.push_back(mesh.add_face(v0, vp1, vm1));
+	if (vp2 != mesh.null_vertex()) new_faces.push_back(mesh.add_face(v2, vm2, vp2));
+	if (vp2 != mesh.null_vertex()) new_faces.push_back(mesh.add_face(v1, vp2, vm2));
+
+	return new_faces;
+}
+
 std::list<std::pair <K::Vector_3, K::FT>> volume_preservation_and_optimisation (const SMS::Edge_profile<Surface_mesh>& profile) {
 
 	std::list<std::pair <K::Vector_3, K::FT>> result;
@@ -1196,8 +1236,157 @@ void My_visitor::OnStarted (Surface_mesh&) {
 	}
 
 
-	if (beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) add_label(mesh, point_cloud, min_point_per_area);
-	
+	if (beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) {
+		add_label(mesh, point_cloud, min_point_per_area);
+
+		// Subdivide wrong face
+		std::set<Surface_mesh::Face_index> face_to_divide;
+		for (auto face: mesh.faces()) {
+			face_to_divide.insert(face);
+		}
+
+		while (face_to_divide.size() > 0) {
+			auto face = *face_to_divide.begin();
+
+			if (point_in_face[face].size() > 0) {
+
+				int face_label[LABELS.size()] = {0};
+
+				for (auto point: point_in_face[face]) {
+					face_label[point_cloud_label[point]]++;
+				}
+
+				auto argmax = std::max_element(face_label, face_label+LABELS.size());
+				
+				if (*argmax < point_in_face[face].size()*0.80) {
+					auto h0 = mesh.halfedge(face);
+					auto h1 = mesh.next(h0);
+					auto h2 = mesh.next(h1);
+
+					std::set<Point_set::Index> points_to_be_change;
+					points_to_be_change.insert(point_in_face[face].begin(), point_in_face[face].end());
+					points_to_be_change.insert(point_in_face[mesh.face(mesh.opposite(h0))].begin(), point_in_face[mesh.face(mesh.opposite(h0))].end());
+					points_to_be_change.insert(point_in_face[mesh.face(mesh.opposite(h1))].begin(), point_in_face[mesh.face(mesh.opposite(h1))].end());
+					points_to_be_change.insert(point_in_face[mesh.face(mesh.opposite(h2))].begin(), point_in_face[mesh.face(mesh.opposite(h2))].end());
+
+					face_to_divide.erase(face);
+					face_to_divide.erase(mesh.face(mesh.opposite(h0)));
+					face_to_divide.erase(mesh.face(mesh.opposite(h1)));
+					face_to_divide.erase(mesh.face(mesh.opposite(h2)));
+
+					auto new_faces = subdivide_face(mesh, face);
+					
+					std::vector<K::Triangle_3> new_faces_triangle;
+					for (auto new_face: new_faces) {
+						auto r = mesh.vertices_around_face(mesh.halfedge(new_face)).begin();
+						new_faces_triangle.push_back(K::Triangle_3(mesh.point(*r++), mesh.point(*r++), mesh.point(*r++)));
+					}
+
+					// geometric error
+					for(auto ph: points_to_be_change) {
+						auto point = type_converter(point_cloud.point(ph));
+						K::FT min_d = std::numeric_limits<K::FT>::max();
+						std::size_t closest_face = 0;
+						for(std::size_t face_id = 0; face_id < new_faces_triangle.size(); face_id++) {
+							auto d = CGAL::squared_distance(point, new_faces_triangle[face_id]);
+							if (d < min_d) {
+								min_d = d;
+								closest_face = face_id;
+							}
+						}
+						point_in_face[new_faces[closest_face]].push_back(ph);
+						if (alpha > 0) {
+							face_costs[new_faces[closest_face]] += alpha * min_d;
+						}
+					}
+
+					for (auto new_face: new_faces) {
+						if (point_in_face[new_face].size() > 0) face_to_divide.insert(new_face);
+					}
+
+					// semantic error
+					if (beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) {
+						// label new face and semantic error
+						std::set<Surface_mesh::Face_index> faces_with_no_label;
+						for(auto face: new_faces) {
+							K::FT min_point = 0;
+							if (min_point_per_area > 0) {
+								auto r = mesh.vertices_around_face(mesh.halfedge(face)).begin();
+								K::FT face_area = CGAL::sqrt(K::Triangle_3(mesh.point(*r++), mesh.point(*r++), mesh.point(*r++)).squared_area());
+								min_point = min_point_per_area * face_area;
+							}
+							if (point_in_face[face].size() > 0) {
+
+								if (point_in_face[face].size() > min_point) {
+
+									int face_label[LABELS.size()] = {0};
+
+									for (auto point: point_in_face[face]) {
+										face_label[point_cloud_label[point]]++;
+									}
+
+									auto argmax = std::max_element(face_label, face_label+LABELS.size());
+									face_costs[face] += beta * (point_in_face[face].size() - *argmax);
+									mesh_label[face] = argmax - face_label;
+
+								} else { // We don't have information about this face.
+									mesh_label[face] = LABEL_OTHER;
+									face_costs[face] += beta * point_in_face[face].size();
+								}
+							} else {
+								if (min_point <= 1) { // It's probable that there is no point
+									faces_with_no_label.insert(face);
+								} else { // We don't have information about this face.
+									mesh_label[face] = LABEL_OTHER;
+								}
+							}
+						}
+						while(faces_with_no_label.size() > 0) {
+							std::list<Surface_mesh::Face_index> face_to_be_removed;
+							for(auto face: faces_with_no_label) {
+								K::FT face_label[LABELS.size()] = {0};
+								bool no_neighbor = true;
+								for (auto he: mesh.halfedges_around_face(mesh.halfedge(face))) {
+									if (!mesh.is_border(Surface_mesh::Edge_index(he))) {
+										no_neighbor = false;
+										if (faces_with_no_label.count(mesh.face(mesh.opposite(he))) == 0) {
+											face_label[mesh_label[mesh.face(mesh.opposite(he))]] += CGAL::sqrt(CGAL::squared_distance(mesh.point(mesh.source(he)), mesh.point(mesh.target(he))));
+										}
+									}
+								}
+								if (no_neighbor) {
+									mesh_label[face] = LABEL_OTHER;
+									face_to_be_removed.push_back(face);
+								} else {
+									auto argmax = std::max_element(face_label, face_label+LABELS.size());
+									if (*argmax > 0) {
+										mesh_label[face] = argmax - face_label;
+										face_to_be_removed.push_back(face);
+									}
+								}
+							}
+							for (auto face: face_to_be_removed) {
+								faces_with_no_label.erase(face);
+							}
+							if (face_to_be_removed.size() == 0) {
+								for(auto face_id: faces_with_no_label) {
+									mesh_label[face_id] = LABEL_OTHER;
+								}
+								break;
+							} else {
+								face_to_be_removed.clear();
+							}
+						}
+					}
+				} else {
+					face_to_divide.erase(face);
+				}
+			} else {
+				face_to_divide.erase(face);
+			}
+		}
+	}
+
 	total_timer.pause();
 	mesh_info.save_mesh(mesh, "initial-mesh.ply");
 
