@@ -84,9 +84,10 @@ int main(int argc, char **argv) {
 		{"c4", required_argument, NULL, 0},
 		{"cs", required_argument, NULL, 0},
 		{"ns", required_argument, NULL, 0},
-		{"subsample", required_argument, NULL, 0},
+		{"subsample_per_face", required_argument, NULL, 0},
 		{"baseline", required_argument, NULL, 0},
 		{"min_point_factor", required_argument, NULL, 0},
+		{"no_subdivide", no_argument, NULL, 0},
 		{"next_mesh", required_argument, NULL, 0},
 		{NULL, 0, 0, '\0'}
 	};
@@ -98,6 +99,7 @@ int main(int argc, char **argv) {
 	float subsample = -1;
 	int baseline = -1;
 	float min_point_factor = 10;
+	bool subdivide = true;
 	char *next_mesh = NULL;
 
 	while ((opt = getopt_long(argc, argv, "hm:p:", options, &option_index)) != -1) {
@@ -153,6 +155,9 @@ int main(int argc, char **argv) {
 						min_point_factor = atof(optarg);
 						break;
 					case 19:
+						subdivide = false;
+						break;
+					case 20:
 						next_mesh = optarg;
 						break;
 				}
@@ -202,6 +207,7 @@ int main(int argc, char **argv) {
 		std::cout << "subsample=" << subsample << "\n";
 	}
 	std::cout << "min_point_factor=" << min_point_factor << "\n";
+	std::cout << "subdivide=" << int(subdivide) << "\n";
 	
 	myfile << "Mesh=" << mesh_file << std::endl;
 	if (point_cloud_file != NULL) {
@@ -227,6 +233,7 @@ int main(int argc, char **argv) {
 	}
 	myfile << "subsample=" << subsample << "\n";
 	myfile << "min_point_factor=" << min_point_factor << "\n";
+	myfile << "subdivide=" << int(subdivide) << "\n";
 	myfile.close();
 
 	if (next_mesh != nullptr) {
@@ -497,11 +504,13 @@ int main(int argc, char **argv) {
 		}
 
 	}
+
+	const Ablation_study ablation (subdivide);
 	
 	const LindstromTurk_param params (l1,l2,l3,l4,l5,l6,l7);
 	Custom_placement pf(params, mesh, point_cloud);
 	Custom_cost cf(params, c1, c2, c3, c4, min_point_per_area, mesh, point_cloud, next_mesh);
-	My_visitor mv(params, c1, c2, c3, min_point_per_area, mesh, mesh_info, point_cloud);
+	My_visitor mv(params, c1, c2, c3, min_point_per_area, mesh, mesh_info, point_cloud, ablation);
 	SMS::Bounded_normal_change_filter<> filter;
 	if (ns > 0) {
 		SMS::Count_stop_predicate<Surface_mesh> stop(ns);

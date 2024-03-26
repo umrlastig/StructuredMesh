@@ -38,6 +38,12 @@ struct LindstromTurk_param {
 						float semantic_border_optimization);
 };
 
+struct Ablation_study {
+	bool subdivide;
+
+	Ablation_study(bool subdivide = true);
+};
+
 struct CollapseDataElement{
 	Surface_mesh::Halfedge_index halfedge;
 	unsigned char label;
@@ -103,6 +109,8 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 		const Surface_mesh_info &mesh_info;
 		Point_set &point_cloud;
 
+		const Ablation_study ablation;
+
 		Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_label;
 		Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> face_costs;
 		Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
@@ -112,7 +120,7 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 		Surface_mesh ground_truth_surface_mesh;
 
 	public:
-		My_visitor(const LindstromTurk_param &params, const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT min_point_per_area, Surface_mesh &mesh, const Surface_mesh_info &mesh_info, Point_set &point_cloud);
+		My_visitor(const LindstromTurk_param &params, const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT min_point_per_area, Surface_mesh &mesh, const Surface_mesh_info &mesh_info, Point_set &point_cloud, const Ablation_study &ablation = Ablation_study());
 
 		void OnStarted (Surface_mesh&);
 

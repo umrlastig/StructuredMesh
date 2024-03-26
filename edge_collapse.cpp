@@ -109,7 +109,7 @@ void compute_stat(Surface_mesh &mesh, const Point_set &point_cloud, const Surfac
 	if (!std::filesystem::exists("results.csv")) {
 		std::ofstream results;
 		results.open ("results.csv", std::ios::app);
-		results << "mesh, point cloud, l1, l2, l3, l4, l5, l6, l7, c1, c2, c3, c4, ns / cs, subsample, min_point_factor, num_mesh_vertices, min_distance, max_distance, mean_distance, min_distance_r, max_distance_r, mean_distance_r, num_wrong_points, total_num_points, time, final_cost\n";
+		results << "mesh, point cloud, l1, l2, l3, l4, l5, l6, l7, c1, c2, c3, c4, ns / cs, subsample, min_point_factor, subdivide, num_mesh_vertices, min_distance, max_distance, mean_distance, min_distance_r, max_distance_r, mean_distance_r, num_wrong_points, total_num_points, time, final_cost\n";
 	}
 
 	std::ofstream results;
@@ -644,6 +644,10 @@ LindstromTurk_param::LindstromTurk_param(
 	label_preservation(label_preservation),
 	semantic_border_optimization(semantic_border_optimization) {}
 
+Ablation_study::Ablation_study(
+	bool subdivide) :
+	subdivide(subdivide) {}
+
 Custom_placement::Custom_placement (const LindstromTurk_param &params, Surface_mesh &mesh, const Point_set &point_cloud) : params(params), point_cloud(point_cloud) {
 	bool created_collapse_datas;
 	boost::tie(collapse_datas, created_collapse_datas) = mesh.add_property_map<Surface_mesh::Edge_index, CollapseData>("e:c_datas");
@@ -1085,7 +1089,7 @@ bool Cost_stop_predicate::operator()(const SMS::Edge_profile<Surface_mesh>::FT &
 	return current_cost > cost;
 }
 
-My_visitor::My_visitor(const LindstromTurk_param &params, const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT min_point_per_area, Surface_mesh &mesh, const Surface_mesh_info &mesh_info, Point_set &point_cloud) : params(params), alpha(alpha), beta(beta), gamma(gamma), min_point_per_area(min_point_per_area), mesh(mesh), mesh_info(mesh_info), point_cloud(point_cloud) {
+My_visitor::My_visitor(const LindstromTurk_param &params, const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT min_point_per_area, Surface_mesh &mesh, const Surface_mesh_info &mesh_info, Point_set &point_cloud, const Ablation_study &ablation) : params(params), alpha(alpha), beta(beta), gamma(gamma), min_point_per_area(min_point_per_area), mesh(mesh), mesh_info(mesh_info), point_cloud(point_cloud), ablation(ablation) {
 	bool created_collapse_datas;
 	boost::tie(collapse_datas, created_collapse_datas) = mesh.add_property_map<Surface_mesh::Edge_index, CollapseData>("e:c_datas");
 }
@@ -1236,7 +1240,7 @@ void My_visitor::OnStarted (Surface_mesh&) {
 	}
 
 
-	if (beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) {
+	if (ablation.subdivide && (beta > 0 || gamma > 0 || params.semantic_border_optimization > 0)) {
 		add_label(mesh, point_cloud, min_point_per_area);
 
 		// Subdivide wrong face
