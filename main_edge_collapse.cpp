@@ -316,6 +316,10 @@ int main(int argc, char **argv) {
 		return EXIT_SUCCESS;
 	}
 
+	Ablation_study ablation (subdivide);
+	ablation.ground_truth_point_cloud = point_cloud;
+	ablation.ground_truth_surface_mesh = mesh;
+
 	K::FT min_point_per_area;
 	if (min_point_factor > 0) {
 		K::FT mean_point_per_area = get_mean_point_per_area(mesh, point_cloud);
@@ -438,8 +442,6 @@ int main(int argc, char **argv) {
 		}
 
 	}
-
-	const Ablation_study ablation (subdivide);
 	
 	const LindstromTurk_param params (l1,l2,l3,l4,l5,l6,l7);
 	Custom_placement pf(params, mesh, point_cloud);
