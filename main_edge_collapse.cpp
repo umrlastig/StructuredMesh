@@ -4,6 +4,7 @@
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/GarlandHeckbert_policies.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Bounded_normal_change_filter.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Count_stop_predicate.h>
+#include <CGAL/random_simplify_point_set.h>
 #include <CGAL/Orthogonal_k_neighbor_search.h>
 #include <CGAL/Search_traits_3.h>
 #include <CGAL/Search_traits_adapter.h>
@@ -84,7 +85,7 @@ int main(int argc, char **argv) {
 		{"c4", required_argument, NULL, 0},
 		{"cs", required_argument, NULL, 0},
 		{"ns", required_argument, NULL, 0},
-		{"subsample_per_face", required_argument, NULL, 0},
+		{"subsample", required_argument, NULL, 0},
 		{"baseline", required_argument, NULL, 0},
 		{"min_point_factor", required_argument, NULL, 0},
 		{"no_subdivide", no_argument, NULL, 0},
@@ -326,23 +327,58 @@ int main(int argc, char **argv) {
 	if (subsample >= 0) {
 		//subsample point cloud
 
-		// Create point_in _face
-		bool created_point_in_face;
-		Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
-		boost::tie(point_in_face, created_point_in_face) = mesh.add_property_map<Surface_mesh::Face_index, std::list<Point_set::Index>>("f:points", std::list<Point_set::Index>());
-
-		// Create face_costs
-		bool created_face_costs;
-		Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> face_costs;
-		boost::tie(face_costs, created_face_costs) = mesh.add_property_map<Surface_mesh::Face_index, K::FT>("f:cost", 0);
-
-		CGAL::Cartesian_converter<Point_set_kernel,K> type_converter;
-		float alpha = c1;
-		float beta = c2;
-
 		if (subsample >= 1) {
 
 			// Keep only {subsample:int} points per face
+
+			// Create point_in _face
+			bool created_point_in_face;
+			Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
+			boost::tie(point_in_face, created_point_in_face) = mesh.add_property_map<Surface_mesh::Face_index, std::list<Point_set::Index>>("f:points", std::list<Point_set::Index>());
+
+			// Create face_costs
+			bool created_face_costs;
+			Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> face_costs;
+			boost::tie(face_costs, created_face_costs) = mesh.add_property_map<Surface_mesh::Face_index, K::FT>("f:cost", 0);
+
+			CGAL::Cartesian_converter<Point_set_kernel,K> type_converter;
+			float alpha = c1;
+			float beta = c2;
+
+			//get border point
+			bool created_point_isborder;
+			Point_set::Property_map<bool> isborder;
+			boost::tie (isborder, created_point_isborder) = point_cloud.add_property_map<bool>("p:isborder", false);
+			if (created_point_isborder) {
+				int N = 10;
+				Point_tree point_tree(point_cloud.begin(), point_cloud.end(), Point_tree::Splitter(), TreeTraits(point_cloud.point_map()));
+				Neighbor_search::Distance tr_dist(point_cloud.point_map());
+				for (auto point: point_cloud) {
+					Neighbor_search search(point_tree, point_cloud.point(point), N, 0, true, tr_dist, false);
+					unsigned char l = point_cloud_label[search.begin()->first];
+					for(auto it = search.begin() + 1; it != search.end() && !isborder[point]; ++it) {
+						if (point_cloud_label[it->first] != l) isborder[point] = true;
+					}
+				}
+				std::cout << "Border points computed" << std::endl;
+			}
+
+			// drop points in face to keep only subsample points per face
+			std::random_device rd;
+			std::mt19937 g(rd());
+			for (auto face: mesh.faces()) {
+				std::vector<Point_set::Index> temp(point_in_face[face].begin(), point_in_face[face].end());
+				std::shuffle(temp.begin(), temp.end(), g);
+
+				point_in_face[face].clear();
+				for(std::size_t i = 0; i < temp.size(); i++) {
+					if (i < subsample) {
+						point_in_face[face].push_back(temp[i]);
+					} else if (isborder[temp[i]]) {
+						point_in_face[face].push_back(temp[i]);
+					}
+				}
+			}
 
 			if(created_point_in_face) {
 				AABB_tree mesh_tree;
@@ -383,42 +419,6 @@ int main(int argc, char **argv) {
 							face_costs[face] += beta * point_in_face[face].size();
 						}
 					}
-//if (face.idx() == 58591) std::cerr << "face_costs[58521] = " << face_costs[face] << "\n";
-				}
-			}
-
-			//get border point
-			bool created_point_isborder;
-			Point_set::Property_map<bool> isborder;
-			boost::tie (isborder, created_point_isborder) = point_cloud.add_property_map<bool>("p:isborder", false);
-			if (created_point_isborder) {
-				int N = 10;
-				Point_tree point_tree(point_cloud.begin(), point_cloud.end(), Point_tree::Splitter(), TreeTraits(point_cloud.point_map()));
-				Neighbor_search::Distance tr_dist(point_cloud.point_map());
-				for (auto point: point_cloud) {
-					Neighbor_search search(point_tree, point_cloud.point(point), N, 0, true, tr_dist, false);
-					unsigned char l = point_cloud_label[search.begin()->first];
-					for(auto it = search.begin() + 1; it != search.end() && !isborder[point]; ++it) {
-						if (point_cloud_label[it->first] != l) isborder[point] = true;
-					}
-				}
-				std::cout << "Border points computed" << std::endl;
-			}
-
-			// drop points in face to keep only subsample points per face
-			std::random_device rd;
-			std::mt19937 g(rd());
-			for (auto face: mesh.faces()) {
-				std::vector<Point_set::Index> temp(point_in_face[face].begin(), point_in_face[face].end());
-				std::shuffle(temp.begin(), temp.end(), g);
-
-				point_in_face[face].clear();
-				for(std::size_t i = 0; i < temp.size(); i++) {
-					if (i < subsample) {
-						point_in_face[face].push_back(temp[i]);
-					} else if (isborder[temp[i]]) {
-						point_in_face[face].push_back(temp[i]);
-					}
 				}
 			}
 
@@ -427,77 +427,11 @@ int main(int argc, char **argv) {
 		} else {
 
 			// Keep only {subsample:proportion} of initial points.
-
-			std::random_device rd;
-			std::mt19937 g(rd());
-			std::vector<Point_set::Index> points_index (point_cloud.begin(), point_cloud.end());
-			std::shuffle(points_index.begin(), points_index.end(), g);
-
-			bool created_point_selected;
-			Point_set::Property_map<bool> selected;
-			boost::tie (selected, created_point_selected) = point_cloud.add_property_map<bool>("p:selected", false);
-
-			for (std::size_t i = 0; i < subsample * point_cloud.size(); i++) {
-				selected[points_index[i]] = true;
-			}
+			auto iterator_to_first_to_remove = CGAL::random_simplify_point_set (point_cloud, (1 - subsample) * 100);
+			point_cloud.remove(iterator_to_first_to_remove, point_cloud.end());
+			point_cloud.collect_garbage();
 
 			min_point_per_area *= subsample;
-
-			// Reset point_in_face and face_costs
-			for(auto face: mesh.faces()) {
-				point_in_face[face].clear();
-				face_costs[face] = 0;
-			}
-
-			AABB_tree mesh_tree;
-			PMP::build_AABB_tree(mesh, mesh_tree);
-			for (std::size_t i = 0; i < subsample * point_cloud.size(); i++) {
-				auto ph = points_index[i];
-				auto p = type_converter(point_cloud.point(ph));
-				auto location = PMP::locate_with_AABB_tree(p, mesh_tree, mesh);
-				point_in_face[location.first].push_back(ph);
-				if (alpha > 0) face_costs[location.first] += alpha * CGAL::squared_distance(p, PMP::construct_point(location, mesh));
-			}
-			if (beta > 0) {
-				for(auto face: mesh.faces()) {
-					K::FT min_point = 0;
-					if (min_point_per_area > 0) {
-						auto r = mesh.vertices_around_face(mesh.halfedge(face)).begin();
-						K::FT face_area = CGAL::sqrt(K::Triangle_3(mesh.point(*r++), mesh.point(*r++), mesh.point(*r++)).squared_area());
-						min_point = min_point_per_area * face_area;
-					}
-					if (point_in_face[face].size() > 0) {
-						if (point_in_face[face].size() > min_point) {
-							int face_label[LABELS.size()] = {0};
-							for (auto point: point_in_face[face]) {
-								face_label[point_cloud_label[point]]++;
-							}
-							auto argmax = std::max_element(face_label, face_label+LABELS.size());
-							face_costs[face] += beta * (point_in_face[face].size() - *argmax);
-						} else { // We don't have information about this face.
-							face_costs[face] += beta * point_in_face[face].size();
-						}
-					}
-				}
-			}
-
-			//get border point
-			bool created_point_isborder;
-			Point_set::Property_map<bool> isborder;
-			boost::tie (isborder, created_point_isborder) = point_cloud.add_property_map<bool>("p:isborder", false);
-			if (created_point_isborder) {
-				int N = 10;
-				Point_tree point_tree(point_cloud.begin(), point_cloud.end(), Point_tree::Splitter(), TreeTraits(point_cloud.point_map()));
-				Neighbor_search::Distance tr_dist(point_cloud.point_map());
-				for (auto point: point_cloud) {
-					Neighbor_search search(point_tree, point_cloud.point(point), N, 0, true, tr_dist, false);
-					unsigned char l = point_cloud_label[search.begin()->first];
-					for(auto it = search.begin() + 1; it != search.end() && !isborder[point]; ++it) {
-						if (point_cloud_label[it->first] != l) isborder[point] = true;
-					}
-				}
-				std::cout << "Border points computed" << std::endl;
-			}
 
 			std::cout << "Points subsampled with " << subsample << " points of original point cloud." << std::endl;
 
