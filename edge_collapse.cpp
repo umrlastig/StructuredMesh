@@ -834,34 +834,31 @@ K::Point_3 best_position(const SMS::Edge_profile<Surface_mesh>& profile, const P
 		selected_face.push_back(fh);
 	}
 	CGAL::Face_filtered_graph<Surface_mesh> filtered_sm(profile.surface_mesh(), selected_face);
-	AABB_tree filtered_sm_tree;
-	PMP::build_AABB_tree(filtered_sm, filtered_sm_tree);
 
-	zzzz
-	auto location = PMP::locate(K::Ray_3(results.back(), ortho_plane), filtered_sm);
+	Surface_mesh filtered_mesh;
+	CGAL::copy_face_graph(filtered_sm, filtered_mesh);
+	AABB_tree filtered_sm_tree;
+	PMP::build_AABB_tree(filtered_mesh, filtered_sm_tree);
+
+	auto location = PMP::locate_with_AABB_tree(K::Ray_3(results.back(), ortho_plane), filtered_sm_tree, filtered_mesh);
 	if (location.first != Surface_mesh::Face_index()) {
 		auto p1 = PMP::construct_point(location, profile.surface_mesh());
-		auto location2 = PMP::locate(K::Ray_3(results.back(), -ortho_plane), filtered_sm);
+		auto location2 = PMP::locate_with_AABB_tree(K::Ray_3(results.back(), -ortho_plane), filtered_sm_tree, filtered_mesh);
 		if (location2.first != Surface_mesh::Face_index()) {
 			auto p2 = PMP::construct_point(location2, profile.surface_mesh());
 			if (CGAL::squared_distance(p1, results.back()) < CGAL::squared_distance(p2, results.back())) {
-				std::cerr << "-----------" << results.back() << " -> " << p1 << "\n";
 				return p1;
 			} else {
-				std::cerr << "-----------" << results.back() << " -> " << p2 << "\n";
 				return p2;
 			}
 		} else {
-			std::cerr << "-----------" << results.back() << " -> " << p1 << "\n";
 			return p1;
 		}
 	} else {
-		auto location = PMP::locate(K::Ray_3(results.back(), -ortho_plane), filtered_sm);
+		auto location = PMP::locate_with_AABB_tree(K::Ray_3(results.back(), -ortho_plane), filtered_sm_tree, filtered_mesh);
 		if (location.first != Surface_mesh::Face_index()) {
-			std::cerr << "-----------" << results.back() << " -> " << PMP::construct_point(location, profile.surface_mesh()) << "\n";
 			return PMP::construct_point(location, profile.surface_mesh());
 		} else {
-			std::cerr << "-------------------------------------------------------\n";
 			return results.back();
 		}
 	}
@@ -966,9 +963,11 @@ timer.start();
 	assert(has_label);
 
 	Point_set::Property_map<bool> isborder;
-	bool has_isborder;
-	boost::tie(isborder, has_isborder) = point_cloud.property_map<bool>("p:isborder");
-	assert(has_isborder);
+	if (ablation.border_point) {
+		bool has_isborder;
+		boost::tie(isborder, has_isborder) = point_cloud.property_map<bool>("p:isborder");
+		assert(has_isborder);
+	}
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
 	bool has_point_in_face;
@@ -982,7 +981,7 @@ timer.start();
 		if (point_in_face[fh].size() > 0) {
 			int count_face_label[LABELS.size()] = {0};
 			for (auto ph: point_in_face[fh]) {
-				if (isborder[ph]) {
+				if (!ablation.border_point || isborder[ph]) {
 					points_in_faces.insert(ph);
 				}
 				count_face_label[label[ph]]++;
@@ -1247,8 +1246,9 @@ LindstromTurk_param::LindstromTurk_param(
 
 Ablation_study::Ablation_study(
 	bool subdivide,
-	bool direct_search) :
-	subdivide(subdivide), direct_search(direct_search) {}
+	bool direct_search,
+	bool border_point) :
+	subdivide(subdivide), direct_search(direct_search), border_point(border_point) {}
 
 Custom_placement::Custom_placement (const LindstromTurk_param &params, Surface_mesh &mesh, const Point_set &point_cloud, const Ablation_study &ablation) : params(params), point_cloud(point_cloud), ablation(ablation) {
 	bool created_collapse_datas;
@@ -1788,7 +1788,7 @@ void My_visitor::OnStarted (Surface_mesh&) {
 	}
 
 	// Set isBorder
-	if(params.label_preservation > 0) {
+	if(params.label_preservation > 0 && ablation.border_point) {
 		bool created_point_isborder;
 		Point_set::Property_map<bool> isborder;
 		boost::tie (isborder, created_point_isborder) = point_cloud.add_property_map<bool>("p:isborder", false);
@@ -1810,57 +1810,59 @@ void My_visitor::OnStarted (Surface_mesh&) {
 	}
 
 	{// Save point cloud
-		total_timer.pause();
-		Point_set output_point_cloud(point_cloud);
+		if (ablation.border_point) {
+			total_timer.pause();
+			Point_set output_point_cloud(point_cloud);
 
-		// Color
-		bool created;
-		Point_set::Property_map<unsigned char> red;
-		Point_set::Property_map<unsigned char> green;
-		Point_set::Property_map<unsigned char> blue;
-		boost::tie(red, created) = output_point_cloud.add_property_map<unsigned char>("red",0);
-		assert(created);
-		boost::tie(green, created) = output_point_cloud.add_property_map<unsigned char>("green",0);
-		assert(created);
-		boost::tie(blue, created) = output_point_cloud.add_property_map<unsigned char>("blue",0);
-		assert(created);
+			// Color
+			bool created;
+			Point_set::Property_map<unsigned char> red;
+			Point_set::Property_map<unsigned char> green;
+			Point_set::Property_map<unsigned char> blue;
+			boost::tie(red, created) = output_point_cloud.add_property_map<unsigned char>("red",0);
+			assert(created);
+			boost::tie(green, created) = output_point_cloud.add_property_map<unsigned char>("green",0);
+			assert(created);
+			boost::tie(blue, created) = output_point_cloud.add_property_map<unsigned char>("blue",0);
+			assert(created);
 
-		if(params.label_preservation > 0) {
-			Point_set::Property_map<bool> output_isborder;
-			bool has_output_isborder;
-			boost::tie(output_isborder, has_output_isborder) = output_point_cloud.property_map<bool>("p:isborder");
-			assert(has_output_isborder);
+			if (params.label_preservation > 0) {
+				Point_set::Property_map<bool> output_isborder;
+				bool has_output_isborder;
+				boost::tie(output_isborder, has_output_isborder) = output_point_cloud.property_map<bool>("p:isborder");
+				assert(has_output_isborder);
 
-			for (auto point: output_point_cloud) {
-				if (output_isborder[point]) {
-					red[point] = 255;
-					green[point] = 255;
-					blue[point] = 255;
-				} else {
-					red[point] = 155;
-					green[point] = 155;
-					blue[point] = 155;
+				for (auto point: output_point_cloud) {
+					if (output_isborder[point]) {
+						red[point] = 255;
+						green[point] = 255;
+						blue[point] = 255;
+					} else {
+						red[point] = 155;
+						green[point] = 155;
+						blue[point] = 155;
+					}
+				}
+
+				CGAL::IO::write_point_set("pc_with_border.ply", output_point_cloud);
+			}
+
+			if (beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) {
+				Point_set::Property_map<unsigned char> output_label;
+				bool has_output_label;
+				boost::tie(output_label, has_output_label) = output_point_cloud.property_map<unsigned char>("p:label");
+				assert(has_output_label);
+
+				for (auto point: output_point_cloud) {
+					red[point] = LABELS.at(output_label[point]).red;
+					green[point] = LABELS.at(output_label[point]).green;
+					blue[point] = LABELS.at(output_label[point]).blue;
 				}
 			}
 
-			CGAL::IO::write_point_set("pc_with_border.ply", output_point_cloud);
+			CGAL::IO::write_point_set("pc_with_color.ply", output_point_cloud);
+			total_timer.resume();
 		}
-
-		if (beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) {
-			Point_set::Property_map<unsigned char> output_label;
-			bool has_output_label;
-			boost::tie(output_label, has_output_label) = output_point_cloud.property_map<unsigned char>("p:label");
-			assert(has_output_label);
-
-			for (auto point: output_point_cloud) {
-				red[point] = LABELS.at(output_label[point]).red;
-				green[point] = LABELS.at(output_label[point]).green;
-				blue[point] = LABELS.at(output_label[point]).blue;
-			}
-		}
-
-		CGAL::IO::write_point_set("pc_with_color.ply", output_point_cloud);
-		total_timer.resume();
 	}
 
 

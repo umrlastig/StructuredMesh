@@ -41,10 +41,11 @@ struct LindstromTurk_param {
 struct Ablation_study {
 	bool subdivide;
 	bool direct_search;
+	bool border_point;
 	Surface_mesh ground_truth_surface_mesh;
 	Point_set ground_truth_point_cloud;
 
-	Ablation_study(bool subdivide = true, bool direct_search = true);
+	Ablation_study(bool subdivide = true, bool direct_search = true, bool border_point = true);
 };
 
 struct CollapseDataElement{

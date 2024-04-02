@@ -90,6 +90,7 @@ int main(int argc, char **argv) {
 		{"min_point_factor", required_argument, NULL, 0},
 		{"no_subdivide", no_argument, NULL, 0},
 		{"no_direct_search", no_argument, NULL, 0},
+		{"no_border_point", no_argument, NULL, 0},
 		{"next_mesh", required_argument, NULL, 0},
 		{NULL, 0, 0, '\0'}
 	};
@@ -101,7 +102,7 @@ int main(int argc, char **argv) {
 	float subsample = -1;
 	int baseline = -1;
 	float min_point_factor = 10;
-	bool subdivide = true, direct_search = true;
+	bool subdivide = true, direct_search = true, border_point = true;
 	char *next_mesh = NULL;
 
 	while ((opt = getopt_long(argc, argv, "hm:p:", options, &option_index)) != -1) {
@@ -163,6 +164,9 @@ int main(int argc, char **argv) {
 						direct_search = false;
 						break;
 					case 21:
+						border_point = false;
+						break;
+					case 22:
 						next_mesh = optarg;
 						break;
 				}
@@ -214,6 +218,7 @@ int main(int argc, char **argv) {
 	std::cout << "min_point_factor=" << min_point_factor << "\n";
 	std::cout << "subdivide=" << int(subdivide) << "\n";
 	std::cout << "direct_search=" << int(direct_search) << "\n";
+	std::cout << "border_point=" << int(border_point) << "\n";
 	
 	myfile << "Mesh=" << mesh_file << std::endl;
 	if (point_cloud_file != NULL) {
@@ -241,6 +246,7 @@ int main(int argc, char **argv) {
 	myfile << "min_point_factor=" << min_point_factor << "\n";
 	myfile << "subdivide=" << int(subdivide) << "\n";
 	myfile << "direct_search=" << int(direct_search) << "\n";
+	myfile << "border_point=" << int(border_point) << "\n";
 	myfile.close();
 
 	if (next_mesh != nullptr) {
@@ -322,7 +328,7 @@ int main(int argc, char **argv) {
 		return EXIT_SUCCESS;
 	}
 
-	Ablation_study ablation (subdivide, direct_search);
+	Ablation_study ablation (subdivide, direct_search, border_point);
 	ablation.ground_truth_point_cloud = point_cloud;
 	ablation.ground_truth_surface_mesh = mesh;
 
@@ -359,7 +365,7 @@ int main(int argc, char **argv) {
 			bool created_point_isborder;
 			Point_set::Property_map<bool> isborder;
 			boost::tie (isborder, created_point_isborder) = point_cloud.add_property_map<bool>("p:isborder", false);
-			if (created_point_isborder) {
+			if (border_point && created_point_isborder) {
 				int N = 10;
 				Point_tree point_tree(point_cloud.begin(), point_cloud.end(), Point_tree::Splitter(), TreeTraits(point_cloud.point_map()));
 				Neighbor_search::Distance tr_dist(point_cloud.point_map());
