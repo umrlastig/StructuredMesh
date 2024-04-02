@@ -40,10 +40,11 @@ struct LindstromTurk_param {
 
 struct Ablation_study {
 	bool subdivide;
+	bool direct_search;
 	Surface_mesh ground_truth_surface_mesh;
 	Point_set ground_truth_point_cloud;
 
-	Ablation_study(bool subdivide = true);
+	Ablation_study(bool subdivide = true, bool direct_search = true);
 };
 
 struct CollapseDataElement{
@@ -63,9 +64,10 @@ class Custom_placement {
 	const LindstromTurk_param &params;
 	Surface_mesh::Property_map<Surface_mesh::Edge_index, CollapseData> collapse_datas;
 	const Point_set &point_cloud;
+	const Ablation_study &ablation;
 
 	public:
-		Custom_placement (const LindstromTurk_param &params, Surface_mesh &mesh, const Point_set &point_cloud);
+		Custom_placement (const LindstromTurk_param &params, Surface_mesh &mesh, const Point_set &point_cloud, const Ablation_study &ablation = Ablation_study());
 
 		boost::optional<SMS::Edge_profile<Surface_mesh>::Point> operator()(const SMS::Edge_profile<Surface_mesh>& profile) const;
 };
@@ -103,6 +105,8 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 		TimerUtils::Timer total_timer;
 		bool output[30] = {false};
 		CGAL::Cartesian_converter<Point_set_kernel,K> type_converter;
+// float c_cost = 0;
+// float total_cost = 0;
 		
 		const LindstromTurk_param &params;
 		const K::FT alpha, beta, gamma;

@@ -89,6 +89,7 @@ int main(int argc, char **argv) {
 		{"baseline", required_argument, NULL, 0},
 		{"min_point_factor", required_argument, NULL, 0},
 		{"no_subdivide", no_argument, NULL, 0},
+		{"no_direct_search", no_argument, NULL, 0},
 		{"next_mesh", required_argument, NULL, 0},
 		{NULL, 0, 0, '\0'}
 	};
@@ -100,7 +101,7 @@ int main(int argc, char **argv) {
 	float subsample = -1;
 	int baseline = -1;
 	float min_point_factor = 10;
-	bool subdivide = true;
+	bool subdivide = true, direct_search = true;
 	char *next_mesh = NULL;
 
 	while ((opt = getopt_long(argc, argv, "hm:p:", options, &option_index)) != -1) {
@@ -159,6 +160,9 @@ int main(int argc, char **argv) {
 						subdivide = false;
 						break;
 					case 20:
+						direct_search = false;
+						break;
+					case 21:
 						next_mesh = optarg;
 						break;
 				}
@@ -209,6 +213,7 @@ int main(int argc, char **argv) {
 	}
 	std::cout << "min_point_factor=" << min_point_factor << "\n";
 	std::cout << "subdivide=" << int(subdivide) << "\n";
+	std::cout << "direct_search=" << int(direct_search) << "\n";
 	
 	myfile << "Mesh=" << mesh_file << std::endl;
 	if (point_cloud_file != NULL) {
@@ -235,6 +240,7 @@ int main(int argc, char **argv) {
 	myfile << "subsample=" << subsample << "\n";
 	myfile << "min_point_factor=" << min_point_factor << "\n";
 	myfile << "subdivide=" << int(subdivide) << "\n";
+	myfile << "direct_search=" << int(direct_search) << "\n";
 	myfile.close();
 
 	if (next_mesh != nullptr) {
@@ -316,7 +322,7 @@ int main(int argc, char **argv) {
 		return EXIT_SUCCESS;
 	}
 
-	Ablation_study ablation (subdivide);
+	Ablation_study ablation (subdivide, direct_search);
 	ablation.ground_truth_point_cloud = point_cloud;
 	ablation.ground_truth_surface_mesh = mesh;
 
@@ -423,6 +429,7 @@ int main(int argc, char **argv) {
 							face_costs[face] += beta * point_in_face[face].size();
 						}
 					}
+//if (face.idx() == 58591) std::cerr << "face_costs[58521] = " << face_costs[face] << "\n";
 				}
 			}
 
@@ -444,7 +451,7 @@ int main(int argc, char **argv) {
 	}
 	
 	const LindstromTurk_param params (l1,l2,l3,l4,l5,l6,l7);
-	Custom_placement pf(params, mesh, point_cloud);
+	Custom_placement pf(params, mesh, point_cloud, ablation);
 	Custom_cost cf(params, c1, c2, c3, c4, min_point_per_area, mesh, point_cloud, next_mesh);
 	My_visitor mv(params, c1, c2, c3, min_point_per_area, mesh, mesh_info, point_cloud, ablation);
 	SMS::Bounded_normal_change_filter<> filter;

@@ -6,6 +6,7 @@
 #include <filesystem>
 
 #include <CGAL/Point_set_3/IO.h>
+#include <CGAL/intersections.h>
 #include <CGAL/QP_models.h>
 #include <CGAL/QP_functions.h>
 #include <CGAL/Orthogonal_k_neighbor_search.h>
@@ -13,6 +14,7 @@
 #include <CGAL/Search_traits_adapter.h>
 #include <CGAL/Polygon_mesh_processing/locate.h>
 #include <CGAL/Polygon_mesh_processing/distance.h>
+#include <CGAL/boost/graph/Face_filtered_graph.h>
 #include <CGAL/AABB_tree.h>
 #include <CGAL/AABB_traits.h>
 #include <CGAL/AABB_face_graph_triangle_primitive.h>
@@ -101,12 +103,26 @@ void compute_stat(Surface_mesh &mesh, const Point_set &point_cloud, const Ablati
 		total_num_points = ablation.ground_truth_point_cloud.size();
 	}
 
+	// Compute semantic border length
+	K::FT total_semanctic_contour_length = 0;
+
+	if (has_mesh_label) {
+		for (auto edge: mesh.edges()) {
+			if (!mesh.is_border(edge)) {
+				auto h = mesh.halfedge(edge);
+				if (mesh_label[mesh.face(h)] != mesh_label[mesh.face(mesh.opposite(h))]) {
+					total_semanctic_contour_length += CGAL::sqrt(CGAL::squared_distance(mesh.point(mesh.source(h)), mesh.point(mesh.target(h))));
+				}
+			}
+		}
+	}
+
 	std::ifstream input_file("commande_line.txt");
 
 	if (!std::filesystem::exists("results.csv")) {
 		std::ofstream results;
 		results.open ("results.csv", std::ios::app);
-		results << "mesh, point cloud, l1, l2, l3, l4, l5, l6, l7, c1, c2, c3, c4, ns / cs, subsample, min_point_factor, subdivide, num_mesh_vertices, min_distance, max_distance, mean_distance, min_distance_r, max_distance_r, mean_distance_r, num_wrong_points, total_num_points, time, final_cost\n";
+		results << "mesh, point cloud, l1, l2, l3, l4, l5, l6, l7, c1, c2, c3, c4, ns / cs, subsample, min_point_factor, subdivide, direct_search, num_mesh_vertices, min_distance, max_distance, mean_distance, min_distance_r, max_distance_r, mean_distance_r, num_wrong_points, total_num_points, total_semanctic_contour_length, time, final_cost\n";
 	}
 
 	std::ofstream results;
@@ -122,7 +138,7 @@ void compute_stat(Surface_mesh &mesh, const Point_set &point_cloud, const Ablati
 		}
 	}
 
-	results << mesh.number_of_vertices() << ", " << min_distance << ", " << max_distance << ", " << mean_distance << ", " << min_distance_r << ", " << max_distance_r << ", " << mean_distance_r << ", " << num_wrong_points << ", " << total_num_points << ", " << timer.getElapsedTime() << ", " << cost << "\n";
+	results << mesh.number_of_vertices() << ", " << min_distance << ", " << max_distance << ", " << mean_distance << ", " << min_distance_r << ", " << max_distance_r << ", " << mean_distance_r << ", " << num_wrong_points << ", " << total_num_points << ", " << total_semanctic_contour_length << ", " << timer.getElapsedTime() << ", " << cost << "\n";
 }
 
 K::FT get_mean_point_per_area(Surface_mesh &mesh, const Point_set &point_cloud) {
@@ -222,8 +238,147 @@ void add_label(Surface_mesh &mesh, const Point_set &point_cloud, const K::FT min
 	}
 }
 
-std::vector<Surface_mesh::Face_index> subdivide_face(Surface_mesh& mesh, Surface_mesh::Face_index face) {
-	int i = 0;
+std::pair<K::Vector_3, K::FT> compute_SVM(std::vector<Point_set::Index> points_for_svm, std::vector<int> y, const Point_set &point_cloud, float * quality = nullptr) {
+
+// TimerUtils::Timer timer;
+// timer.start();
+
+	assert(points_for_svm.size() == y.size());
+
+	CGAL::Cartesian_converter<Point_set_kernel,K> type_converter;
+
+	Point_set_kernel::FT c = 10000;
+
+	Program qp (CGAL::EQUAL, true, 0, true, c);
+	for (std::size_t i = 0; i < points_for_svm.size(); i++) {
+		auto vr = Point_set_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) * y[i];
+		qp.set_d(i, i, CGAL::scalar_product(vr,vr));
+		for (std::size_t j = 0; j < i; j++) {
+			qp.set_d(i, j, CGAL::scalar_product(vr, Point_set_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[j])) * y[j]));
+		}
+		qp.set_c(i, -1);
+		qp.set_a(i, 0,  y[i]);
+	}
+	Solution s = CGAL::solve_quadratic_program(qp, ET());
+	//std::cerr << s << "\n";
+	if (!s.solves_quadratic_program(qp)) std::cerr << "ALERT !!!!!!!!!!!!!!!!!!!\n";
+	assert (s.solves_quadratic_program(qp));
+
+// timer.pause();
+// auto inter = timer.getElapsedTime();
+// timer.resume();
+
+	Point_set_kernel::Vector_3 w(CGAL::NULL_VECTOR);
+	auto value = s.variable_values_begin();
+	for (std::size_t i = 0; i < points_for_svm.size(); i++) {
+		w += y[i] * CGAL::to_double(*(value++)) * Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]));
+	}
+
+	Point_set_kernel::FT b = 0;
+	int count = 0;
+	Point_set_kernel::FT min_positive = std::numeric_limits<Point_set_kernel::FT>::max();
+	Point_set_kernel::FT max_negative = std::numeric_limits<Point_set_kernel::FT>::lowest();
+	for (std::size_t i = 0; i < points_for_svm.size(); i++) {
+		Point_set_kernel::FT v = CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+		if (y[i] > 0 && v < min_positive) min_positive = v;
+		if (y[i] < 0 && v > max_negative) max_negative = v;
+	}
+	if (max_negative < min_positive) {
+		b += - (max_negative + min_positive) / 2;
+		count = 1;
+	}
+	if (count == 0) {
+		value = s.variable_values_begin();
+		for (std::size_t i = 0; i < points_for_svm.size(); i++) {
+			double v = CGAL::to_double(*(value++));
+			if (v > 0 && v < c) {
+				b += y[i] - CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+				count++;
+			}
+		}
+	}
+	if (count == 0) {
+		value = s.variable_values_begin();
+		for (std::size_t i = 0; i < points_for_svm.size(); i++) {
+			if (CGAL::to_double(*(value++)) > 0) {
+				b += y[i] - CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+				count++;
+			}
+		}
+	}
+	if (count == 0) {
+		for (std::size_t i = 0; i < points_for_svm.size(); i++) {
+			b += y[i] - CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+			count++;
+		}
+	}
+	assert(count > 0);
+	b /= count;
+
+	if (quality != nullptr) {
+		*quality = 0;
+		value = s.variable_values_begin();
+		for (std::size_t i = 0; i < points_for_svm.size(); i++) {
+			if (CGAL::to_double(*(value++)) > 0) {
+				Point_set_kernel::FT v = CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
+				if (y[i] > 0 && v < -b) *quality += 1;
+				if (y[i] < 0 && v > -b) *quality += 1;
+			}
+		}
+		*quality = 1 - *quality/points_for_svm.size();
+	}
+
+	// if (*quality < 0.8) {
+	// 	std::cerr << "q: " << *quality << "\n";
+	// 	// timer.pause();
+	// 	// std::cerr << "t1: " << inter << "\n";
+	// 	// std::cerr << "t: " << timer.getElapsedTime() << "\n";
+	// 	std::cerr << "w: " << w << "\n";
+	// 	std::cerr << "b: " << b << "\n";
+
+	// 	for (std::size_t i = 0; i < points_for_svm.size(); i++) {
+	// 		std::cerr << "y" << i << ":\t" << y[i] << "\t";
+	// 		std::cerr << Point_set_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) << "   \t";
+	// 		std::cerr << CGAL::to_double(*(s.variable_values_begin() + i)) << "\t";
+	// 		std::cerr << CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) << "  \t";
+	// 		std::cerr << y[i]*(CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) + b) << "\n";
+	// 		if (y[i]*(CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) + b) < 0) {
+	// 			std::cerr << "Error\n";
+	// 		}
+	// 	}
+	// }
+
+	return std::pair<K::Vector_3, K::FT>(type_converter(w), -type_converter(b));
+}
+
+std::vector<Surface_mesh::Face_index> subdivide_face(Surface_mesh& mesh, Surface_mesh::Face_index face, int max_label, const Point_set &point_cloud) {
+	Point_set::Property_map<unsigned char> label;
+	bool has_label;
+	boost::tie(label, has_label) = point_cloud.property_map<unsigned char>("p:label");
+	assert(has_label);
+
+	Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
+	bool has_point_in_face;
+	boost::tie(point_in_face, has_point_in_face) = mesh.property_map<Surface_mesh::Face_index, std::list<Point_set::Index>>("f:points");
+	assert(has_point_in_face);
+
+	std::vector<int> y;
+	std::vector<Point_set::Index> points_for_svm;
+	y.reserve(point_in_face[face].size());
+	points_for_svm.reserve(point_in_face[face].size());
+	for (auto point: point_in_face[face]) {
+		if (label[point] == max_label) {
+			points_for_svm.push_back(point);
+			y.push_back(1);
+		} else {
+			points_for_svm.push_back(point);
+			y.push_back(-1);
+		}
+	}
+
+	auto plan = compute_SVM(points_for_svm, y, point_cloud);
+	K::Plane_3 cut(CGAL::ORIGIN + plan.second/plan.first.squared_length()*plan.first, plan.first);
+
 	auto h0 = mesh.halfedge(face);
 	auto h1 = mesh.next(h0);
 	auto h2 = mesh.next(h1);
@@ -238,9 +393,43 @@ std::vector<Surface_mesh::Face_index> subdivide_face(Surface_mesh& mesh, Surface
 	if (mesh.is_border(h1)) vp1 = mesh.null_vertex();
 	if (mesh.is_border(h2)) vp2 = mesh.null_vertex();
 
-	auto vm0 = mesh.add_vertex(CGAL::midpoint(mesh.point(v2), mesh.point(v0)));
-	auto vm1 = mesh.add_vertex(CGAL::midpoint(mesh.point(v0), mesh.point(v1)));
-	auto vm2 = mesh.add_vertex(CGAL::midpoint(mesh.point(v1), mesh.point(v2)));
+	auto p0 = mesh.point(v0);
+	auto p1 = mesh.point(v1);
+	auto p2 = mesh.point(v2);
+	Surface_mesh::Vertex_index vm0, vm1, vm2;
+	const auto result0 = CGAL::intersection(cut, K::Segment_3(p2, p0));
+	if (result0) {
+		if (const Point_3* p = boost::get<Point_3>(&*result0)) {
+			vm0 = mesh.add_vertex(*p);
+		} else {
+			vm0 = mesh.add_vertex(CGAL::midpoint(mesh.point(v2), mesh.point(v0)));
+		}
+	} else {
+		vm0 = mesh.add_vertex(CGAL::midpoint(mesh.point(v2), mesh.point(v0)));
+	}
+	const auto result1 = CGAL::intersection(cut, K::Segment_3(p0, p1));
+	if (result1) {
+		if (const Point_3* p = boost::get<Point_3>(&*result1)) {
+			vm1 = mesh.add_vertex(*p);
+		} else {
+			vm1 = mesh.add_vertex(CGAL::midpoint(mesh.point(v0), mesh.point(v1)));
+		}
+	} else {
+		vm1 = mesh.add_vertex(CGAL::midpoint(mesh.point(v0), mesh.point(v1)));
+	}
+	const auto result2 = CGAL::intersection(cut, K::Segment_3(p1, p2));
+	if (result2) {
+		if (const Point_3* p = boost::get<Point_3>(&*result2)) {
+			vm2 = mesh.add_vertex(*p);
+		} else {
+			vm2 = mesh.add_vertex(CGAL::midpoint(mesh.point(v1), mesh.point(v2)));
+		}
+	} else {
+		vm2 = mesh.add_vertex(CGAL::midpoint(mesh.point(v1), mesh.point(v2)));
+	}
+	// vm0 = mesh.add_vertex(CGAL::midpoint(mesh.point(v2), mesh.point(v0)));
+	// vm1 = mesh.add_vertex(CGAL::midpoint(mesh.point(v0), mesh.point(v1)));
+	// vm2 = mesh.add_vertex(CGAL::midpoint(mesh.point(v1), mesh.point(v2)));
 
 	if (vp0 != mesh.null_vertex()) CGAL::Euler::remove_face(mesh.opposite(h0), mesh);
 	if (vp1 != mesh.null_vertex()) CGAL::Euler::remove_face(mesh.opposite(h1), mesh);
@@ -273,9 +462,11 @@ std::list<std::pair <K::Vector_3, K::FT>> volume_preservation_and_optimisation (
 		Point_3 p2 = get(profile.vertex_point_map(),triangle.v2);
 
 		if (!CGAL::collinear (p0, p1, p2)) {
-			/*std::cerr << "triangle: " << p0 << ", " << p1 << ", " << p2 << "\n";
-			std::cerr << "normal: " << CGAL::normal(p0, p1, p2) << "\n";
-			std::cerr << "determinant: " << CGAL::determinant(K::Vector_3(Point_3(CGAL::ORIGIN), p0), K::Vector_3(Point_3(CGAL::ORIGIN), p1), K::Vector_3(Point_3(CGAL::ORIGIN), p2)) << "\n";*/
+/*if (profile.v0().idx() == 51431 && profile.v1().idx() == 175066) {
+	std::cerr << "triangle: " << p0 << ", " << p1 << ", " << p2 << "\n";
+	std::cerr << "normal: " << CGAL::normal(p0, p1, p2) << "\n";
+	std::cerr << "determinant: " << CGAL::determinant(K::Vector_3(Point_3(CGAL::ORIGIN), p0), K::Vector_3(Point_3(CGAL::ORIGIN), p1), K::Vector_3(Point_3(CGAL::ORIGIN), p2)) << "\n";
+}*/
 
 			K::Vector_3 n = CGAL::normal(p0, p1, p2) / 2;
 			K::FT det = CGAL::scalar_product (n, K::Vector_3(Point_3(CGAL::ORIGIN), p0));
@@ -321,7 +512,451 @@ std::list<K::Vector_3> triangle_shape_optimization (const SMS::Edge_profile<Surf
 
 }
 
-std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_profile<Surface_mesh>& profile, const Point_set &point_cloud) {
+class Label_simple_optimization {
+	const std::map<Point_set::Index, K::Point_3> &cloud_point_in_plane;
+	const std::set<Point_set::Index> &points_in_faces;
+	const std::map<Surface_mesh::Vertex_index, K::Point_3> &point_in_plane;
+	const std::vector<Surface_mesh::Halfedge_index> &faces_border_halfedge;
+	const Surface_mesh &mesh;
+	const Point_set::Property_map<unsigned char> label;
+	int count_diff_label;
+	std::map<K::Point_3, K::FT> known_energy;
+	std::set<std::pair<int,int>> grid_search_visit;
+
+	public:
+	
+		Label_simple_optimization(const std::map<Point_set::Index, K::Point_3> &cloud_point_in_plane, const std::set<Point_set::Index> &points_in_faces, const std::map<Surface_mesh::Vertex_index, K::Point_3> &point_in_plane, const std::vector<Surface_mesh::Halfedge_index> &faces_border_halfedge, const Surface_mesh &mesh, const Point_set::Property_map<unsigned char> label, int count_diff_label) : cloud_point_in_plane(cloud_point_in_plane), points_in_faces(points_in_faces), point_in_plane(point_in_plane), faces_border_halfedge(faces_border_halfedge), mesh(mesh), label(label), count_diff_label(count_diff_label) {}
+
+		/*K::FT energy(K::Point_3 middle) {
+			if (auto search = known_energy.find(middle); search != known_energy.end()) {
+				// std::cerr << "es: " << middle << " " << search->second << "\n";
+				return search->second;
+			} else {
+
+				for (std::size_t j = 0; j < faces_border_halfedge.size(); j++) {
+					if (CGAL::scalar_product(CGAL::orthogonal_vector (middle, mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j]))), CGAL::orthogonal_vector (mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), mesh.point(mesh.target(mesh.next(faces_border_halfedge[j]))))) < 0) {
+
+						// std::cerr << K::Triangle_3(mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), middle) << "\n";
+						// std::cerr << K::Triangle_3(mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), mesh.point(mesh.target(mesh.next(faces_border_halfedge[j])))) << "\n";
+						
+						known_energy[middle] = std::numeric_limits<K::FT>::max();
+						return std::numeric_limits<K::FT>::max();
+					}
+				}
+
+				CGAL::Eigen_matrix< K::FT, Eigen::Dynamic, Eigen::Dynamic > Dpt(points_in_faces.size(), faces_border_halfedge.size());
+				for (std::size_t j = 0; j < faces_border_halfedge.size(); j++) {
+					K::Triangle_3 triangle (middle, point_in_plane.at(mesh.source(faces_border_halfedge[j])), point_in_plane.at(mesh.target(faces_border_halfedge[j])));
+					std::size_t i = 0;
+					for (auto v: points_in_faces) {
+						auto d = CGAL::sqrt(CGAL::squared_distance(triangle, cloud_point_in_plane.at(v)));
+						Dpt.set(i++,j, d);
+					}
+				}
+
+				// std::cerr << "Dpt\n" << Dpt << "\n";
+				
+				// K::FT tho = 100;
+				// auto FDpt = (Dpt.array() * (- tho)).exp();
+
+				K::FT tho = 0.0005;
+				auto FDpt = (Dpt.array() < tho).select(- Dpt.array() / tho + K::FT(1), K::FT(0));
+
+				// std::cerr << "FDpt\n" << FDpt << "\n";
+
+				auto sums = FDpt.rowwise().sum();
+				auto Apt = FDpt.colwise() / (sums + (sums == 0).cast<K::FT>());
+
+				// std::cerr << "Apt\n" << Apt << "\n";
+				
+				Eigen::SparseMatrix<K::FT> Ipc(points_in_faces.size(), count_diff_label);
+				Ipc.reserve(points_in_faces.size());
+				std::map<unsigned char, std::size_t> classes;
+				std::size_t i = 0;
+				for (auto v: points_in_faces) {
+					if(classes.count(label[v]) == 0) {
+						classes[label[v]] = classes.size();
+					}
+					Ipc.insert(i++, classes[label[v]]) = 1;
+				}
+
+				// std::cerr << "Ipc\n" << Ipc << "\n";
+
+				auto sums2 = Apt.colwise().sum();
+				auto Pct = (Ipc.transpose() * Apt.matrix()).array().rowwise() / (sums2 + (sums2 == 0).cast<K::FT>());
+
+				// std::cerr << "Pct\n" << Pct << "\n";
+
+				auto E = (Pct.array() > 0).select(- Pct * Pct.log(), Pct);
+
+				auto e = E.sum();
+
+				known_energy[middle] = e;
+
+				// std::cerr << "e: " << middle << " " << e << "\n";
+
+				return e;
+			}
+		}*/
+
+		K::FT energy(K::Point_3 middle) {
+			if (auto search = known_energy.find(middle); search != known_energy.end()) {
+				// std::cerr << "es: " << middle << " " << search->second << "\n";
+				return search->second;
+			} else {
+
+				// std::cerr << "SIZE: " << faces_border_halfedge.size() << "\n";
+
+				for (std::size_t j = 0; j < faces_border_halfedge.size(); j++) {
+					
+					// K::Triangle_3 t_a (mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), middle);
+					// K::Triangle_3 t_b (mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), mesh.point(mesh.target(mesh.next(faces_border_halfedge[j]))));
+					// std::cerr << t_a << " : " << CGAL::orthogonal_vector (mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), middle) << "\n";
+					// std::cerr << t_b << " : " << CGAL::orthogonal_vector (mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), mesh.point(mesh.target(mesh.next(faces_border_halfedge[j])))) << "\n";
+
+					if (CGAL::scalar_product(CGAL::orthogonal_vector (middle, mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j]))), CGAL::orthogonal_vector (mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), mesh.point(mesh.target(mesh.next(faces_border_halfedge[j]))))) < 0) {
+
+						known_energy[middle] = std::numeric_limits<K::FT>::max();
+						return std::numeric_limits<K::FT>::max();
+					}
+				}
+
+				CGAL::Eigen_matrix< K::FT, Eigen::Dynamic, Eigen::Dynamic > Dpt(points_in_faces.size(), faces_border_halfedge.size());
+				for (std::size_t j = 0; j < faces_border_halfedge.size(); j++) {
+					K::Triangle_3 triangle (middle, point_in_plane.at(mesh.source(faces_border_halfedge[j])), point_in_plane.at(mesh.target(faces_border_halfedge[j])));
+					std::size_t i = 0;
+					for (auto v: points_in_faces) {
+						auto d = CGAL::sqrt(CGAL::squared_distance(triangle, cloud_point_in_plane.at(v)));
+						Dpt.set(i++,j, d);
+					}
+				}
+
+				// std::cerr << "Dpt\n" << Dpt << "\n";
+				
+				K::FT tho = 0.01;
+				K::FT alpha = 0.2;
+				auto FDpt = (Dpt.array() < tho).select((Dpt.array() < tho/10).select(Dpt.array() * (alpha - 1) * K::FT(10) / tho + K::FT(1), alpha * K::FT(10/9) * (K::FT(1) - Dpt.array() / tho)), K::FT(0));
+
+				// std::cerr << "FDpt\n" << FDpt << "\n";
+
+				auto sums = FDpt.rowwise().sum();
+				auto Apt = FDpt.colwise() / (sums + (sums == 0).cast<K::FT>());
+
+				// std::cerr << "Apt\n" << Apt << "\n";
+				
+				Eigen::SparseMatrix<K::FT> Ipc(points_in_faces.size(), count_diff_label);
+				Ipc.reserve(points_in_faces.size());
+				std::map<unsigned char, std::size_t> classes;
+				std::size_t i = 0;
+				for (auto v: points_in_faces) {
+					if(classes.count(label[v]) == 0) {
+						classes[label[v]] = classes.size();
+					}
+					Ipc.insert(i++, classes[label[v]]) = 1;
+				}
+
+				// std::cerr << "Ipc\n" << Ipc << "\n";
+
+				auto Pct = Ipc.transpose() * Apt.matrix();
+
+				// std::cerr << "Pct\n" << Pct << "\n";
+
+				auto Mct = Pct.array().colwise().maxCoeff();
+
+				auto e = Pct.sum() - Mct.sum();
+
+				known_energy[middle] = e;
+
+				// std::cerr << "e: " << middle << " " << e << "\n";
+
+				return e;
+			}
+		}
+
+		std::pair<K::Point_3, K::FT> linear_search(K::Point_3 middle, K::Vector_3 vec1) {
+			K::FT pas = 1;
+			K::FT pos = 1;
+			K::FT e = energy(middle);
+			// if (abs(middle.x() - 3.81392) < 0.0001) std::cerr << "p: " << middle << ": " << e << "\n";
+			while (e == std::numeric_limits<K::FT>::max() && (pas > 0.001 || pas < -0.001)) {
+				// std::cerr << "l\t" <<  pas << "\t" << pos << "\n";
+				if (pas > 0) {
+					if (pos < 1) {
+						pos += pas;
+					} else {
+						pas = - pas;
+						pos = pas;
+					}
+				} else {
+					if (pos > -1) {
+						pos += pas;
+					} else {
+						pas = - pas / 2;
+						pos = pas;
+					}
+				}
+				e = energy(middle + pos * vec1);
+				// if (abs(middle.x() - 3.81392) < 0.0001) std::cerr << "p: " << middle + pos * vec1 << ": " << e << "\n";
+			}
+			return std::make_pair(middle + pos * vec1, CGAL::abs(pas));
+		}
+
+		void grid_search(std::vector<K::Point_3> &results, K::FT *r_energy, K::Vector_3 &vec1, K::Vector_3 &vec2, int pos1, int pos2) {
+			// std::cerr << "g\t" << pos1 << "\t" << pos2 << "\n";
+			// for(auto r: grid_search_visit) {
+			// 	std::cerr << "\t\t" << r.first << "\t" << r.second << "\n";
+			// }
+			if (grid_search_visit.count(std::make_pair(pos1, pos2)) == 0) {
+				grid_search_visit.insert(std::make_pair(pos1, pos2));
+				auto e = energy(results[0] + pos1*vec1 + pos2*vec2);
+				if (e < *r_energy) {
+					results[1] = results[0] + pos1*vec1 + pos2*vec2;
+					*r_energy = e;
+				}
+				// std::cerr << e << "\n";
+				if (e < std::numeric_limits<K::FT>::max() && abs(pos1) < 1000 && abs(pos2) < 1000) {
+					grid_search(results, r_energy, vec1, vec2, pos1 + 1, pos2);
+					grid_search(results, r_energy, vec1, vec2, pos1 - 1, pos2);
+					grid_search(results, r_energy, vec1, vec2, pos1, pos2 + 1);
+					grid_search(results, r_energy, vec1, vec2, pos1, pos2 - 1);
+				}
+			}
+		}
+};
+
+
+K::Point_3 best_position(const SMS::Edge_profile<Surface_mesh>& profile, const Point_set &point_cloud, const std::set<Point_set::Index> &points_in_faces, int count_diff_label) {
+
+	Point_set::Property_map<unsigned char> label;
+	bool has_label;
+	boost::tie(label, has_label) = point_cloud.property_map<unsigned char>("p:label");
+	assert(has_label);
+
+	K::Vector_3 ortho_plane (CGAL::NULL_VECTOR);
+	if (profile.left_face_exists()) {
+		ortho_plane += CGAL::orthogonal_vector(profile.surface_mesh().point(profile.v0()), profile.surface_mesh().point(profile.v1()), profile.surface_mesh().point(profile.vL()));
+	}
+	if (profile.right_face_exists()) {
+		ortho_plane += CGAL::orthogonal_vector(profile.surface_mesh().point(profile.v1()), profile.surface_mesh().point(profile.v0()), profile.surface_mesh().point(profile.vR()));
+	}
+	K::Plane_3 plane(profile.surface_mesh().point(profile.v0()), ortho_plane);
+
+	CGAL::Cartesian_converter<Point_set_kernel, K> type_converter;
+	std::map<Point_set::Index, K::Point_3> cloud_point_in_plane;
+	for (auto v: points_in_faces) {
+		cloud_point_in_plane[v] = plane.projection(type_converter(point_cloud.point(v)));
+	}
+
+	std::map<Surface_mesh::Vertex_index, K::Point_3> point_in_plane;
+	for (auto v: profile.link()) {
+		point_in_plane[v] = plane.projection(profile.surface_mesh().point(v));
+	}
+
+	std::vector<Surface_mesh::Halfedge_index> faces_border_halfedge;
+	for (std::size_t face_id = 0; face_id < profile.link().size(); face_id++) {
+		auto he = profile.surface_mesh().halfedge(profile.link()[face_id], profile.link()[(face_id + 1) % profile.link().size()]);
+		if (he != Surface_mesh::null_halfedge() && !profile.surface_mesh().is_border(he)) {
+			faces_border_halfedge.push_back(he);
+		}
+	}
+
+	Label_simple_optimization optim(cloud_point_in_plane, points_in_faces, point_in_plane, faces_border_halfedge, profile.surface_mesh(), label, count_diff_label);
+
+	std::vector<K::Point_3> results;
+	results.reserve(2);
+	K::Vector_3 vec1 (profile.surface_mesh().point(profile.v0()), profile.surface_mesh().point(profile.v1()));
+	vec1 /= 2;
+	K::FT pas = CGAL::sqrt(vec1.squared_length());
+	K::Vector_3 vec2 = CGAL::cross_product(vec1, ortho_plane);
+	vec2 *= pas / CGAL::sqrt(vec2.squared_length());
+
+	// Linear seach
+	auto r = optim.linear_search(CGAL::midpoint(profile.surface_mesh().point(profile.v0()), profile.surface_mesh().point(profile.v1())), vec1);
+
+	// if (profile.v0().idx() == 7415 && profile.v1().idx() == 6860) std::cerr << "linear search: " << r.first << " (" << r.second << ")\n";
+
+	if (r.second == 0.001) {
+		return K::Point_3(CGAL::ORIGIN);
+	}
+
+	// Grid search
+	vec1 *= r.second / CGAL::sqrt(vec1.squared_length());
+	vec2 *= r.second / CGAL::sqrt(vec1.squared_length());
+
+	results.push_back(r.first);
+	K::FT r_energy = std::numeric_limits<K::FT>::max();
+	// std::cerr << "-----------------------------\n";
+	optim.grid_search(results, &r_energy, vec1, vec2, 0, 0);
+
+	if (optim.energy(r.first) <= optim.energy(results[0])) {
+		results[0] = r.first;
+	}
+
+	// Cross search	
+	K::FT pos1 = 0;
+	K::FT pos2 = 0;
+	K::FT var = 1;
+
+	while(var > 1e-4 && results.size() < 100) {
+		K::FT values[5];
+		values[0] = optim.energy(results[0] + pos1 * vec1 + pos2 * vec2); // center
+		values[1] = optim.energy(results[0] + (pos1 - pas) * vec1 + pos2 * vec2); // left
+		values[2] = optim.energy(results[0] + (pos1 + pas) * vec1 + pos2 * vec2); // right
+		values[3] = optim.energy(results[0] + pos1 * vec1 + (pos2 - pas) * vec2); // bottom
+		values[4] = optim.energy(results[0] + pos1 * vec1 + (pos2 + pas) * vec2); // top
+
+		auto argmin = std::min_element(values, values + 5);
+		int p = argmin - values;
+
+		if (p == 0) {
+			pas /= 2;
+			var = 1;
+		} else if (p == 1) {
+			pos1 -= pas;
+			var = values[0] - values[1];
+		} else if (p == 2) {
+			pos1 += pas;
+			var = values[0] - values[2];
+		} else if (p == 3) {
+			pos2 -= pas;
+			var = values[0] - values[3];
+		} else {
+			pos2 += pas;
+			var = values[0] - values[4];
+		}
+
+		results.push_back(results[0] + pos1 * vec1 + pos2 * vec2);
+	}
+
+	std::list<Surface_mesh::Face_index> selected_face;
+	for(auto face: profile.triangles()) {
+		auto fh = profile.surface_mesh().face(profile.surface_mesh().halfedge(face.v0, face.v1));
+		selected_face.push_back(fh);
+	}
+	CGAL::Face_filtered_graph<Surface_mesh> filtered_sm(profile.surface_mesh(), selected_face);
+	AABB_tree filtered_sm_tree;
+	PMP::build_AABB_tree(filtered_sm, filtered_sm_tree);
+
+	zzzz
+	auto location = PMP::locate(K::Ray_3(results.back(), ortho_plane), filtered_sm);
+	if (location.first != Surface_mesh::Face_index()) {
+		auto p1 = PMP::construct_point(location, profile.surface_mesh());
+		auto location2 = PMP::locate(K::Ray_3(results.back(), -ortho_plane), filtered_sm);
+		if (location2.first != Surface_mesh::Face_index()) {
+			auto p2 = PMP::construct_point(location2, profile.surface_mesh());
+			if (CGAL::squared_distance(p1, results.back()) < CGAL::squared_distance(p2, results.back())) {
+				std::cerr << "-----------" << results.back() << " -> " << p1 << "\n";
+				return p1;
+			} else {
+				std::cerr << "-----------" << results.back() << " -> " << p2 << "\n";
+				return p2;
+			}
+		} else {
+			std::cerr << "-----------" << results.back() << " -> " << p1 << "\n";
+			return p1;
+		}
+	} else {
+		auto location = PMP::locate(K::Ray_3(results.back(), -ortho_plane), filtered_sm);
+		if (location.first != Surface_mesh::Face_index()) {
+			std::cerr << "-----------" << results.back() << " -> " << PMP::construct_point(location, profile.surface_mesh()) << "\n";
+			return PMP::construct_point(location, profile.surface_mesh());
+		} else {
+			std::cerr << "-------------------------------------------------------\n";
+			return results.back();
+		}
+	}
+
+	/*if (profile.v0().idx() == 7415 && profile.v1().idx() == 6860) std::cerr << "final energy: " << optim.energy(results.back()) << "\n";
+
+	if (profile.v0().idx() == 7415 && profile.v1().idx() == 6860) { // if (optim.energy(results[0]) > 1e15) {
+		std::cerr << profile.v0() << "\n";
+		std::cerr << profile.v1() << "\n";
+		std::cerr << profile.p0() << "\n";
+		std::cerr << profile.p1() << "\n";
+		std::cerr << points_in_faces.size() << "\n";
+		std::cerr << "p:" << results.back() << "\n";
+		std::cerr << "---\n";
+		auto mesh = profile.surface_mesh();
+		for (std::size_t j = 0; j < faces_border_halfedge.size(); j++) {
+			std::cerr <<  point_in_plane.at(mesh.source(faces_border_halfedge[j])) << " - " << point_in_plane.at(mesh.target(faces_border_halfedge[j])) << "\n";
+		}
+		std::cerr << "---\n";
+		for (std::size_t j = 0; j < faces_border_halfedge.size(); j++) {
+			auto p = mesh.point(mesh.source(faces_border_halfedge[j]));
+			std::cerr <<  "\t[" << p.x() << ", " << p.y() << ", " << p.z() << "],\n";
+		}
+		std::cerr << "---\n";
+		for (auto v: points_in_faces) {
+			auto p = cloud_point_in_plane[v];
+			std::cerr <<  "\t[" << p.x() << ", " << p.y() << ", " << p.z() << "],\n";
+		}
+		std::cerr << "---\n";
+		for (auto v: points_in_faces) std::cerr << int(label[v]) << "\n";
+		std::cerr << "------------------------------------------------------------------------------------------\n";
+	}
+	// 	for (auto r: results) std::cerr << r << ": " << optim.energy(r) << "\n";
+	// 	std::cerr << "-----\n";
+	// } else {
+	// 	std::cerr << "---\n";
+	// 	for (auto r: results) std::cerr << r << ": " << optim.energy(r) << "\n";
+	// 	std::cerr << "-----\n";
+	// }
+
+	if (profile.v0().idx() == 7415 && profile.v1().idx() == 6860) { // Output point cloud and division
+		if (true || points_in_faces.size() > 10) {
+
+			auto p = results.back();
+
+			Surface_mesh output_mesh;
+
+			bool created;
+			Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> red;
+			Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> green;
+			Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> blue;
+			boost::tie(red, created) = output_mesh.add_property_map<Surface_mesh::Vertex_index, unsigned char>("red",0);
+			assert(created);
+			boost::tie(green, created) = output_mesh.add_property_map<Surface_mesh::Vertex_index, unsigned char>("green",0);
+			assert(created);
+			boost::tie(blue, created) = output_mesh.add_property_map<Surface_mesh::Vertex_index, unsigned char>("blue",0);
+			assert(created);
+
+			CGAL::Cartesian_converter<Point_set_kernel,K> type_converter;
+
+			for (auto point: points_in_faces) {
+				auto v = output_mesh.add_vertex(type_converter(point_cloud.point(point)));
+				red[v] = LABELS.at(label[point]).red;
+				green[v] = LABELS.at(label[point]).green;
+				blue[v] = LABELS.at(label[point]).blue;
+			}
+
+			auto v = output_mesh.add_vertex(p);
+
+			for (std::size_t face_id = 0; face_id < profile.link().size(); face_id++) {
+				auto he = profile.surface_mesh().halfedge(profile.link()[face_id], profile.link()[(face_id + 1) % profile.link().size()]);
+				if (he != Surface_mesh::null_halfedge() && !profile.surface_mesh().is_border(he)) {
+					auto v1 = output_mesh.add_vertex(profile.surface_mesh().point(profile.surface_mesh().source(he)));
+					auto v2 = output_mesh.add_vertex(profile.surface_mesh().point(profile.surface_mesh().target(he)));
+					
+					output_mesh.add_face(v1,v2,v);
+				}
+			}
+
+			std::stringstream output_mesh_name;
+			output_mesh_name << "optim_" << optim.energy(p) << "_" << profile.v0() << "_" << profile.v1() << "_" << profile.p0() << "_" << profile.p1() << "_" << points_in_faces.size() << "_p:" << p << ".ply";
+			std::ofstream mesh_ofile (output_mesh_name.str().c_str(), std::ios_base::binary);
+			CGAL::IO::set_binary_mode (mesh_ofile);
+			CGAL::IO::write_PLY (mesh_ofile, output_mesh);
+			mesh_ofile.close();
+
+		}
+	}*/
+
+}
+
+std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_profile<Surface_mesh>& profile, const Point_set &point_cloud, const Ablation_study &ablation) {
+
+TimerUtils::Timer timer;
+timer.start();
 
 	std::list<std::pair <K::Vector_3, K::FT>> result;
 
@@ -399,6 +1034,7 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 			}
 		}
 		if (!has_label1 || !has_label2) {
+			// this is strange, why is it need ?
 			//add no border point to points_in_faces and restart SVM
 			points_in_faces.clear();
 			for(auto face: profile.triangles()) {
@@ -422,71 +1058,57 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 			}
 		}
 
-		Point_set_kernel::FT c = 1;
+		float quality;
+		auto plan = compute_SVM(points_for_svm, y, point_cloud, &quality);
+		
+		if(quality > 0.95) result.push_back(std::pair<K::Vector_3, K::FT>(plan.first*squared_length, plan.second*squared_length));
+		// else std::cerr << "quality: " << quality << "\n";
 
-		Program qp (CGAL::EQUAL, true, 0, true, c);
-		for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-			auto vr = Point_set_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) * y[i];
-			qp.set_d(i, i, CGAL::scalar_product(vr,vr));
-			for (std::size_t j = 0; j < i; j++) {
-				qp.set_d(i, j, CGAL::scalar_product(vr, Point_set_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[j])) * y[j]));
-			}
-			qp.set_c(i, -1);
-			qp.set_a(i, 0,  y[i]);
-		}
-		Solution s = CGAL::solve_quadratic_program(qp, ET());
-		//std::cerr << s << "\n";
-		if (!s.solves_quadratic_program(qp)) std::cerr << "ALERT !!!!!!!!!!!!!!!!!!!\n";
-		assert (s.solves_quadratic_program(qp));
+		if (profile.v0().idx() == 7415 && profile.v1().idx() == 6860) { // Output point cloud and plane
+			if (true || points_in_faces.size() > 10) {
 
-		Point_set_kernel::Vector_3 w(CGAL::NULL_VECTOR);
-		auto value = s.variable_values_begin();
-		for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-			w += y[i] * CGAL::to_double(*(value++)) * Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]));
-		}
+				Surface_mesh output_mesh;
 
-		Point_set_kernel::FT b = 0;
-		int count = 0;
-		Point_set_kernel::FT min_positive = std::numeric_limits<Point_set_kernel::FT>::max();
-		Point_set_kernel::FT max_negative = std::numeric_limits<Point_set_kernel::FT>::lowest();
-		for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-			Point_set_kernel::FT v = CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
-			if (y[i] > 0 && v < min_positive) min_positive = v;
-			if (y[i] < 0 && v > max_negative) max_negative = v;
-		}
-		if (max_negative < min_positive) {
-			b += - (max_negative + min_positive) / 2;
-			count = 1;
-		}
-		if (count == 0) {
-			value = s.variable_values_begin();
-			for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-				double v = CGAL::to_double(*(value++));
-				if (v > 0 && v < c) {
-					b += y[i] - CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
-					count++;
+				bool created;
+				Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> red;
+				Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> green;
+				Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> blue;
+				boost::tie(red, created) = output_mesh.add_property_map<Surface_mesh::Vertex_index, unsigned char>("red",0);
+				assert(created);
+				boost::tie(green, created) = output_mesh.add_property_map<Surface_mesh::Vertex_index, unsigned char>("green",0);
+				assert(created);
+				boost::tie(blue, created) = output_mesh.add_property_map<Surface_mesh::Vertex_index, unsigned char>("blue",0);
+				assert(created);
+
+				CGAL::Cartesian_converter<Point_set_kernel,K> type_converter;
+
+				for (auto point: points_in_faces) {
+					auto v = output_mesh.add_vertex(type_converter(point_cloud.point(point)));
+					red[v] = LABELS.at(label[point]).red;
+					green[v] = LABELS.at(label[point]).green;
+					blue[v] = LABELS.at(label[point]).blue;
 				}
-			}
-		}
-		if (count == 0) {
-			value = s.variable_values_begin();
-			for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-				if (CGAL::to_double(*(value++)) > 0) {
-					b += y[i] - CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
-					count++;
-				}
-			}
-		}
-		if (count == 0) {
-			for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-				b += y[i] - CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
-				count++;
-			}
-		}
-		assert(count > 0);
-		b /= count;
 
-		result.push_back(std::pair<K::Vector_3, K::FT>(type_converter(w)*squared_length, -type_converter(b)*squared_length));
+				auto n = plan.first;
+				auto d = plan.second;
+
+				K::Plane_3 plan2 (n.x(), n.y(), n.z(), -d);
+				auto orig = plan2.projection(type_converter(point_cloud.point(*points_in_faces.begin())));
+
+				auto v1 = output_mesh.add_vertex(orig - 2*plan2.base1() - 2*plan2.base2());
+				auto v2 = output_mesh.add_vertex(orig + 4*plan2.base1());
+				auto v3 = output_mesh.add_vertex(orig + 4*plan2.base2());
+				output_mesh.add_face(v1,v2,v3);
+
+				std::stringstream output_mesh_name;
+				output_mesh_name << "svm_(" << profile.p0() << ")-(" << profile.p1() << "), w: " << n << ", b: " << d << ".ply";
+				std::ofstream mesh_ofile (output_mesh_name.str().c_str(), std::ios_base::binary);
+				CGAL::IO::set_binary_mode (mesh_ofile);
+				CGAL::IO::write_PLY (mesh_ofile, output_mesh);
+				mesh_ofile.close();
+
+			}
+		}
 
 	} else {
 
@@ -511,77 +1133,51 @@ std::list<std::pair <K::Vector_3, K::FT>> label_preservation (const SMS::Edge_pr
 				}
 
 				if (has_i_label && has_other_label) {
-
-					Point_set_kernel::FT c = 1;
-
-					Program qp (CGAL::EQUAL, true, 0, true, c);
-					for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-						auto vr = Point_set_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) * y[i];
-						qp.set_d(i, i, CGAL::scalar_product(vr,vr));
-						for (std::size_t j = 0; j < i; j++) {
-							qp.set_d(i, j, CGAL::scalar_product(vr, Point_set_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[j])) * y[j]));
-						}
-						qp.set_c(i, -1);
-						qp.set_a(i, 0,  y[i]);
-					}
-					Solution s = CGAL::solve_quadratic_program(qp, ET());
-					//std::cerr << s << "\n";
-					if (!s.solves_quadratic_program(qp)) std::cerr << "ALERT !!!!!!!!!!!!!!!!!!!\n";
-					assert (s.solves_quadratic_program(qp));
-
-					Point_set_kernel::Vector_3 w(CGAL::NULL_VECTOR);
-					auto value = s.variable_values_begin();
-					for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-						w += y[i] * CGAL::to_double(*(value++)) * Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]));
-					}
-
-					Point_set_kernel::FT b = 0;
-					int count = 0;
-					Point_set_kernel::FT min_positive = std::numeric_limits<Point_set_kernel::FT>::max();
-					Point_set_kernel::FT max_negative = std::numeric_limits<Point_set_kernel::FT>::lowest();
-					for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-						Point_set_kernel::FT v = CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
-						if (y[i] > 0 && v < min_positive) min_positive = v;
-						if (y[i] < 0 && v > max_negative) max_negative = v;
-					}
-					if (max_negative < min_positive) {
-						b += - (max_negative + min_positive) / 2;
-						count = 1;
-					}
-					if (count == 0) {
-						value = s.variable_values_begin();
-						for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-							double v = CGAL::to_double(*(value++));
-							if (v > 0 && v < c) {
-								b += y[i] - CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
-								count++;
-							}
-						}
-					}
-					if (count == 0) {
-						value = s.variable_values_begin();
-						for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-							if (CGAL::to_double(*(value++)) > 0) {
-								b += y[i] - CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
-								count++;
-							}
-						}
-					}
-					if (count == 0) {
-						for (std::size_t i = 0; i < points_for_svm.size(); i++) {
-							b += y[i] - CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i])));
-							count++;
-						}
-					}
-					assert(count > 0);
-					b /= count;
-
-					result.push_back(std::pair<K::Vector_3, K::FT>(type_converter(w)*squared_length, -type_converter(b)*squared_length));
+					float quality;
+					auto plan = compute_SVM(points_for_svm, y, point_cloud, &quality);
+					if(quality > 0.95) result.push_back(std::pair<K::Vector_3, K::FT>(plan.first*squared_length, plan.second*squared_length));
+					// else std::cerr << "quality: " << quality << "\n";
 				}
 			}
 		}
 	}
 
+	if (ablation.direct_search && result.size() == 0) {
+		//SVM is poor quality
+		points_in_faces.clear();
+		for(auto face: profile.triangles()) {
+			auto fh = profile.surface_mesh().face(profile.surface_mesh().halfedge(face.v0, face.v1));
+			if (point_in_face[fh].size() > 0) {
+				points_in_faces.insert(point_in_face[fh].begin(), point_in_face[fh].end());
+			}
+		}
+
+		auto p = best_position(profile, point_cloud, points_in_faces, count_diff_label);
+		if (p != CGAL::ORIGIN) {
+			result.push_back(std::pair<K::Vector_3, K::FT>(K::Vector_3(1,0,0)*squared_length, p.x()*squared_length));
+			result.push_back(std::pair<K::Vector_3, K::FT>(K::Vector_3(0,1,0)*squared_length, p.y()*squared_length));
+			result.push_back(std::pair<K::Vector_3, K::FT>(K::Vector_3(0,0,1)*squared_length, p.z()*squared_length));
+		} /*else {
+			std::cerr << "--------------------------------------------------\n";
+			std::cerr << "v0: " << profile.surface_mesh().point(profile.v0()) << "\n";
+			std::cerr << "v1: " << profile.surface_mesh().point(profile.v1()) << "\n";
+			std::cerr << "------- point in face\n";
+			for (auto ph: points_in_faces) {
+				std::cerr << point_cloud.point(ph) << "\n";
+			}
+			std::cerr << "------- link\n";
+			for (std::size_t face_id = 0; face_id < profile.link().size(); face_id++) {
+				auto he = profile.surface_mesh().halfedge(profile.link()[face_id], profile.link()[(face_id + 1) % profile.link().size()]);
+				if (he != Surface_mesh::null_halfedge() && !profile.surface_mesh().is_border(he)) {
+					std::cerr << profile.surface_mesh().point(profile.surface_mesh().source(he)) << " - " << profile.surface_mesh().point(profile.surface_mesh().target(he)) << "\n";
+				}
+			}
+		}*/
+	}
+
+
+timer.pause();
+// std::cerr << timer.getElapsedTime() << "\n";
 	return result;
 
 }
@@ -621,6 +1217,14 @@ std::list<K::Vector_3> semantic_border_optimization (const SMS::Edge_profile<Sur
 		}
 	}
 
+	/*if (result.size() > 0) {
+		std::cerr << result.size() << "\n";
+		for(auto face: profile.triangles()) {
+			auto fh = profile.surface_mesh().face(profile.surface_mesh().halfedge(face.v0, face.v1));
+			std::cerr << fh << ": " << int(mesh_label[fh]) << "\n";
+		}
+	}*/
+
 	return result;
 
 }
@@ -642,10 +1246,11 @@ LindstromTurk_param::LindstromTurk_param(
 	semantic_border_optimization(semantic_border_optimization) {}
 
 Ablation_study::Ablation_study(
-	bool subdivide) :
-	subdivide(subdivide) {}
+	bool subdivide,
+	bool direct_search) :
+	subdivide(subdivide), direct_search(direct_search) {}
 
-Custom_placement::Custom_placement (const LindstromTurk_param &params, Surface_mesh &mesh, const Point_set &point_cloud) : params(params), point_cloud(point_cloud) {
+Custom_placement::Custom_placement (const LindstromTurk_param &params, Surface_mesh &mesh, const Point_set &point_cloud, const Ablation_study &ablation) : params(params), point_cloud(point_cloud), ablation(ablation) {
 	bool created_collapse_datas;
 	boost::tie(collapse_datas, created_collapse_datas) = mesh.add_property_map<Surface_mesh::Edge_index, CollapseData>("e:c_datas");
 }
@@ -661,9 +1266,9 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::Point> Custom_placement::operat
 	std::list<K::Vector_3> r3;
 	if (params.triangle_shape_optimization > 0) r3 = triangle_shape_optimization(profile);
 	std::list<std::pair <K::Vector_3, K::FT>> r4;
-	if (params.label_preservation > 0) r4 = label_preservation(profile, point_cloud);
+	if (params.label_preservation > 0) r4 = label_preservation(profile, point_cloud, ablation);
 	std::list<K::Vector_3> r5;
-	if (params.semantic_border_optimization > 0) r5 = semantic_border_optimization(profile, point_cloud);
+	if (params.semantic_border_optimization > 0 && r4.size() < 3) r5 = semantic_border_optimization(profile, point_cloud);
 
 	Eigen_vector B(((params.volume_preservation > 0) ? 1 : 0) + ((params.volume_optimisation > 0) ? r1.size() : 0) + ((params.boundary_preservation > 0 && r2.size() > 0) ? 3 : 0) + ((params.boundary_optimization > 0) ? 3*r2.size() : 0) + ((params.triangle_shape_optimization > 0) ? 3*r3.size() : 0) + ((params.label_preservation > 0) ? r4.size() : 0) + ((params.semantic_border_optimization > 0) ? 3*r5.size() : 0));
 	Eigen_matrix A(((params.volume_preservation > 0) ? 1 : 0) + ((params.volume_optimisation > 0) ? r1.size() : 0) + ((params.boundary_preservation > 0 && r2.size() > 0) ? 3 : 0) + ((params.boundary_optimization > 0) ? 3*r2.size() : 0) + ((params.triangle_shape_optimization > 0) ? 3*r3.size() : 0) + ((params.label_preservation > 0) ? r4.size() : 0) + ((params.semantic_border_optimization > 0) ? 3*r5.size() : 0), 3);
@@ -763,7 +1368,7 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::Point> Custom_placement::operat
 	}
 
 	// Semantic border optimization
-	if (params.semantic_border_optimization > 0) {
+	if (params.semantic_border_optimization > 0 && r4.size() < 3) {
 		for (auto vpo: r5) {
 			A.set(i, 0, params.semantic_border_optimization);
 			A.set(i, 1, 0);
@@ -785,6 +1390,21 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::Point> Custom_placement::operat
 	CGAL::Eigen_svd::solve(A, B);
 
 	auto R = A*B - C;
+
+if (profile.v0().idx() == 6984 && profile.v1().idx() == 7620) { // save cost detail
+	std::ofstream outfile;
+
+	outfile.open("placement.output", std::ios::app);
+	if (profile.v0().idx() < profile.v1().idx()) {
+		outfile << "edge " << profile.v0().idx() << " -> " << profile.v1().idx() << ":\n";
+	} else {
+		outfile << "edge " << profile.v1().idx() << " -> " << profile.v0().idx() << ":\n";
+	}
+	outfile << "1 - " << r1.size() << " - 3 - " << (3*r2.size()) << " - " << (3*r3.size()) << " - " << r4.size() << " - " << (3*r5.size()) << "\n";
+	outfile << "A:\n" << A << "\n";
+	outfile << "B:\n" << C << "\n";
+	outfile << "R:\n" << R << "\n";
+}
 
 	// Save cost
 	Point_3 placement(B.vector()[0], B.vector()[1], B.vector()[2]);
@@ -827,6 +1447,7 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 				auto fh = profile.surface_mesh().face(profile.surface_mesh().halfedge(face.v0, face.v1));
 				points_to_be_change.insert(point_in_face[fh].begin(), point_in_face[fh].end());
 				old_cost += face_costs[fh];
+// std::cerr << "\tface " << fh << " cost\t" << face_costs[fh] << "\n";
 			}
 
 			std::vector<K::Triangle_3> new_faces;
@@ -848,6 +1469,7 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 
 			// geometric error
 			std::vector<std::list<Point_set::Index>> points_in_new_face (new_faces.size());
+//std::cerr << points_in_new_face.size() << "\n";
 			for(auto ph: points_to_be_change) {
 				auto point = type_converter(point_cloud.point(ph));
 				K::FT min_d = std::numeric_limits<K::FT>::max();
@@ -900,12 +1522,14 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 							auto argmax = std::max_element(face_label, face_label+LABELS.size());
 							count_semantic_error += points_in_new_face[face_id].size() - *argmax;
 							new_face_cost[face_id] += beta * (points_in_new_face[face_id].size() - *argmax);
+// if (profile.v0_v1().idx() == 1710) std::cerr << face_id << " (" << profile.surface_mesh().face(new_faces_border_halfedge[face_id]) << ") (beta1 x nb_error): " << beta * (points_in_new_face[face_id].size() - *argmax) << "\n";
 							new_face_label[face_id] = argmax - face_label;
 
 						} else { // We don't have information about this face.
 							new_face_label[face_id] = LABEL_OTHER;
 							count_semantic_error += points_in_new_face[face_id].size();
 							new_face_cost[face_id] += beta * points_in_new_face[face_id].size();
+// if (profile.v0_v1().idx() == 1710) std::cerr << face_id << " (" << profile.surface_mesh().face(new_faces_border_halfedge[face_id]) << ") (beta2 x nb_error): " << beta * points_in_new_face[face_id].size() << "\n";
 						}
 					} else {
 						if (min_point <= 1) { // It's probable that there is no point
@@ -1069,6 +1693,9 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 				}
 			}
 		}
+
+		// std::cerr << "\tcost_explain detail " << profile.v0_v1() << "\t" << old_cost << "\t" << squared_distance << "\t" << count_semantic_error << "\n";
+		// std::cerr << "\tcost_explain total " << profile.v0_v1() << "\t" << (- old_cost + alpha * squared_distance + beta * count_semantic_error) << "\t" << (gamma * semantic_border_length) << "\t" << (delta * collapse_datas[Surface_mesh::Edge_index(profile.v0_v1())].placement_cost) << "\n";
 
 		K::FT final_cost = - old_cost + alpha * squared_distance + beta * count_semantic_error + gamma * semantic_border_length + delta * collapse_datas[Surface_mesh::Edge_index(profile.v0_v1())].placement_cost;
 
@@ -1260,7 +1887,7 @@ void My_visitor::OnStarted (Surface_mesh&) {
 
 					auto argmax = std::max_element(face_label, face_label+LABELS.size());
 
-					if (*argmax < point_in_face[face].size()*0.80) {
+					if (*argmax < point_in_face[face].size()) {
 						auto h0 = mesh.halfedge(face);
 						auto h1 = mesh.next(h0);
 						auto h2 = mesh.next(h1);
@@ -1276,7 +1903,7 @@ void My_visitor::OnStarted (Surface_mesh&) {
 						face_to_divide.erase(mesh.face(mesh.opposite(h1)));
 						face_to_divide.erase(mesh.face(mesh.opposite(h2)));
 
-						auto new_faces = subdivide_face(mesh, face);
+						auto new_faces = subdivide_face(mesh, face, argmax - face_label, point_cloud);
 
 						std::vector<K::Triangle_3> new_faces_triangle;
 						for (auto new_face: new_faces) {
@@ -1395,6 +2022,27 @@ void My_visitor::OnStarted (Surface_mesh&) {
 
 	total_timer.resume();
 
+/*{
+	K::FT face_cost = 0;
+	for(auto face: mesh.faces()) {
+		face_cost += face_costs[face];
+		// std::cerr << "\tface " << face << " cost\t" << face_costs[face] << "\n";
+	}
+	K::FT edge_cost = 0;
+	for (auto e: mesh.edges()) {
+		if (!mesh.is_border(e)) {
+			auto h = mesh.halfedge(e);
+			auto f1 = mesh.face(h);
+			auto f2 = mesh.face(mesh.opposite(h));
+			if (f1 != mesh.null_face() && f2 != mesh.null_face() && mesh_label[f1] != mesh_label[f2]) {
+				edge_cost += 0.01 * CGAL::sqrt(CGAL::squared_distance(mesh.point(mesh.source(h)), mesh.point(mesh.target(h))));
+			}
+		}
+	}
+	std::cerr << "Initial cost\t" << (face_cost + edge_cost) << "\n";
+	std::cerr << "Initial cost_explain\t\t" << face_cost << "\t" << edge_cost << "\n";
+}*/
+
 	collected_timer.start();
 }
 
@@ -1460,6 +2108,52 @@ void My_visitor::OnFinished (Surface_mesh &mesh) {
 
 	}
 
+	/*std::cerr << "Total cost\t" << total_cost << "\n";
+
+	{
+		K::FT cost = 0;
+		for(auto face: mesh.faces()) {
+			cost += face_costs[face];
+
+			K::FT sum_squared_distance = 0;
+			K::FT sum_false_point = 0;
+
+			auto r = mesh.vertices_around_face(mesh.halfedge(face)).begin();
+			K::Triangle_3 triangle_face(mesh.point(*r++), mesh.point(*r++), mesh.point(*r++));
+			for (auto point: point_in_face[face]) {
+				sum_squared_distance += CGAL::squared_distance(triangle_face, point_cloud.point(point);
+				if (point_cloud_label[point] != mesh_label[face]) sum_false_point += 1;
+			}
+
+			if (abs((alpha * sum_squared_distance + beta * sum_false_point) - face_costs[face]) != 0) {
+
+				std::cerr << "face_costs[" << face << "] = " << face_costs[face] << "\n";
+				std::cerr << "alpha * sum_squared_distance + beta * sum_false_point = " << (alpha * sum_squared_distance + beta * sum_false_point) << "\n";
+			}
+
+		}
+		for (auto e: mesh.edges()) {
+			if (!mesh.is_border(e)) {
+				auto h = mesh.halfedge(e);
+				auto f1 = mesh.face(h);
+				auto f2 = mesh.face(mesh.opposite(h));
+				if (f1 != mesh.null_face() && f2 != mesh.null_face() && mesh_label[f1] != mesh_label[f2]) {
+					cost += 0.01 * CGAL::sqrt(CGAL::squared_distance(mesh.point(mesh.source(h)), mesh.point(mesh.target(h))));
+				}
+			}
+		}
+		std::cerr << "Final cost\t" << cost << "\n";
+	}
+
+	{
+		int num_point = 0;
+		for(auto face: mesh.faces()) {
+			num_point += point_in_face[face].size();
+		}
+		std::cerr << "Final num_point_in_face\t" << num_point << "\n";
+		std::cerr << "Point cloud num_point\t" << point_cloud.size() << "\n";
+	}*/
+
 	mesh.remove_property_map<Surface_mesh::Face_index, std::list<Point_set::Index>>(point_in_face);
 	mesh.remove_property_map<Surface_mesh::Face_index, K::FT>(face_costs);
 	mesh.remove_property_map<Surface_mesh::Edge_index, CollapseData>(collapse_datas);
@@ -1484,6 +2178,9 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 	}
 
 	if (cost) {
+// std::cerr << "Try collapsing " << profile.v0_v1() << "\t\t" << *cost << "\n";
+// c_cost = *cost;
+
 		int cost_id = -1;
 		if(!output[++cost_id] && *cost > 100) {
 			total_timer.pause();
@@ -1688,6 +2385,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			total_timer.resume();
 			collapsing_timer.resume();
 		}
+		// std::cerr << "Used_cost: " << *cost << "\n";
 	}
 
 }
@@ -1725,4 +2423,29 @@ void My_visitor::OnCollapsed (const SMS::Edge_profile<Surface_mesh>& prof, const
 		}
 	}
 
+/*{
+	std::cerr << "Collapsed cost\t" << c_cost << "\n";
+
+	K::FT face_cost = 0;
+	for(auto face: mesh.faces()) {
+		face_cost += face_costs[face];
+		// std::cerr << "\tface " << face << " cost\t" << face_costs[face] << "\n";
+	}
+	K::FT edge_cost = 0;
+	for (auto e: mesh.edges()) {
+		if (!mesh.is_border(e)) {
+			auto h = mesh.halfedge(e);
+			auto f1 = mesh.face(h);
+			auto f2 = mesh.face(mesh.opposite(h));
+			if (f1 != mesh.null_face() && f2 != mesh.null_face() && mesh_label[f1] != mesh_label[f2]) {
+				edge_cost += 0.01 * CGAL::sqrt(CGAL::squared_distance(mesh.point(mesh.source(h)), mesh.point(mesh.target(h))));
+			}
+		}
+	}
+	std::cerr << "Intermediate cost\t\t" << (face_cost + edge_cost) << "\n";
+	std::cerr << "Intermediate cost_explain\t\t" << face_cost << "\t" << edge_cost << "\n";
+
+}*/
+
+// total_cost += c_cost;
 }
