@@ -122,7 +122,7 @@ void compute_stat(Surface_mesh &mesh, const Point_set &point_cloud, const Ablati
 	if (!std::filesystem::exists("results.csv")) {
 		std::ofstream results;
 		results.open ("results.csv", std::ios::app);
-		results << "mesh, point cloud, l1, l2, l3, l4, l5, l6, l7, c1, c2, c3, c4, ns / cs, subsample, min_point_factor, subdivide, direct_search, num_mesh_vertices, min_distance, max_distance, mean_distance, min_distance_r, max_distance_r, mean_distance_r, num_wrong_points, total_num_points, total_semanctic_contour_length, time, final_cost\n";
+		results << "mesh, point cloud, l1, l2, l3, l4, l5, l6, l7, c1, c2, c3, c4, ns / cs, subsample, min_point_factor, subdivide, direct_search, border_point, num_mesh_vertices, num_mesh_edges, min_distance, max_distance, mean_distance, min_distance_r, max_distance_r, mean_distance_r, num_wrong_points, total_num_points, total_semanctic_contour_length, time, final_cost\n";
 	}
 
 	std::ofstream results;
@@ -138,7 +138,7 @@ void compute_stat(Surface_mesh &mesh, const Point_set &point_cloud, const Ablati
 		}
 	}
 
-	results << mesh.number_of_vertices() << ", " << min_distance << ", " << max_distance << ", " << mean_distance << ", " << min_distance_r << ", " << max_distance_r << ", " << mean_distance_r << ", " << num_wrong_points << ", " << total_num_points << ", " << total_semanctic_contour_length << ", " << timer.getElapsedTime() << ", " << cost << "\n";
+	results << mesh.number_of_vertices() << ", " << mesh.number_of_edges() << ", " << min_distance << ", " << max_distance << ", " << mean_distance << ", " << min_distance_r << ", " << max_distance_r << ", " << mean_distance_r << ", " << num_wrong_points << ", " << total_num_points << ", " << total_semanctic_contour_length << ", " << timer.getElapsedTime() << ", " << cost << "\n";
 }
 
 K::FT get_mean_point_per_area(Surface_mesh &mesh, const Point_set &point_cloud) {
@@ -1247,8 +1247,9 @@ LindstromTurk_param::LindstromTurk_param(
 Ablation_study::Ablation_study(
 	bool subdivide,
 	bool direct_search,
-	bool border_point) :
-	subdivide(subdivide), direct_search(direct_search), border_point(border_point) {}
+	bool border_point,
+	bool step_mesh) :
+	subdivide(subdivide), direct_search(direct_search), border_point(border_point), step_mesh(step_mesh) {}
 
 Custom_placement::Custom_placement (const LindstromTurk_param &params, Surface_mesh &mesh, const Point_set &point_cloud, const Ablation_study &ablation) : params(params), point_cloud(point_cloud), ablation(ablation) {
 	bool created_collapse_datas;
@@ -2051,6 +2052,9 @@ void My_visitor::OnStarted (Surface_mesh&) {
 void My_visitor::OnFinished (Surface_mesh &mesh) {
 	std::cout << "\rMesh simplified                                               " << std::endl;
 
+	total_timer.pause();
+	compute_stat(mesh, point_cloud, ablation, total_timer, 0);
+
 	Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
 	bool has_point_in_face;
 	boost::tie(point_in_face, has_point_in_face) = mesh.property_map<Surface_mesh::Face_index, std::list<Point_set::Index>>("f:points");
@@ -2179,7 +2183,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 		}
 	}
 
-	if (cost) {
+	if (cost && ablation.step_mesh) {
 // std::cerr << "Try collapsing " << profile.v0_v1() << "\t\t" << *cost << "\n";
 // c_cost = *cost;
 

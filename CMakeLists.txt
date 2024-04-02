@@ -66,6 +66,8 @@ target_link_libraries(EdgeCollapse PRIVATE CGAL::CGAL Eigen3::Eigen)
 
 add_executable( compute-LOD2  main.cpp raster.cpp code.cpp path.cpp bridge.cpp)
 
+target_compile_options(compute-LOD2 PRIVATE -Wall -Wextra -Wpedantic)
+
 add_to_cached_list( CGAL_EXECUTABLE_TARGETS compute-LOD2 )
 
 # Link the executable to CGAL and third-party libraries
@@ -75,6 +77,8 @@ target_link_libraries(compute-LOD2 PRIVATE CGAL::CGAL GDAL::GDAL Ceres::ceres Ei
 # ############################
 
 add_executable( do-edge-collapse  main_edge_collapse.cpp)
+
+target_compile_options(do-edge-collapse PRIVATE -Wall -Wextra -Wpedantic)
 
 add_to_cached_list( CGAL_EXECUTABLE_TARGETS do-edge-collapse )
 

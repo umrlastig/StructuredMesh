@@ -42,10 +42,11 @@ struct Ablation_study {
 	bool subdivide;
 	bool direct_search;
 	bool border_point;
+	bool step_mesh;
 	Surface_mesh ground_truth_surface_mesh;
 	Point_set ground_truth_point_cloud;
 
-	Ablation_study(bool subdivide = true, bool direct_search = true, bool border_point = true);
+	Ablation_study(bool subdivide = true, bool direct_search = true, bool border_point = true, bool step_mesh = false);
 };
 
 struct CollapseDataElement{

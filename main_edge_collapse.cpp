@@ -91,18 +91,19 @@ int main(int argc, char **argv) {
 		{"no_subdivide", no_argument, NULL, 0},
 		{"no_direct_search", no_argument, NULL, 0},
 		{"no_border_point", no_argument, NULL, 0},
+		{"save_step_mesh", no_argument, NULL, 0},
 		{"next_mesh", required_argument, NULL, 0},
 		{NULL, 0, 0, '\0'}
 	};
 
 	char *mesh_file = NULL;
 	char *point_cloud_file = NULL;
-	float l1=10, l2=1, l3=10, l4=1, l5=0.00001, l6=1, l7=0.01, c1=1, c2=1, c3=0.01, c4=0.01, cs=1;
+	float l1=10, l2=1, l3=10, l4=1, l5=0.00001, l6=1, l7=0.01, c1=2, c2=1, c3=0.01, c4=0.01, cs=1;
 	int ns = 0;
 	float subsample = -1;
 	int baseline = -1;
 	float min_point_factor = 10;
-	bool subdivide = true, direct_search = true, border_point = true;
+	bool subdivide = true, direct_search = true, border_point = true, step_mesh = false;
 	char *next_mesh = NULL;
 
 	while ((opt = getopt_long(argc, argv, "hm:p:", options, &option_index)) != -1) {
@@ -167,6 +168,9 @@ int main(int argc, char **argv) {
 						border_point = false;
 						break;
 					case 22:
+						step_mesh = true;
+						break;
+					case 23:
 						next_mesh = optarg;
 						break;
 				}
@@ -328,7 +332,7 @@ int main(int argc, char **argv) {
 		return EXIT_SUCCESS;
 	}
 
-	Ablation_study ablation (subdivide, direct_search, border_point);
+	Ablation_study ablation (subdivide, direct_search, border_point,step_mesh);
 	ablation.ground_truth_point_cloud = point_cloud;
 	ablation.ground_truth_surface_mesh = mesh;
 
