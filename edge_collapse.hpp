@@ -49,6 +49,8 @@ struct Ablation_study {
 	Ablation_study(bool subdivide = true, bool direct_search = true, bool border_point = true, bool step_mesh = false);
 };
 
+void compute_stat(Surface_mesh &mesh, const Ablation_study &ablation, TimerUtils::Timer &timer, K::FT cost);
+
 struct CollapseDataElement{
 	Surface_mesh::Halfedge_index halfedge;
 	unsigned char label;
@@ -106,6 +108,7 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 		TimerUtils::Timer collapsing_timer;
 		TimerUtils::Timer total_timer;
 		bool output[30] = {false};
+		int last_size = std::numeric_limits<int>::max();
 		CGAL::Cartesian_converter<Point_set_kernel,K> type_converter;
 // float c_cost = 0;
 // float total_cost = 0;

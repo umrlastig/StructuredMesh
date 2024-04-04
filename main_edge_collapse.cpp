@@ -299,7 +299,13 @@ int main(int argc, char **argv) {
 		std::cout << "Point cloud has label" << std::endl;
 	}
 
+	Ablation_study ablation (subdivide, direct_search, border_point,step_mesh);
+	ablation.ground_truth_point_cloud = point_cloud;
+	ablation.ground_truth_surface_mesh = mesh;
+
 	if(baseline >= 0) {
+		TimerUtils::Timer total_timer;
+		total_timer.start();
 		SMS::Bounded_normal_change_filter<> filter;
 		if (baseline == 0) {
 			std::cout << "LindstromTurk" << std::endl;
@@ -327,14 +333,15 @@ int main(int argc, char **argv) {
 																.get_placement(gh_placement));
 			}
 		}
+		total_timer.pause();
+		compute_stat(mesh, ablation, total_timer, 0);
 		std::cout << "\rMesh simplified" << std::endl;
 		mesh_info.save_mesh(mesh, "final-mesh.ply");
 		return EXIT_SUCCESS;
 	}
 
-	Ablation_study ablation (subdivide, direct_search, border_point,step_mesh);
-	ablation.ground_truth_point_cloud = point_cloud;
-	ablation.ground_truth_surface_mesh = mesh;
+	TimerUtils::Timer total_timer;
+	total_timer.start();
 
 	K::FT min_point_per_area;
 	if (min_point_factor > 0) {
@@ -472,6 +479,9 @@ int main(int argc, char **argv) {
 		Cost_stop_predicate stop(cs);
 		SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).filter(filter).get_placement(pf).visitor(mv));
 	}
+
+	total_timer.pause();
+	compute_stat(mesh, ablation, total_timer, 0);
 
 	mesh_info.save_mesh(mesh, "final-mesh.ply");
 

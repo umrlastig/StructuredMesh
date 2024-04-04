@@ -48,7 +48,7 @@ typedef CGAL::AABB_face_graph_triangle_primitive<Surface_mesh> AABB_face_graph_p
 typedef CGAL::AABB_traits<K, AABB_face_graph_primitive>        AABB_face_graph_traits;
 typedef CGAL::AABB_tree<AABB_face_graph_traits>                AABB_tree;
 
-void compute_stat(Surface_mesh &mesh, const Point_set &point_cloud, const Ablation_study &ablation, TimerUtils::Timer &timer, K::FT cost) {
+void compute_stat(Surface_mesh &mesh, const Ablation_study &ablation, TimerUtils::Timer &timer, K::FT cost) {
 	AABB_tree mesh_tree;
 	PMP::build_AABB_tree(mesh, mesh_tree);
 	CGAL::Cartesian_converter<Point_set_kernel, K> type_converter;
@@ -828,6 +828,8 @@ K::Point_3 best_position(const SMS::Edge_profile<Surface_mesh>& profile, const P
 		results.push_back(results[0] + pos1 * vec1 + pos2 * vec2);
 	}
 
+	return results.back();
+
 	std::list<Surface_mesh::Face_index> selected_face;
 	for(auto face: profile.triangles()) {
 		auto fh = profile.surface_mesh().face(profile.surface_mesh().halfedge(face.v0, face.v1));
@@ -1063,51 +1065,51 @@ timer.start();
 		if(quality > 0.95) result.push_back(std::pair<K::Vector_3, K::FT>(plan.first*squared_length, plan.second*squared_length));
 		// else std::cerr << "quality: " << quality << "\n";
 
-		if (profile.v0().idx() == 7415 && profile.v1().idx() == 6860) { // Output point cloud and plane
-			if (true || points_in_faces.size() > 10) {
+		// if (profile.v0().idx() == 7415 && profile.v1().idx() == 6860) { // Output point cloud and plane
+		// 	if (true || points_in_faces.size() > 10) {
 
-				Surface_mesh output_mesh;
+		// 		Surface_mesh output_mesh;
 
-				bool created;
-				Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> red;
-				Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> green;
-				Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> blue;
-				boost::tie(red, created) = output_mesh.add_property_map<Surface_mesh::Vertex_index, unsigned char>("red",0);
-				assert(created);
-				boost::tie(green, created) = output_mesh.add_property_map<Surface_mesh::Vertex_index, unsigned char>("green",0);
-				assert(created);
-				boost::tie(blue, created) = output_mesh.add_property_map<Surface_mesh::Vertex_index, unsigned char>("blue",0);
-				assert(created);
+		// 		bool created;
+		// 		Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> red;
+		// 		Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> green;
+		// 		Surface_mesh::Property_map<Surface_mesh::Vertex_index, unsigned char> blue;
+		// 		boost::tie(red, created) = output_mesh.add_property_map<Surface_mesh::Vertex_index, unsigned char>("red",0);
+		// 		assert(created);
+		// 		boost::tie(green, created) = output_mesh.add_property_map<Surface_mesh::Vertex_index, unsigned char>("green",0);
+		// 		assert(created);
+		// 		boost::tie(blue, created) = output_mesh.add_property_map<Surface_mesh::Vertex_index, unsigned char>("blue",0);
+		// 		assert(created);
 
-				CGAL::Cartesian_converter<Point_set_kernel,K> type_converter;
+		// 		CGAL::Cartesian_converter<Point_set_kernel,K> type_converter;
 
-				for (auto point: points_in_faces) {
-					auto v = output_mesh.add_vertex(type_converter(point_cloud.point(point)));
-					red[v] = LABELS.at(label[point]).red;
-					green[v] = LABELS.at(label[point]).green;
-					blue[v] = LABELS.at(label[point]).blue;
-				}
+		// 		for (auto point: points_in_faces) {
+		// 			auto v = output_mesh.add_vertex(type_converter(point_cloud.point(point)));
+		// 			red[v] = LABELS.at(label[point]).red;
+		// 			green[v] = LABELS.at(label[point]).green;
+		// 			blue[v] = LABELS.at(label[point]).blue;
+		// 		}
 
-				auto n = plan.first;
-				auto d = plan.second;
+		// 		auto n = plan.first;
+		// 		auto d = plan.second;
 
-				K::Plane_3 plan2 (n.x(), n.y(), n.z(), -d);
-				auto orig = plan2.projection(type_converter(point_cloud.point(*points_in_faces.begin())));
+		// 		K::Plane_3 plan2 (n.x(), n.y(), n.z(), -d);
+		// 		auto orig = plan2.projection(type_converter(point_cloud.point(*points_in_faces.begin())));
 
-				auto v1 = output_mesh.add_vertex(orig - 2*plan2.base1() - 2*plan2.base2());
-				auto v2 = output_mesh.add_vertex(orig + 4*plan2.base1());
-				auto v3 = output_mesh.add_vertex(orig + 4*plan2.base2());
-				output_mesh.add_face(v1,v2,v3);
+		// 		auto v1 = output_mesh.add_vertex(orig - 2*plan2.base1() - 2*plan2.base2());
+		// 		auto v2 = output_mesh.add_vertex(orig + 4*plan2.base1());
+		// 		auto v3 = output_mesh.add_vertex(orig + 4*plan2.base2());
+		// 		output_mesh.add_face(v1,v2,v3);
 
-				std::stringstream output_mesh_name;
-				output_mesh_name << "svm_(" << profile.p0() << ")-(" << profile.p1() << "), w: " << n << ", b: " << d << ".ply";
-				std::ofstream mesh_ofile (output_mesh_name.str().c_str(), std::ios_base::binary);
-				CGAL::IO::set_binary_mode (mesh_ofile);
-				CGAL::IO::write_PLY (mesh_ofile, output_mesh);
-				mesh_ofile.close();
+		// 		std::stringstream output_mesh_name;
+		// 		output_mesh_name << "svm_(" << profile.p0() << ")-(" << profile.p1() << "), w: " << n << ", b: " << d << ".ply";
+		// 		std::ofstream mesh_ofile (output_mesh_name.str().c_str(), std::ios_base::binary);
+		// 		CGAL::IO::set_binary_mode (mesh_ofile);
+		// 		CGAL::IO::write_PLY (mesh_ofile, output_mesh);
+		// 		mesh_ofile.close();
 
-			}
-		}
+		// 	}
+		// }
 
 	} else {
 
@@ -1392,20 +1394,20 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::Point> Custom_placement::operat
 
 	auto R = A*B - C;
 
-if (profile.v0().idx() == 6984 && profile.v1().idx() == 7620) { // save cost detail
-	std::ofstream outfile;
+// if (profile.v0().idx() == 6984 && profile.v1().idx() == 7620) { // save cost detail
+// 	std::ofstream outfile;
 
-	outfile.open("placement.output", std::ios::app);
-	if (profile.v0().idx() < profile.v1().idx()) {
-		outfile << "edge " << profile.v0().idx() << " -> " << profile.v1().idx() << ":\n";
-	} else {
-		outfile << "edge " << profile.v1().idx() << " -> " << profile.v0().idx() << ":\n";
-	}
-	outfile << "1 - " << r1.size() << " - 3 - " << (3*r2.size()) << " - " << (3*r3.size()) << " - " << r4.size() << " - " << (3*r5.size()) << "\n";
-	outfile << "A:\n" << A << "\n";
-	outfile << "B:\n" << C << "\n";
-	outfile << "R:\n" << R << "\n";
-}
+// 	outfile.open("placement.output", std::ios::app);
+// 	if (profile.v0().idx() < profile.v1().idx()) {
+// 		outfile << "edge " << profile.v0().idx() << " -> " << profile.v1().idx() << ":\n";
+// 	} else {
+// 		outfile << "edge " << profile.v1().idx() << " -> " << profile.v0().idx() << ":\n";
+// 	}
+// 	outfile << "1 - " << r1.size() << " - 3 - " << (3*r2.size()) << " - " << (3*r3.size()) << " - " << r4.size() << " - " << (3*r5.size()) << "\n";
+// 	outfile << "A:\n" << A << "\n";
+// 	outfile << "B:\n" << C << "\n";
+// 	outfile << "R:\n" << R << "\n";
+// }
 
 	// Save cost
 	Point_3 placement(B.vector()[0], B.vector()[1], B.vector()[2]);
@@ -2052,9 +2054,6 @@ void My_visitor::OnStarted (Surface_mesh&) {
 void My_visitor::OnFinished (Surface_mesh &mesh) {
 	std::cout << "\rMesh simplified                                               " << std::endl;
 
-	total_timer.pause();
-	compute_stat(mesh, point_cloud, ablation, total_timer, 0);
-
 	Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
 	bool has_point_in_face;
 	boost::tie(point_in_face, has_point_in_face) = mesh.property_map<Surface_mesh::Face_index, std::list<Point_set::Index>>("f:points");
@@ -2070,49 +2069,49 @@ void My_visitor::OnFinished (Surface_mesh &mesh) {
 	boost::tie(collapse_datas, has_collapse_datas) = mesh.property_map<Surface_mesh::Edge_index, CollapseData>("e:c_datas");
 	assert(has_collapse_datas);
 
-	{ //output edge cost
+	// { //output edge cost
 
-		Point_set output_point_cloud;
+	// 	Point_set output_point_cloud;
 
-		bool created;
-		Point_set::Property_map<unsigned char> red;
-		Point_set::Property_map<unsigned char> green;
-		Point_set::Property_map<unsigned char> blue;
-		Point_set::Property_map<float> quality;
-		boost::tie(red, created) = output_point_cloud.add_property_map<unsigned char>("red",0);
-		assert(created);
-		boost::tie(green, created) = output_point_cloud.add_property_map<unsigned char>("green",0);
-		assert(created);
-		boost::tie(blue, created) = output_point_cloud.add_property_map<unsigned char>("blue",0);
-		assert(created);
-		boost::tie(quality, created) = output_point_cloud.add_property_map<float>("quality",0);
-		assert(created);
+	// 	bool created;
+	// 	Point_set::Property_map<unsigned char> red;
+	// 	Point_set::Property_map<unsigned char> green;
+	// 	Point_set::Property_map<unsigned char> blue;
+	// 	Point_set::Property_map<float> quality;
+	// 	boost::tie(red, created) = output_point_cloud.add_property_map<unsigned char>("red",0);
+	// 	assert(created);
+	// 	boost::tie(green, created) = output_point_cloud.add_property_map<unsigned char>("green",0);
+	// 	assert(created);
+	// 	boost::tie(blue, created) = output_point_cloud.add_property_map<unsigned char>("blue",0);
+	// 	assert(created);
+	// 	boost::tie(quality, created) = output_point_cloud.add_property_map<float>("quality",0);
+	// 	assert(created);
 
-		CGAL::Cartesian_converter<K, Point_set_kernel> type_converter;
+	// 	CGAL::Cartesian_converter<K, Point_set_kernel> type_converter;
 
-		for (auto edge: mesh.edges()) {
-			K:FT cost = collapse_datas[edge].cost;
+	// 	for (auto edge: mesh.edges()) {
+	// 		K:FT cost = collapse_datas[edge].cost;
 
-			auto point = output_point_cloud.insert(type_converter(CGAL::midpoint(mesh.point(mesh.source(mesh.halfedge(edge))), mesh.point(mesh.target(mesh.halfedge(edge))))));
+	// 		auto point = output_point_cloud.insert(type_converter(CGAL::midpoint(mesh.point(mesh.source(mesh.halfedge(edge))), mesh.point(mesh.target(mesh.halfedge(edge))))));
 
-			if (cost < 0) {
-				red[*point] = 255;
-				green[*point] = 200 - int(std::min(- cost / 10 * 200, (float) 200));
-				blue[*point] = 200 - int(std::min(- cost / 10 * 200, (float) 200));
-			} else {
-				red[*point] = 255 - int(std::min(cost / 50 * 255, (float) 255));
-				green[*point] = 255 - int(std::min(cost / 50 * 255, (float) 255));
-				blue[*point] = 255;
-			}
+	// 		if (cost < 0) {
+	// 			red[*point] = 255;
+	// 			green[*point] = 200 - int(std::min(- cost / 10 * 200, (float) 200));
+	// 			blue[*point] = 200 - int(std::min(- cost / 10 * 200, (float) 200));
+	// 		} else {
+	// 			red[*point] = 255 - int(std::min(cost / 50 * 255, (float) 255));
+	// 			green[*point] = 255 - int(std::min(cost / 50 * 255, (float) 255));
+	// 			blue[*point] = 255;
+	// 		}
 
-			quality[*point] = cost;
-		}
+	// 		quality[*point] = cost;
+	// 	}
 
-		std::ofstream mesh_ofile ("halfedge_collapsing_cost.ply");
-		CGAL::IO::write_PLY (mesh_ofile, output_point_cloud);
-		mesh_ofile.close();
+	// 	std::ofstream mesh_ofile ("halfedge_collapsing_cost.ply");
+	// 	CGAL::IO::write_PLY (mesh_ofile, output_point_cloud);
+	// 	mesh_ofile.close();
 
-	}
+	// }
 
 	/*std::cerr << "Total cost\t" << total_cost << "\n";
 
@@ -2187,13 +2186,22 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 // std::cerr << "Try collapsing " << profile.v0_v1() << "\t\t" << *cost << "\n";
 // c_cost = *cost;
 
+		if (current_edge_count < last_size) {
+			total_timer.pause();
+			collapsing_timer.pause();
+			compute_stat(mesh, ablation, total_timer, *cost);
+			last_size = ((int) ((current_edge_count) / 1000)) * 1000;
+			total_timer.resume();
+			collapsing_timer.resume();
+		}
+
 		int cost_id = -1;
 		if(!output[++cost_id] && *cost > 100) {
 			total_timer.pause();
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-c100.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && *cost > 10) {
@@ -2201,7 +2209,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-c10.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && *cost > 1) {
@@ -2209,7 +2217,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-c1.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && *cost > 0.3) {
@@ -2217,7 +2225,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-c0.03.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && *cost > 0.2) {
@@ -2225,7 +2233,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-c0.02.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && *cost > 0.1) {
@@ -2233,7 +2241,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-c0.01.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && *cost > 0.001) {
@@ -2241,7 +2249,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-c0.001.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && *cost > 0) {
@@ -2249,7 +2257,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-c0.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		}
@@ -2259,7 +2267,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-1000000.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 250000) {
@@ -2267,7 +2275,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-250000.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 100000) {
@@ -2275,7 +2283,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-100000.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 50000) {
@@ -2283,7 +2291,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-50000.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 40000) {
@@ -2291,7 +2299,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-40000.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 39000) {
@@ -2299,7 +2307,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-39000.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 10000) {
@@ -2307,7 +2315,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-10000.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 5000) {
@@ -2315,7 +2323,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-5000.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 2500) {
@@ -2323,7 +2331,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-2500.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 2000) {
@@ -2331,7 +2339,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-2000.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 1000) {
@@ -2339,7 +2347,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-1000.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 500) {
@@ -2347,7 +2355,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-500.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 400) {
@@ -2355,7 +2363,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-400.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 300) {
@@ -2363,7 +2371,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-300.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 100) {
@@ -2371,7 +2379,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-100.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 50) {
@@ -2379,7 +2387,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-50.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		} else if(!output[++cost_id] && current_edge_count <= 10) {
@@ -2387,7 +2395,7 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			collapsing_timer.pause();
 			output[cost_id] = true;
 			mesh_info.save_mesh(mesh,"mesh-10.ply");
-			compute_stat(mesh, point_cloud, ablation, total_timer, *cost);
+			// compute_stat(mesh, ablation, total_timer, *cost);
 			total_timer.resume();
 			collapsing_timer.resume();
 		}
