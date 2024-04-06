@@ -59,10 +59,12 @@ void compute_stat(Surface_mesh &mesh, const Ablation_study &ablation, TimerUtils
 
 	for(auto p: ablation.ground_truth_surface_mesh.points()) {
 		auto location = PMP::locate_with_AABB_tree(p, mesh_tree, mesh);
-		K::FT d = CGAL::sqrt(CGAL::squared_distance(p, PMP::construct_point(location, mesh)));
-		if (d < min_distance) min_distance = d;
-		if (d > max_distance) max_distance = d;
-		mean_distance += d / ablation.ground_truth_surface_mesh.num_vertices();
+		if (!std::isnan(location.second[0])) {
+			K::FT d = CGAL::sqrt(CGAL::squared_distance(p, PMP::construct_point(location, mesh)));
+			if (d < min_distance) min_distance = d;
+			if (d > max_distance) max_distance = d;
+			mean_distance += d / ablation.ground_truth_surface_mesh.num_vertices();
+		}
 	}
 
 	AABB_tree ground_truth_surface_mesh_tree;
@@ -76,10 +78,12 @@ void compute_stat(Surface_mesh &mesh, const Ablation_study &ablation, TimerUtils
 	PMP::sample_triangle_mesh(mesh, std::back_inserter(samples), CGAL::parameters::random_seed(0));
 	for(auto p: samples) {
 		auto location = PMP::locate_with_AABB_tree(p, ground_truth_surface_mesh_tree, ablation.ground_truth_surface_mesh);
-		K::FT d = CGAL::sqrt(CGAL::squared_distance(p, PMP::construct_point(location, ablation.ground_truth_surface_mesh)));
-		if (d < min_distance_r) min_distance_r = d;
-		if (d > max_distance_r) max_distance_r = d;
-		mean_distance_r += d / mesh.num_vertices();
+		if (!std::isnan(location.second[0])) {
+			K::FT d = CGAL::sqrt(CGAL::squared_distance(p, PMP::construct_point(location, ablation.ground_truth_surface_mesh)));
+			if (d < min_distance_r) min_distance_r = d;
+			if (d > max_distance_r) max_distance_r = d;
+			mean_distance_r += d / samples.size();
+		}
 	}
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_label;
@@ -250,7 +254,8 @@ std::pair<K::Vector_3, K::FT> compute_SVM(std::vector<Point_set::Index> points_f
 	Point_set_kernel::FT c = 10000;
 
 	Program qp (CGAL::EQUAL, true, 0, true, c);
-	for (std::size_t i = 0; i < points_for_svm.size(); i++) {
+
+	for (std::size_t i = points_for_svm.size() - 1; i < points_for_svm.size(); i--) {
 		auto vr = Point_set_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) * y[i];
 		qp.set_d(i, i, CGAL::scalar_product(vr,vr));
 		for (std::size_t j = 0; j < i; j++) {
