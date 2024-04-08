@@ -18,6 +18,8 @@ typedef CGAL::Point_set_3<Point_set_kernel::Point_3> Point_set;
 
 namespace SMS = CGAL::Surface_mesh_simplification;
 
+void add_label(Surface_mesh &mesh, const Point_set &point_cloud, const K::FT min_point_per_area);
+
 K::FT get_mean_point_per_area(Surface_mesh &mesh, const Point_set &point_cloud);
 
 struct LindstromTurk_param {

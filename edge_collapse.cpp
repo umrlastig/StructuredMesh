@@ -87,18 +87,34 @@ void compute_stat(Surface_mesh &mesh, const Ablation_study &ablation, TimerUtils
 	}
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_label;
-	bool has_mesh_label;
-	boost::tie(mesh_label, has_mesh_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+	Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
+	bool created_mesh_label, created_point_in_face;
+	boost::tie(mesh_label, created_mesh_label) = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("label", LABEL_OTHER);
 
 	Point_set::Property_map<unsigned char> ground_truth_point_cloud_label;
 	bool has_ground_truth_point_cloud_label;
 	boost::tie(ground_truth_point_cloud_label, has_ground_truth_point_cloud_label) = ablation.ground_truth_point_cloud.property_map<unsigned char>("p:label");
 
+	if (created_mesh_label) {
+		// Create point_in_face
+		boost::tie(point_in_face, created_point_in_face) = mesh.add_property_map<Surface_mesh::Face_index, std::list<Point_set::Index>>("f:points", std::list<Point_set::Index>());
+
+		if(created_point_in_face) {
+			for(auto ph: ablation.ground_truth_point_cloud) {
+				auto p = type_converter(ablation.ground_truth_point_cloud.point(ph));
+				auto location = PMP::locate_with_AABB_tree(p, mesh_tree, mesh);
+				point_in_face[location.first].push_back(ph);
+			}
+		}
+
+		add_label(mesh, ablation.ground_truth_point_cloud, 0);
+	}
+
 	// Check label error
 	std::size_t num_wrong_points = 0;
 	std::size_t total_num_points = 0;
 
-	if (has_mesh_label && has_ground_truth_point_cloud_label) {
+	if (has_ground_truth_point_cloud_label) {
 		for(auto ph: ablation.ground_truth_point_cloud) {
 			auto p = type_converter(ablation.ground_truth_point_cloud.point(ph));
 			auto location = PMP::locate_with_AABB_tree(p, mesh_tree, mesh);
@@ -110,14 +126,19 @@ void compute_stat(Surface_mesh &mesh, const Ablation_study &ablation, TimerUtils
 	// Compute semantic border length
 	K::FT total_semanctic_contour_length = 0;
 
-	if (has_mesh_label) {
-		for (auto edge: mesh.edges()) {
-			if (!mesh.is_border(edge)) {
-				auto h = mesh.halfedge(edge);
-				if (mesh_label[mesh.face(h)] != mesh_label[mesh.face(mesh.opposite(h))]) {
-					total_semanctic_contour_length += CGAL::sqrt(CGAL::squared_distance(mesh.point(mesh.source(h)), mesh.point(mesh.target(h))));
-				}
+	for (auto edge: mesh.edges()) {
+		if (!mesh.is_border(edge)) {
+			auto h = mesh.halfedge(edge);
+			if (mesh_label[mesh.face(h)] != mesh_label[mesh.face(mesh.opposite(h))]) {
+				total_semanctic_contour_length += CGAL::sqrt(CGAL::squared_distance(mesh.point(mesh.source(h)), mesh.point(mesh.target(h))));
 			}
+		}
+	}
+
+	if (created_mesh_label) {
+		mesh.remove_property_map<Surface_mesh::Face_index, unsigned char>(mesh_label);
+		if (created_point_in_face) {
+			mesh.remove_property_map<Surface_mesh::Face_index, std::list<Point_set::Index>>(point_in_face);
 		}
 	}
 
