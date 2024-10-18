@@ -415,52 +415,81 @@ std::vector<Surface_mesh::Face_index> subdivide_face(Surface_mesh& mesh, Surface
 	auto vp0 = mesh.target(mesh.next(mesh.opposite(h0)));
 	auto vp1 = mesh.target(mesh.next(mesh.opposite(h1)));
 	auto vp2 = mesh.target(mesh.next(mesh.opposite(h2)));
-	if (mesh.is_border(h0)) vp0 = mesh.null_vertex();
-	if (mesh.is_border(h1)) vp1 = mesh.null_vertex();
-	if (mesh.is_border(h2)) vp2 = mesh.null_vertex();
+	if (mesh.is_border(mesh.edge(h0))) vp0 = mesh.null_vertex();
+	if (mesh.is_border(mesh.edge(h1))) vp1 = mesh.null_vertex();
+	if (mesh.is_border(mesh.edge(h2))) vp2 = mesh.null_vertex();
 
 	auto p0 = mesh.point(v0);
 	auto p1 = mesh.point(v1);
 	auto p2 = mesh.point(v2);
+
 	Surface_mesh::Vertex_index vm0, vm1, vm2;
-	const auto result0 = CGAL::intersection(cut, K::Segment_3(p2, p0));
-	if (result0) {
-		if (const Point_3* p = boost::get<Point_3>(&*result0)) {
-			vm0 = mesh.add_vertex(*p);
+	if (CGAL::approximate_angle(cut.orthogonal_vector(), K::Plane_3(p0, p1, p2).orthogonal_vector()) > 10) {
+		// the SVM plane and the face are not too parallel
+		const auto result0 = CGAL::intersection(cut, K::Segment_3(p2, p0));
+		if (result0) {
+			if (const Point_3* p = boost::get<Point_3>(&*result0)) {
+				if (*p != p0 && *p != p2) {
+					vm0 = mesh.add_vertex(*p);
+				} else {
+					vm0 = mesh.add_vertex(CGAL::midpoint(p2, p0));
+				}
+			} else {
+				vm0 = mesh.add_vertex(CGAL::midpoint(p2, p0));
+			}
 		} else {
-			vm0 = mesh.add_vertex(CGAL::midpoint(mesh.point(v2), mesh.point(v0)));
+			vm0 = mesh.add_vertex(CGAL::midpoint(p2, p0));
+		}
+		const auto result1 = CGAL::intersection(cut, K::Segment_3(p0, p1));
+		if (result1) {
+			if (const Point_3* p = boost::get<Point_3>(&*result1)) {
+				if (*p != p0 && *p != p1) {
+					vm1 = mesh.add_vertex(*p);
+				} else {
+					vm1 = mesh.add_vertex(CGAL::midpoint(p0, p1));
+				}
+			} else {
+				vm1 = mesh.add_vertex(CGAL::midpoint(p0, p1));
+			}
+		} else {
+			vm1 = mesh.add_vertex(CGAL::midpoint(p0, p1));
+		}
+		const auto result2 = CGAL::intersection(cut, K::Segment_3(p1, p2));
+		if (result2) {
+			if (const Point_3* p = boost::get<Point_3>(&*result2)) {
+				if (*p != p1 && *p != p2) {
+					vm2 = mesh.add_vertex(*p);
+				} else {
+					vm2 = mesh.add_vertex(CGAL::midpoint(p1, p2));
+				}
+			} else {
+				vm2 = mesh.add_vertex(CGAL::midpoint(p1, p2));
+			}
+		} else {
+			vm2 = mesh.add_vertex(CGAL::midpoint(p1, p2));
 		}
 	} else {
-		vm0 = mesh.add_vertex(CGAL::midpoint(mesh.point(v2), mesh.point(v0)));
+		vm0 = mesh.add_vertex(CGAL::midpoint(p2, p0));
+		vm1 = mesh.add_vertex(CGAL::midpoint(p0, p1));
+		vm2 = mesh.add_vertex(CGAL::midpoint(p1, p2));
 	}
-	const auto result1 = CGAL::intersection(cut, K::Segment_3(p0, p1));
-	if (result1) {
-		if (const Point_3* p = boost::get<Point_3>(&*result1)) {
-			vm1 = mesh.add_vertex(*p);
-		} else {
-			vm1 = mesh.add_vertex(CGAL::midpoint(mesh.point(v0), mesh.point(v1)));
-		}
-	} else {
-		vm1 = mesh.add_vertex(CGAL::midpoint(mesh.point(v0), mesh.point(v1)));
-	}
-	const auto result2 = CGAL::intersection(cut, K::Segment_3(p1, p2));
-	if (result2) {
-		if (const Point_3* p = boost::get<Point_3>(&*result2)) {
-			vm2 = mesh.add_vertex(*p);
-		} else {
-			vm2 = mesh.add_vertex(CGAL::midpoint(mesh.point(v1), mesh.point(v2)));
-		}
-	} else {
-		vm2 = mesh.add_vertex(CGAL::midpoint(mesh.point(v1), mesh.point(v2)));
-	}
-	// vm0 = mesh.add_vertex(CGAL::midpoint(mesh.point(v2), mesh.point(v0)));
-	// vm1 = mesh.add_vertex(CGAL::midpoint(mesh.point(v0), mesh.point(v1)));
-	// vm2 = mesh.add_vertex(CGAL::midpoint(mesh.point(v1), mesh.point(v2)));
+	
+	K::Point_3 pp0, pp1, pp2;
+	if (vp0 != mesh.null_vertex()) pp0 = mesh.point(vp0);
+	if (vp1 != mesh.null_vertex()) pp1 = mesh.point(vp1);
+	if (vp2 != mesh.null_vertex()) pp2 = mesh.point(vp2);
 
 	if (vp0 != mesh.null_vertex()) CGAL::Euler::remove_face(mesh.opposite(h0), mesh);
 	if (vp1 != mesh.null_vertex()) CGAL::Euler::remove_face(mesh.opposite(h1), mesh);
 	if (vp2 != mesh.null_vertex()) CGAL::Euler::remove_face(mesh.opposite(h2), mesh);
 	CGAL::Euler::remove_face(h0, mesh);
+
+	if (mesh.is_removed(v0)) v0 = mesh.add_vertex(p0);
+	if (mesh.is_removed(v1)) v1 = mesh.add_vertex(p1);
+	if (mesh.is_removed(v2)) v2 = mesh.add_vertex(p2);
+	if (vp0 != mesh.null_vertex() && mesh.is_removed(vp0)) vp0 = mesh.add_vertex(pp0);
+	if (vp1 != mesh.null_vertex() && mesh.is_removed(vp1)) vp1 = mesh.add_vertex(pp1);
+	if (vp2 != mesh.null_vertex() && mesh.is_removed(vp2)) vp2 = mesh.add_vertex(pp2);
 
 	std::vector<Surface_mesh::Face_index> new_faces;
 	new_faces.push_back(mesh.add_face(vm0, vm1, vm2));
@@ -1908,7 +1937,7 @@ void My_visitor::OnStarted (Surface_mesh&) {
 			while (face_to_divide.size() > 0) {
 				auto face = *face_to_divide.begin();
 
-				if (point_in_face[face].size() > 0) {
+				if (point_in_face[face].size() > 1) {
 
 					int face_label[LABELS.size()] = {0};
 
@@ -1925,9 +1954,9 @@ void My_visitor::OnStarted (Surface_mesh&) {
 
 						std::set<Point_set::Index> points_to_be_change;
 						points_to_be_change.insert(point_in_face[face].begin(), point_in_face[face].end());
-						points_to_be_change.insert(point_in_face[mesh.face(mesh.opposite(h0))].begin(), point_in_face[mesh.face(mesh.opposite(h0))].end());
-						points_to_be_change.insert(point_in_face[mesh.face(mesh.opposite(h1))].begin(), point_in_face[mesh.face(mesh.opposite(h1))].end());
-						points_to_be_change.insert(point_in_face[mesh.face(mesh.opposite(h2))].begin(), point_in_face[mesh.face(mesh.opposite(h2))].end());
+						if (!mesh.is_border(mesh.edge(h0))) points_to_be_change.insert(point_in_face[mesh.face(mesh.opposite(h0))].begin(), point_in_face[mesh.face(mesh.opposite(h0))].end());
+						if (!mesh.is_border(mesh.edge(h1))) points_to_be_change.insert(point_in_face[mesh.face(mesh.opposite(h1))].begin(), point_in_face[mesh.face(mesh.opposite(h1))].end());
+						if (!mesh.is_border(mesh.edge(h2))) points_to_be_change.insert(point_in_face[mesh.face(mesh.opposite(h2))].begin(), point_in_face[mesh.face(mesh.opposite(h2))].end());
 
 						face_to_divide.erase(face);
 						face_to_divide.erase(mesh.face(mesh.opposite(h0)));
