@@ -7,6 +7,16 @@ project( compute-LOD2 )
 
 set (CMAKE_CXX_STANDARD 17)
 
+#add_compile_options(-O0)
+
+if(NOT CMAKE_BUILD_TYPE MATCHES "Release")
+  add_compile_options(-fsanitize=address)
+  add_link_options(-fsanitize=address)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -pg")
+endif()
+
 # CGAL and its components
 find_package( CGAL 5.4.1 QUIET COMPONENTS  )
 
