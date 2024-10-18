@@ -1012,9 +1012,10 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 
 	//Width constraint
 	for (int j = 0; j <= bridge.N; j++) {
-		if (bridge.xl[j] + bridge.xr[j] < 0) { // x^l_j − x^r_j
-			bridge.xl[j] += (-bridge.xl[j] - bridge.xr[j]) / 2;
-			bridge.xr[j] += (-bridge.xl[j] - bridge.xr[j]) / 2;
+		if (bridge.xl[j] + bridge.xr[j] < 0) { // x^l_j + x^r_j
+			double width = -(bridge.xl[j] + bridge.xr[j]) / 2;
+			bridge.xl[j] += width;
+			bridge.xr[j] += width;
 		}
 	}
 
