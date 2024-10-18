@@ -732,7 +732,7 @@ class Label_simple_optimization {
 
 		std::pair<K::Point_3, K::FT> linear_search(K::Point_3 middle, K::Vector_3 vec1) {
 			K::FT pas = 1;
-			K::FT pos = 1;
+			K::FT pos = 0;
 			K::FT e = energy(middle);
 			// if (abs(middle.x() - 3.81392) < 0.0001) std::cerr << "p: " << middle << ": " << e << "\n";
 			while (e == std::numeric_limits<K::FT>::max() && (pas > 0.001 || pas < -0.001)) {
@@ -1118,8 +1118,8 @@ timer.start();
 
 		float quality;
 		auto plan = compute_SVM(points_for_svm, y, point_cloud, &quality);
-		
-		if(quality > 0.95) result.push_back(std::pair<K::Vector_3, K::FT>(plan.first*squared_length, plan.second*squared_length));
+
+		if(quality > 0.75) result.push_back(std::pair<K::Vector_3, K::FT>(plan.first*squared_length, plan.second*squared_length));
 		// else std::cerr << "quality: " << quality << "\n";
 
 		// if (profile.v0().idx() == 7415 && profile.v1().idx() == 6860) { // Output point cloud and plane
@@ -1193,7 +1193,7 @@ timer.start();
 				if (has_i_label && has_other_label) {
 					float quality;
 					auto plan = compute_SVM(points_for_svm, y, point_cloud, &quality);
-					if(quality > 0.95) result.push_back(std::pair<K::Vector_3, K::FT>(plan.first*squared_length, plan.second*squared_length));
+					if(quality > 0.75) result.push_back(std::pair<K::Vector_3, K::FT>(plan.first*squared_length, plan.second*squared_length));
 					// else std::cerr << "quality: " << quality << "\n";
 				}
 			}
