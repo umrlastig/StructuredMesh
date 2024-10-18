@@ -1686,11 +1686,13 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 					}
 				}
 
+				collapse_datas[Surface_mesh::Edge_index(profile.v0_v1())].elements.reserve(new_faces.size());
 				for(std::size_t face_id = 0; face_id < new_faces.size(); face_id++) {
 					CollapseDataElement r;
 					r.halfedge = new_faces_border_halfedge[face_id];
 					r.label = new_face_label[face_id];
 					r.cost = new_face_cost[face_id];
+					r.points.reserve(points_in_new_face[face_id].size());
 					for (const auto &ph: points_in_new_face[face_id]) r.points.push_back(ph);
 					collapse_datas[Surface_mesh::Edge_index(profile.v0_v1())].elements.push_back(r);
 				}
@@ -1711,7 +1713,7 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 					assert(created);
 
 					for(std::size_t face_id = 0; face_id < new_faces.size(); face_id++) {
-						auto t = new_faces[face_id];
+						auto &t = new_faces[face_id];
 						auto v0 = output_mesh.add_vertex(t.vertex(0));
 						auto v1 = output_mesh.add_vertex(t.vertex(1));
 						auto v2 = output_mesh.add_vertex(t.vertex(2));
@@ -1742,10 +1744,12 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 					mesh_ofile.close();
 				}
 			} else {
+				collapse_datas[Surface_mesh::Edge_index(profile.v0_v1())].elements.reserve(new_faces.size());
 				for(std::size_t face_id = 0; face_id < new_faces.size(); face_id++) {
 					CollapseDataElement r;
 					r.halfedge = new_faces_border_halfedge[face_id];
 					r.cost = new_face_cost[face_id];
+					r.points.reserve(points_in_new_face[face_id].size());
 					for (const auto &ph: points_in_new_face[face_id]) r.points.push_back(ph);
 					collapse_datas[Surface_mesh::Edge_index(profile.v0_v1())].elements.push_back(r);
 				}

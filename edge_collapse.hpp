@@ -57,13 +57,13 @@ struct CollapseDataElement{
 	Surface_mesh::Halfedge_index halfedge;
 	unsigned char label;
 	K::FT cost;
-	std::list<Point_set::Index> points;
+	std::vector<Point_set::Index> points;
 };
 
 struct CollapseData {
 	K::FT cost;
 	K::FT placement_cost;
-	std::list<CollapseDataElement> elements;
+	std::vector<CollapseDataElement> elements;
 };
 
 class Custom_placement {
