@@ -80,9 +80,9 @@ std::pair<K::FT, K::FT> road_width (std::pair<skeletonPoint,skeletonPoint> link)
 			auto vec = K::Vector_2(it->first->vertex()->point(), it->first->opposite()->vertex()->point());
 			auto length = sqrt(vec.squared_length());
 			auto cos_angle = abs(CGAL::scalar_product(vec, vector) / sqrt(vec.squared_length()));
-			auto coef = (cos_angle/2+0.6)*length*(51*49/50 * (1/(it->second+1)+50*50/49/51-1));
-			road_width1 += coef;
-			sum1 += coef/width;
+			auto coef = (cos_angle/2+0.5)*length*50/(it->second+1);
+			road_width1 += coef*width;
+			sum1 += coef;
 		}
 		road_width1 /= sum1;
 	} else if (link.first.vertex != nullptr) {
@@ -99,9 +99,9 @@ std::pair<K::FT, K::FT> road_width (std::pair<skeletonPoint,skeletonPoint> link)
 			auto vec = K::Vector_2(it->first->vertex()->point(), it->first->opposite()->vertex()->point());
 			auto length = sqrt(vec.squared_length());
 			auto cos_angle = abs(CGAL::scalar_product(vec, vector) / sqrt(vec.squared_length()));
-			auto coef = (cos_angle/2+0.6)*length*(51*49/50 * (1/(it->second+1)+50*50/49/51-1));
-			road_width2 += coef;
-			sum2 += coef/width;
+			auto coef = (cos_angle/2+0.5)*length*50/(it->second+1);
+			road_width2 += coef*width;
+			sum2 += coef;
 		}
 		road_width2 /= sum2;
 	} else if (link.second.vertex != nullptr) {
