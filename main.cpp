@@ -181,7 +181,7 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, cons
 	}
 	std::cout << "Faces added" << std::endl;
 
-	float alpha = 1, beta = 1, gamma = 0.01;
+	float alpha = 2, beta = 1, gamma = 0.01;
 
 	K::FT mean_point_per_area = get_mean_point_per_area(mesh, point_cloud);
 	K::FT min_point_per_area = mean_point_per_area / 2;
@@ -328,6 +328,8 @@ int main(int argc, char **argv) {
 		CGAL::IO::set_binary_mode (mesh_ofile);
 		CGAL::IO::write_PLY (mesh_ofile, terrain_mesh);
 		mesh_ofile.close();
+
+		return EXIT_SUCCESS;
 
 	} else {
 		std::ifstream mesh_ifile (MESH, std::ios_base::binary);
