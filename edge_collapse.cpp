@@ -286,7 +286,7 @@ std::pair<K::Vector_3, K::FT> compute_SVM(std::vector<Point_set::Index> points_f
 		qp.set_a(i, 0,  y[i]);
 	}
 	Solution s = CGAL::solve_quadratic_program(qp, ET());
-	//std::cerr << s << "\n";
+	//std::cerr << "s: " << s << "\n";
 	if (!s.solves_quadratic_program(qp)) std::cerr << "ALERT !!!!!!!!!!!!!!!!!!!\n";
 	assert (s.solves_quadratic_program(qp));
 
@@ -364,10 +364,10 @@ std::pair<K::Vector_3, K::FT> compute_SVM(std::vector<Point_set::Index> points_f
 
 	// 	for (std::size_t i = 0; i < points_for_svm.size(); i++) {
 	// 		std::cerr << "y" << i << ":\t" << y[i] << "\t";
-	// 		std::cerr << Point_set_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) << "   \t";
-	// 		std::cerr << CGAL::to_double(*(s.variable_values_begin() + i)) << "\t";
-	// 		std::cerr << CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) << "  \t";
-	// 		std::cerr << y[i]*(CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) + b) << "\n";
+	// 		std::cerr << "p: " << Point_set_kernel::Vector_3(CGAL::ORIGIN, point_cloud.point(points_for_svm[i])) << "   \t";
+	// 		std::cerr << "s: " << CGAL::to_double(*(s.variable_values_begin() + i)) << "\t";
+	// 		std::cerr << "w.p: " << CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) << "  \t";
+	// 		std::cerr << "y(w.p + b): " << y[i]*(CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) + b) << "\n";
 	// 		if (y[i]*(CGAL::scalar_product(w, Point_set_kernel::Vector_3(CGAL::ORIGIN,point_cloud.point(points_for_svm[i]))) + b) < 0) {
 	// 			std::cerr << "Error\n";
 	// 		}
@@ -562,8 +562,8 @@ class Label_simple_optimization {
 				for (std::size_t j = 0; j < faces_border_halfedge.size(); j++) {
 					if (CGAL::scalar_product(CGAL::orthogonal_vector (middle, mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j]))), CGAL::orthogonal_vector (mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), mesh.point(mesh.target(mesh.next(faces_border_halfedge[j]))))) < 0) {
 
-						// std::cerr << K::Triangle_3(mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), middle) << "\n";
-						// std::cerr << K::Triangle_3(mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), mesh.point(mesh.target(mesh.next(faces_border_halfedge[j])))) << "\n";
+						// std::cerr << "t_a: " << K::Triangle_3(mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), middle) << "\n";
+						// std::cerr << "t_b: " << K::Triangle_3(mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), mesh.point(mesh.target(mesh.next(faces_border_halfedge[j])))) << "\n";
 						
 						known_energy[middle] = std::numeric_limits<K::FT>::max();
 						return std::numeric_limits<K::FT>::max();
@@ -637,8 +637,8 @@ class Label_simple_optimization {
 					
 					// K::Triangle_3 t_a (mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), middle);
 					// K::Triangle_3 t_b (mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), mesh.point(mesh.target(mesh.next(faces_border_halfedge[j]))));
-					// std::cerr << t_a << " : " << CGAL::orthogonal_vector (mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), middle) << "\n";
-					// std::cerr << t_b << " : " << CGAL::orthogonal_vector (mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), mesh.point(mesh.target(mesh.next(faces_border_halfedge[j])))) << "\n";
+					// std::cerr << "t_a: " << t_a << " : " << CGAL::orthogonal_vector (mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), middle) << "\n";
+					// std::cerr << "t_b: " << t_b << " : " << CGAL::orthogonal_vector (mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), mesh.point(mesh.target(mesh.next(faces_border_halfedge[j])))) << "\n";
 
 					if (CGAL::scalar_product(CGAL::orthogonal_vector (middle, mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j]))), CGAL::orthogonal_vector (mesh.point(mesh.source(faces_border_halfedge[j])), mesh.point(mesh.target(faces_border_halfedge[j])), mesh.point(mesh.target(mesh.next(faces_border_halfedge[j]))))) < 0) {
 
@@ -739,7 +739,7 @@ class Label_simple_optimization {
 					results[1] = results[0] + pos1*vec1 + pos2*vec2;
 					*r_energy = e;
 				}
-				// std::cerr << e << "\n";
+				// std::cerr << "e: " << e << "\n";
 				if (e < std::numeric_limits<K::FT>::max() && abs(pos1) < 1000 && abs(pos2) < 1000) {
 					grid_search(results, r_energy, vec1, vec2, pos1 + 1, pos2);
 					grid_search(results, r_energy, vec1, vec2, pos1 - 1, pos2);
@@ -894,11 +894,11 @@ K::Point_3 best_position(const SMS::Edge_profile<Surface_mesh>& profile, const P
 	/*if (profile.v0().idx() == 7415 && profile.v1().idx() == 6860) std::cerr << "final energy: " << optim.energy(results.back()) << "\n";
 
 	if (profile.v0().idx() == 7415 && profile.v1().idx() == 6860) { // if (optim.energy(results[0]) > 1e15) {
-		std::cerr << profile.v0() << "\n";
-		std::cerr << profile.v1() << "\n";
-		std::cerr << profile.p0() << "\n";
-		std::cerr << profile.p1() << "\n";
-		std::cerr << points_in_faces.size() << "\n";
+		std::cerr << "v0: " << profile.v0() << "\n";
+		std::cerr << "v1: " << profile.v1() << "\n";
+		std::cerr << "p0: " << profile.p0() << "\n";
+		std::cerr << "p1: " << profile.p1() << "\n";
+		std::cerr << "points_in_faces.size: " << points_in_faces.size() << "\n";
 		std::cerr << "p:" << results.back() << "\n";
 		std::cerr << "---\n";
 		auto mesh = profile.surface_mesh();
@@ -1196,7 +1196,7 @@ timer.start();
 			for (std::size_t face_id = 0; face_id < profile.link().size(); face_id++) {
 				auto he = profile.surface_mesh().halfedge(profile.link()[face_id], profile.link()[(face_id + 1) % profile.link().size()]);
 				if (he != Surface_mesh::null_halfedge() && !profile.surface_mesh().is_border(he)) {
-					std::cerr << profile.surface_mesh().point(profile.surface_mesh().source(he)) << " - " << profile.surface_mesh().point(profile.surface_mesh().target(he)) << "\n";
+					std::cerr << "he: " << profile.surface_mesh().point(profile.surface_mesh().source(he)) << " - " << profile.surface_mesh().point(profile.surface_mesh().target(he)) << "\n";
 				}
 			}
 		}*/
