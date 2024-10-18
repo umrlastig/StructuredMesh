@@ -574,13 +574,11 @@ class Label_simple_optimization {
 	const std::vector<Surface_mesh::Halfedge_index> &faces_border_halfedge;
 	const Surface_mesh &mesh;
 	const Point_set::Property_map<unsigned char> label;
-	int count_diff_label;
 	std::map<K::Point_3, K::FT> known_energy;
 	std::set<std::pair<int,int>> grid_search_visit;
 
 	public:
-	
-		Label_simple_optimization(const std::map<Point_set::Index, K::Point_3> &cloud_point_in_plane, const std::set<Point_set::Index> &points_in_faces, const std::map<Surface_mesh::Vertex_index, K::Point_3> &point_in_plane, const std::vector<Surface_mesh::Halfedge_index> &faces_border_halfedge, const Surface_mesh &mesh, const Point_set::Property_map<unsigned char> label, int count_diff_label) : cloud_point_in_plane(cloud_point_in_plane), points_in_faces(points_in_faces), point_in_plane(point_in_plane), faces_border_halfedge(faces_border_halfedge), mesh(mesh), label(label), count_diff_label(count_diff_label) {}
+		Label_simple_optimization(const std::map<Point_set::Index, K::Point_3> &cloud_point_in_plane, const std::set<Point_set::Index> &points_in_faces, const std::map<Surface_mesh::Vertex_index, K::Point_3> &point_in_plane, const std::vector<Surface_mesh::Halfedge_index> &faces_border_halfedge, const Surface_mesh &mesh, const Point_set::Property_map<unsigned char> label) : cloud_point_in_plane(cloud_point_in_plane), points_in_faces(points_in_faces), point_in_plane(point_in_plane), faces_border_halfedge(faces_border_halfedge), mesh(mesh), label(label) {}
 
 		/*K::FT energy(K::Point_3 middle) {
 			if (auto search = known_energy.find(middle); search != known_energy.end()) {
@@ -623,15 +621,17 @@ class Label_simple_optimization {
 				auto Apt = FDpt.colwise() / (sums + (sums == 0).cast<K::FT>());
 
 				// std::cerr << "Apt\n" << Apt << "\n";
-				
-				Eigen::SparseMatrix<K::FT> Ipc(points_in_faces.size(), count_diff_label);
-				Ipc.reserve(points_in_faces.size());
+
 				std::map<unsigned char, std::size_t> classes;
-				std::size_t i = 0;
 				for (const auto &v: points_in_faces) {
 					if(classes.count(label[v]) == 0) {
 						classes[label[v]] = classes.size();
 					}
+				}
+				Eigen::SparseMatrix<K::FT> Ipc(points_in_faces.size(), classes.size());
+				Ipc.reserve(points_in_faces.size());
+				std::size_t i = 0;
+				for (const auto &v: points_in_faces) {
 					Ipc.insert(i++, classes[label[v]]) = 1;
 				}
 
@@ -699,14 +699,16 @@ class Label_simple_optimization {
 
 				// std::cerr << "Apt\n" << Apt << "\n";
 				
-				Eigen::SparseMatrix<K::FT> Ipc(points_in_faces.size(), count_diff_label);
-				Ipc.reserve(points_in_faces.size());
 				std::map<unsigned char, std::size_t> classes;
-				std::size_t i = 0;
 				for (const auto &v: points_in_faces) {
 					if(classes.count(label[v]) == 0) {
 						classes[label[v]] = classes.size();
 					}
+				}
+				Eigen::SparseMatrix<K::FT> Ipc(points_in_faces.size(), classes.size());
+				Ipc.reserve(points_in_faces.size());
+				std::size_t i = 0;
+				for (const auto &v: points_in_faces) {
 					Ipc.insert(i++, classes[label[v]]) = 1;
 				}
 
@@ -780,7 +782,7 @@ class Label_simple_optimization {
 };
 
 
-K::Point_3 best_position(const SMS::Edge_profile<Surface_mesh>& profile, const Point_set &point_cloud, const std::set<Point_set::Index> &points_in_faces, int count_diff_label) {
+K::Point_3 best_position(const SMS::Edge_profile<Surface_mesh>& profile, const Point_set &point_cloud, const std::set<Point_set::Index> &points_in_faces) {
 
 	Point_set::Property_map<unsigned char> label;
 	bool has_label;
@@ -815,7 +817,7 @@ K::Point_3 best_position(const SMS::Edge_profile<Surface_mesh>& profile, const P
 		}
 	}
 
-	Label_simple_optimization optim(cloud_point_in_plane, points_in_faces, point_in_plane, faces_border_halfedge, profile.surface_mesh(), label, count_diff_label);
+	Label_simple_optimization optim(cloud_point_in_plane, points_in_faces, point_in_plane, faces_border_halfedge, profile.surface_mesh(), label);
 
 	std::vector<K::Point_3> results;
 	results.reserve(2);
@@ -1208,7 +1210,7 @@ timer.start();
 			}
 		}
 
-		auto p = best_position(profile, point_cloud, points_in_faces, count_diff_label);
+		auto p = best_position(profile, point_cloud, points_in_faces);
 		if (p != CGAL::ORIGIN) {
 			result.push_back(std::pair<K::Vector_3, K::FT>(K::Vector_3(1,0,0)*squared_length, p.x()*squared_length));
 			result.push_back(std::pair<K::Vector_3, K::FT>(K::Vector_3(0,1,0)*squared_length, p.y()*squared_length));
