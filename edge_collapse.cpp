@@ -735,7 +735,7 @@ class Label_simple_optimization {
 			K::FT pos = 0;
 			K::FT e = energy(middle);
 			// if (abs(middle.x() - 3.81392) < 0.0001) std::cerr << "p: " << middle << ": " << e << "\n";
-			while (e == std::numeric_limits<K::FT>::max() && (pas > 0.001 || pas < -0.001)) {
+			while (e == std::numeric_limits<K::FT>::max() && (pas > 0.01 || pas < -0.01)) {
 				// std::cerr << "l\t" <<  pas << "\t" << pos << "\n";
 				if (pas > 0) {
 					if (pos < 1) {
@@ -771,7 +771,7 @@ class Label_simple_optimization {
 					*r_energy = e;
 				}
 				// std::cerr << "e: " << e << "\n";
-				if (e < std::numeric_limits<K::FT>::max() && abs(pos1) < 1000 && abs(pos2) < 1000) {
+				if (e < std::numeric_limits<K::FT>::max() && abs(pos1) < 10 && abs(pos2) < 10) {
 					grid_search(results, r_energy, vec1, vec2, pos1 + 1, pos2);
 					grid_search(results, r_energy, vec1, vec2, pos1 - 1, pos2);
 					grid_search(results, r_energy, vec1, vec2, pos1, pos2 + 1);
@@ -782,7 +782,7 @@ class Label_simple_optimization {
 };
 
 
-K::Point_3 best_position(const SMS::Edge_profile<Surface_mesh>& profile, const Point_set &point_cloud, const std::set<Point_set::Index> &points_in_faces) {
+std::pair<K::Point_3, std::pair<K::Vector_3, K::Vector_3>> best_position(const SMS::Edge_profile<Surface_mesh>& profile, const Point_set &point_cloud, const std::set<Point_set::Index> &points_in_faces) {
 
 	Point_set::Property_map<unsigned char> label;
 	bool has_label;
@@ -832,21 +832,29 @@ K::Point_3 best_position(const SMS::Edge_profile<Surface_mesh>& profile, const P
 
 	// if (profile.v0().idx() == 7415 && profile.v1().idx() == 6860) std::cerr << "linear search: " << r.first << " (" << r.second << ")\n";
 
-	if (r.second == 0.001) {
-		return K::Point_3(CGAL::ORIGIN);
+	if (r.second == 0.01) {
+		return std::pair<K::Point_3, std::pair<K::Vector_3, K::Vector_3>>(K::Point_3(CGAL::ORIGIN), std::pair<K::Vector_3, K::Vector_3>(CGAL::NULL_VECTOR, CGAL::NULL_VECTOR));
 	}
+	results.push_back(r.first);
 
 	// Grid search
-	vec1 *= r.second / CGAL::sqrt(vec1.squared_length());
-	vec2 *= r.second / CGAL::sqrt(vec1.squared_length());
+	vec1 *= r.second;
+	vec2 *= r.second;
+	pas *= r.second;
 
-	results.push_back(r.first);
 	K::FT r_energy = std::numeric_limits<K::FT>::max();
 	// std::cerr << "-----------------------------\n";
 	optim.grid_search(results, &r_energy, vec1, vec2, 0, 0);
+	/*if (optim.grid_search_visit.size() < 10) {
+		optim.grid_search_visit.clear();
+		vec1 /= 2;
+		vec2 /= 2;
+		pas /= 2;
+		optim.grid_search(results, &r_energy, vec1, vec2, 0, 0);
+	}*/
 
-	if (optim.energy(r.first) <= optim.energy(results[0])) {
-		results[0] = r.first;
+	if (optim.energy(r.first) <= optim.energy(results[1])) {
+		results[1] = r.first;
 	}
 
 	// Cross search	
@@ -854,20 +862,21 @@ K::Point_3 best_position(const SMS::Edge_profile<Surface_mesh>& profile, const P
 	K::FT pos2 = 0;
 	K::FT var = 1;
 
-	while(var > 1e-4 && results.size() < 100) {
+	while(var > 1e-4 && results.size() < 20) {
 		K::FT values[5];
-		values[0] = optim.energy(results[0] + pos1 * vec1 + pos2 * vec2); // center
-		values[1] = optim.energy(results[0] + (pos1 - pas) * vec1 + pos2 * vec2); // left
-		values[2] = optim.energy(results[0] + (pos1 + pas) * vec1 + pos2 * vec2); // right
-		values[3] = optim.energy(results[0] + pos1 * vec1 + (pos2 - pas) * vec2); // bottom
-		values[4] = optim.energy(results[0] + pos1 * vec1 + (pos2 + pas) * vec2); // top
+		values[0] = optim.energy(results[1] + pos1 * vec1 + pos2 * vec2); // center
+		values[1] = optim.energy(results[1] + (pos1 - pas) * vec1 + pos2 * vec2); // left
+		values[2] = optim.energy(results[1] + (pos1 + pas) * vec1 + pos2 * vec2); // right
+		values[3] = optim.energy(results[1] + pos1 * vec1 + (pos2 - pas) * vec2); // bottom
+		values[4] = optim.energy(results[1] + pos1 * vec1 + (pos2 + pas) * vec2); // top
 
 		auto argmin = std::min_element(values, values + 5);
 		int p = argmin - values;
 
 		if (p == 0) {
 			pas /= 2;
-			var = 1;
+			auto argmin = std::min_element(values + 1, values + 5);
+			var = *argmin - values[0];
 		} else if (p == 1) {
 			pos1 -= pas;
 			var = values[0] - values[1];
@@ -882,45 +891,46 @@ K::Point_3 best_position(const SMS::Edge_profile<Surface_mesh>& profile, const P
 			var = values[0] - values[4];
 		}
 
-		results.push_back(results[0] + pos1 * vec1 + pos2 * vec2);
+		results.push_back(results[1] + pos1 * vec1 + pos2 * vec2);
 	}
 
-	return results.back();
+	return std::pair<K::Point_3, std::pair<K::Vector_3, K::Vector_3>>(results.back(), std::pair<K::Vector_3, K::Vector_3>(vec1, vec2));
 
-	std::list<Surface_mesh::Face_index> selected_face;
-	for(auto face: profile.triangles()) {
-		auto fh = profile.surface_mesh().face(profile.surface_mesh().halfedge(face.v0, face.v1));
-		selected_face.push_back(fh);
-	}
-	CGAL::Face_filtered_graph<Surface_mesh> filtered_sm(profile.surface_mesh(), selected_face);
 
-	Surface_mesh filtered_mesh;
-	CGAL::copy_face_graph(filtered_sm, filtered_mesh);
-	AABB_tree filtered_sm_tree;
-	PMP::build_AABB_tree(filtered_mesh, filtered_sm_tree);
+	// std::list<Surface_mesh::Face_index> selected_face;
+	// for (const auto &face: profile.triangles()) {
+	// 	auto fh = profile.surface_mesh().face(profile.surface_mesh().halfedge(face.v0, face.v1));
+	// 	selected_face.push_back(fh);
+	// }
+	// CGAL::Face_filtered_graph<Surface_mesh> filtered_sm(profile.surface_mesh(), selected_face);
 
-	auto location = PMP::locate_with_AABB_tree(K::Ray_3(results.back(), ortho_plane), filtered_sm_tree, filtered_mesh);
-	if (location.first != Surface_mesh::Face_index()) {
-		auto p1 = PMP::construct_point(location, profile.surface_mesh());
-		auto location2 = PMP::locate_with_AABB_tree(K::Ray_3(results.back(), -ortho_plane), filtered_sm_tree, filtered_mesh);
-		if (location2.first != Surface_mesh::Face_index()) {
-			auto p2 = PMP::construct_point(location2, profile.surface_mesh());
-			if (CGAL::squared_distance(p1, results.back()) < CGAL::squared_distance(p2, results.back())) {
-				return p1;
-			} else {
-				return p2;
-			}
-		} else {
-			return p1;
-		}
-	} else {
-		auto location = PMP::locate_with_AABB_tree(K::Ray_3(results.back(), -ortho_plane), filtered_sm_tree, filtered_mesh);
-		if (location.first != Surface_mesh::Face_index()) {
-			return PMP::construct_point(location, profile.surface_mesh());
-		} else {
-			return results.back();
-		}
-	}
+	// Surface_mesh filtered_mesh;
+	// CGAL::copy_face_graph(filtered_sm, filtered_mesh);
+	// AABB_tree filtered_sm_tree;
+	// PMP::build_AABB_tree(filtered_mesh, filtered_sm_tree);
+
+	// auto location = PMP::locate_with_AABB_tree(K::Ray_3(results.back(), ortho_plane), filtered_sm_tree, filtered_mesh);
+	// if (location.first != Surface_mesh::Face_index()) {
+	// 	auto p1 = PMP::construct_point(location, profile.surface_mesh());
+	// 	auto location2 = PMP::locate_with_AABB_tree(K::Ray_3(results.back(), -ortho_plane), filtered_sm_tree, filtered_mesh);
+	// 	if (location2.first != Surface_mesh::Face_index()) {
+	// 		auto p2 = PMP::construct_point(location2, profile.surface_mesh());
+	// 		if (CGAL::squared_distance(p1, results.back()) < CGAL::squared_distance(p2, results.back())) {
+	// 			return p1;
+	// 		} else {
+	// 			return p2;
+	// 		}
+	// 	} else {
+	// 		return p1;
+	// 	}
+	// } else {
+	// 	auto location = PMP::locate_with_AABB_tree(K::Ray_3(results.back(), -ortho_plane), filtered_sm_tree, filtered_mesh);
+	// 	if (location.first != Surface_mesh::Face_index()) {
+	// 		return PMP::construct_point(location, profile.surface_mesh());
+	// 	} else {
+	// 		return results.back();
+	// 	}
+	// }
 
 	/*if (profile.v0().idx() == 7415 && profile.v1().idx() == 6860) std::cerr << "final energy: " << optim.energy(results.back()) << "\n";
 
@@ -1211,10 +1221,16 @@ timer.start();
 		}
 
 		auto p = best_position(profile, point_cloud, points_in_faces);
-		if (p != CGAL::ORIGIN) {
-			result.push_back(std::pair<K::Vector_3, K::FT>(K::Vector_3(1,0,0)*squared_length, p.x()*squared_length));
-			result.push_back(std::pair<K::Vector_3, K::FT>(K::Vector_3(0,1,0)*squared_length, p.y()*squared_length));
-			result.push_back(std::pair<K::Vector_3, K::FT>(K::Vector_3(0,0,1)*squared_length, p.z()*squared_length));
+		if (p.first != CGAL::ORIGIN) {
+			p.second.first /= CGAL::sqrt(p.second.first.squared_length());
+			p.second.second /= CGAL::sqrt(p.second.second.squared_length());
+			auto b1 = CGAL::scalar_product(K::Vector_3(CGAL::ORIGIN, p.first), p.second.first);
+			auto b2 = CGAL::scalar_product(K::Vector_3(CGAL::ORIGIN, p.first), p.second.second);
+			result.push_back(std::pair<K::Vector_3, K::FT>(p.second.first*squared_length, b1*squared_length));
+			result.push_back(std::pair<K::Vector_3, K::FT>(p.second.second*squared_length, b2*squared_length));
+			// result.push_back(std::pair<K::Vector_3, K::FT>(K::Vector_3(1,0,0)*squared_length, p.first.x()*squared_length));
+			// result.push_back(std::pair<K::Vector_3, K::FT>(K::Vector_3(0,1,0)*squared_length, p.first.y()*squared_length));
+			// result.push_back(std::pair<K::Vector_3, K::FT>(K::Vector_3(0,0,1)*squared_length, p.first.z()*squared_length));
 		} /*else {
 			std::cerr << "--------------------------------------------------\n";
 			std::cerr << "v0: " << profile.surface_mesh().point(profile.v0()) << "\n";
