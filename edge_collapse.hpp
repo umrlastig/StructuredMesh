@@ -70,10 +70,10 @@ class Custom_placement {
 	const LindstromTurk_param &params;
 	Surface_mesh::Property_map<Surface_mesh::Edge_index, CollapseData> collapse_datas;
 	const Point_set &point_cloud;
-	const Ablation_study &ablation;
+	const Ablation_study ablation;
 
 	public:
-		Custom_placement (const LindstromTurk_param &params, Surface_mesh &mesh, const Point_set &point_cloud, const Ablation_study &ablation = Ablation_study());
+		Custom_placement (const LindstromTurk_param &params, Surface_mesh &mesh, const Point_set &point_cloud, const Ablation_study ablation = Ablation_study());
 
 		boost::optional<SMS::Edge_profile<Surface_mesh>::Point> operator()(const SMS::Edge_profile<Surface_mesh>& profile) const;
 };
@@ -122,7 +122,7 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 		const Surface_mesh_info &mesh_info;
 		Point_set &point_cloud;
 
-		const Ablation_study &ablation;
+		const Ablation_study ablation;
 
 		Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_label;
 		Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> face_costs;
@@ -131,7 +131,7 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 		Point_set::Property_map<unsigned char> point_cloud_label;
 
 	public:
-		My_visitor(const LindstromTurk_param &params, const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT min_point_per_area, Surface_mesh &mesh, const Surface_mesh_info &mesh_info, Point_set &point_cloud, const Ablation_study &ablation = Ablation_study());
+		My_visitor(const LindstromTurk_param &params, const K::FT alpha, const K::FT beta, const K::FT gamma, const K::FT min_point_per_area, Surface_mesh &mesh, const Surface_mesh_info &mesh_info, Point_set &point_cloud, const Ablation_study ablation = Ablation_study());
 
 		void OnStarted (Surface_mesh&);
 
