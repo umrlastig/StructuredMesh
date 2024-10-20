@@ -505,12 +505,14 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 	for(auto link: result) {
 		CGAL::Face_filtered_graph<Surface_mesh> filtered_sm1(mesh, link.first.path, path);
 		CGAL::Face_filtered_graph<Surface_mesh> filtered_sm2(mesh, link.second.path, path);
-		auto location1 = PMP::locate(K::Ray_3(K::Point_3(link.first.point.x(),link.first.point.y(),150), K::Direction_3(0, 0, -1)), filtered_sm1);
-		assert(location1.first != Surface_mesh::null_face());
-		auto point1 = PMP::construct_point(location1, mesh);
-		auto location2 = PMP::locate(K::Ray_3(K::Point_3(link.second.point.x(),link.second.point.y(),150), K::Direction_3(0, 0, -1)), filtered_sm2);
-		assert(location2.first != Surface_mesh::null_face());
-		auto point2 = PMP::construct_point(location1, mesh);
+		auto location1 = PMP::locate(K::Ray_3(K::Point_3(link.first.point.x(),link.first.point.y(), 0), K::Direction_3(0, 0, 1)), filtered_sm1);
+		if (location1.first == mesh.null_face()) location1 = PMP::locate(K::Ray_3(K::Point_3(link.first.point.x(),link.first.point.y(), 0), K::Direction_3(0, 0, -1)), filtered_sm1);
+		if (location1.first == mesh.null_face()) location1 = PMP::locate(K::Point_3(link.first.point.x(),link.first.point.y(), 0), filtered_sm1);
+		auto point1 = PMP::construct_point(location1, filtered_sm1);
+		auto location2 = PMP::locate(K::Ray_3(K::Point_3(link.second.point.x(),link.second.point.y(), 0), K::Direction_3(0, 0, 1)), filtered_sm2);
+		if (location2.first == mesh.null_face()) location2 = PMP::locate(K::Ray_3(K::Point_3(link.second.point.x(),link.second.point.y(), 0), K::Direction_3(0, 0, -1)), filtered_sm2);
+		if (location2.first == mesh.null_face()) location2 = PMP::locate(K::Point_3(link.second.point.x(),link.second.point.y(), 0), filtered_sm2);
+		auto point2 = PMP::construct_point(location2, filtered_sm2);
 		auto v1 = links.add_vertex(point1);
 		auto v2 = links.add_vertex(point2);
 		links.add_edge(v1,v2);
