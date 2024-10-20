@@ -40,7 +40,7 @@ void set_path(Surface_mesh &mesh,
 std::vector<std::list<Surface_mesh::Face_index>> compute_path(Surface_mesh &mesh) {
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool has_label;
-	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 	assert(has_label);
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
@@ -95,7 +95,7 @@ std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool has_label;
-	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 	assert(has_label);
 
 	std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> path_polygon;
@@ -169,7 +169,7 @@ std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_
 std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_axes(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> &path_polygon, const Surface_mesh_info &mesh_info) {
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool has_label;
-	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 	assert(has_label);
 
 	std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> medial_axes;

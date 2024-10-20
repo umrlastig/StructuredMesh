@@ -36,7 +36,7 @@ void Surface_mesh_info::save_mesh(const Surface_mesh &mesh, const char *filename
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool has_label;
-	boost::tie(label, has_label) = output_mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+	boost::tie(label, has_label) = output_mesh.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 	if (has_label) {
 		// Color
 		bool created;

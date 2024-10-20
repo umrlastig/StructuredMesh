@@ -122,7 +122,7 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 	// Get label property
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool has_label;
-	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 	assert(has_label);
 
 	std::set<pathLink> result;
@@ -672,7 +672,7 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 		tree(tree) {
 			// Get label property
 			bool has_label;
-			boost::tie(mesh_labels, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+			boost::tie(mesh_labels, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 			assert(has_label);
 		}
 
@@ -831,7 +831,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool has_label;
-	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 	assert(has_label);
 
 	typedef CGAL::Face_filtered_graph<Surface_mesh> Filtered_graph;
@@ -1357,7 +1357,7 @@ struct CorefinementVisitor : public CGAL::Polygon_mesh_processing::Corefinement:
 			assert(has_path);
 
 			bool has_label;
-			boost::tie(label, has_label) = mesh->property_map<Surface_mesh::Face_index, unsigned char>("label");
+			boost::tie(label, has_label) = mesh->property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 			assert(has_label);
 
 			bool has_true_face;
@@ -1374,7 +1374,7 @@ struct CorefinementVisitor : public CGAL::Polygon_mesh_processing::Corefinement:
 		} else {
 			Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> bridge_label;
 			bool has_label;
-			boost::tie(bridge_label, has_label) = tm.property_map<Surface_mesh::Face_index, unsigned char>("label");
+			boost::tie(bridge_label, has_label) = tm.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 			assert(has_label);
 			current_label = bridge_label[f_split];
 		}
@@ -1388,7 +1388,7 @@ struct CorefinementVisitor : public CGAL::Polygon_mesh_processing::Corefinement:
 		} else {
 			Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> bridge_label;
 			bool has_label;
-			boost::tie(bridge_label, has_label) = tm.property_map<Surface_mesh::Face_index, unsigned char>("label");
+			boost::tie(bridge_label, has_label) = tm.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 			assert(has_label);
 			bridge_label[f_new] = current_label;
 		}
@@ -1401,15 +1401,15 @@ struct CorefinementVisitor : public CGAL::Polygon_mesh_processing::Corefinement:
 
 			Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> bridge_label;
 			bool has_label;
-			boost::tie(bridge_label, has_label) = tm_src.property_map<Surface_mesh::Face_index, unsigned char>("label");
+			boost::tie(bridge_label, has_label) = tm_src.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 			assert(has_label);
 			label[f_tgt] = bridge_label[f_src];
 		} else {
 			Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> bridge_label1, bridge_label2;
 			bool has_label;
-			boost::tie(bridge_label1, has_label) = tm_src.property_map<Surface_mesh::Face_index, unsigned char>("label");
+			boost::tie(bridge_label1, has_label) = tm_src.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 			assert(has_label);
-			boost::tie(bridge_label2, has_label) = tm_tgt.property_map<Surface_mesh::Face_index, unsigned char>("label");
+			boost::tie(bridge_label2, has_label) = tm_tgt.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 			assert(has_label);
 			bridge_label2[f_tgt] = bridge_label1[f_src];
 		}
@@ -1444,7 +1444,7 @@ Surface_mesh compute_remove_mesh(const pathBridge &bridge, const Surface_mesh_in
 	// Label
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool created_label;
-	boost::tie(label, created_label) = bridge_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("label", 0);
+	boost::tie(label, created_label) = bridge_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("f:label", 0);
 	assert(created_label);
 
 	// Add faces
@@ -1519,7 +1519,7 @@ Surface_mesh compute_support_mesh(const pathBridge &bridge, const Surface_mesh_i
 	// Label
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool created_label;
-	boost::tie(label, created_label) = bridge_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("label", 0);
+	boost::tie(label, created_label) = bridge_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("f:label", 0);
 	assert(created_label);
 
 	// Add faces
@@ -1593,7 +1593,7 @@ Surface_mesh compute_crossing_mesh(Surface_mesh mesh, const pathBridge &bridge, 
 	// Get label
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool has_label;
-	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 	assert(has_label);
 
 	// Compute bridge border
@@ -1641,7 +1641,7 @@ void add_bridge_to_mesh(Surface_mesh &mesh, const std::vector<pathBridge> &bridg
 	// Label
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool has_label;
-	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 	assert(has_label);
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
@@ -1695,7 +1695,7 @@ void add_bridge_to_mesh(Surface_mesh &mesh, const std::vector<pathBridge> &bridg
 			bool has_label;
 
 			Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label_r_b;
-			boost::tie(label_r_b, has_label) = r_b.property_map<Surface_mesh::Face_index, unsigned char>("label");
+			boost::tie(label_r_b, has_label) = r_b.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 			assert(has_label);
 
 			for (auto face: r_b.faces()) {
@@ -1711,7 +1711,7 @@ void add_bridge_to_mesh(Surface_mesh &mesh, const std::vector<pathBridge> &bridg
 			}
 
 			Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label_s_b;
-			boost::tie(label_s_b, has_label) = s_b.property_map<Surface_mesh::Face_index, unsigned char>("label");
+			boost::tie(label_s_b, has_label) = s_b.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 			assert(has_label);
 
 			for (auto face: s_b.faces()) {

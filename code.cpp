@@ -55,7 +55,7 @@ std::list<Polygon> get_LOD0_from_shapefile(char *path) {
 void add_label(const Raster &raster, Surface_mesh &mesh) {
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool created;
-	boost::tie(label, created) = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("label",0);
+	boost::tie(label, created) = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("f:label",0);
 	assert(created);
 
 	for (auto face : mesh.faces()) {
@@ -77,7 +77,7 @@ void add_label(const Raster &raster, Surface_mesh &mesh) {
 void change_vertical_faces(Surface_mesh &mesh, const Raster &raster) {
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool has_label;
-	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 	assert(has_label);
 
 	std::unordered_map<Surface_mesh::Face_index, unsigned char> new_label;

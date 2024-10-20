@@ -89,7 +89,7 @@ void compute_stat(Surface_mesh &mesh, const Ablation_study &ablation, TimerUtils
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_label;
 	Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
 	bool created_mesh_label, created_point_in_face;
-	boost::tie(mesh_label, created_mesh_label) = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("label", LABEL_OTHER);
+	boost::tie(mesh_label, created_mesh_label) = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("f:label", LABEL_OTHER);
 
 	Point_set::Property_map<unsigned char> ground_truth_point_cloud_label;
 	bool has_ground_truth_point_cloud_label;
@@ -180,7 +180,7 @@ void add_label(Surface_mesh &mesh, const Point_set &point_cloud, const K::FT min
 	//Update mesh label
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_label;
 	bool has_mesh_label;
-	boost::tie(mesh_label, has_mesh_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("label");
+	boost::tie(mesh_label, has_mesh_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 	assert(has_mesh_label);
 
 	Point_set::Property_map<unsigned char> point_cloud_label;
@@ -1267,7 +1267,7 @@ std::list<K::Vector_3> semantic_border_optimization (const SMS::Edge_profile<Sur
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_label;
 	bool has_mesh_label;
-	boost::tie(mesh_label, has_mesh_label) = profile.surface_mesh().property_map<Surface_mesh::Face_index, unsigned char>("label");
+	boost::tie(mesh_label, has_mesh_label) = profile.surface_mesh().property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 	assert(has_mesh_label);
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
@@ -1568,7 +1568,7 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 			if (beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) {
 				Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_label;
 				bool has_mesh_label;
-				boost::tie(mesh_label, has_mesh_label) = profile.surface_mesh().property_map<Surface_mesh::Face_index, unsigned char>("label");
+				boost::tie(mesh_label, has_mesh_label) = profile.surface_mesh().property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 				assert(has_mesh_label);
 
 				Point_set::Property_map<unsigned char> point_cloud_label;
@@ -1806,7 +1806,7 @@ void My_visitor::OnStarted (Surface_mesh&) {
 	if (beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) {
 		// Add label to face
 		bool created_label;
-		boost::tie(mesh_label, created_label) = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("label", LABEL_OTHER);
+		boost::tie(mesh_label, created_label) = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("f:label", LABEL_OTHER);
 		assert(created_label);
 	}
 
