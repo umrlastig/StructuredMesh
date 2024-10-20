@@ -530,7 +530,7 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 }
 
 pathBridge::pathBridge(pathLink link): link(link), cost(0) {
-	N = int(sqrt(CGAL::squared_distance(link.first.point, link.second.point)));
+	N = ceil(sqrt(CGAL::squared_distance(link.first.point, link.second.point)));
 	xl = new double[N+1];
 	xr = new double[N+1];
 	z_segment = new double[N+1];
