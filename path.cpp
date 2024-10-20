@@ -110,12 +110,19 @@ std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_
 			if (lab == 3 || lab == 8 || lab == 9) {
 
 				Arrangement_2 arr;
-				std::map<Surface_mesh::vertex_index, Arrangement_2::Vertex_handle> point_map;
+				std::map<Arrangement_2::Vertex_handle, Surface_mesh::vertex_index> point_map;
 				for (auto edge: CGAL::edges(filtered_sm)) {
 					if (CGAL::is_border (edge, filtered_sm)) {
 						auto p0 = mesh.point(CGAL::source(edge, filtered_sm));
 						auto p1 = mesh.point(CGAL::target(edge, filtered_sm));
-						insert_non_intersecting_curve(arr, Traits_2::X_monotone_curve_2(Exact_predicates_kernel::Point_2(p0.x(), p0.y()), Exact_predicates_kernel::Point_2(p1.x(), p1.y())));
+						auto he = insert_non_intersecting_curve(arr, Traits_2::X_monotone_curve_2(Exact_predicates_kernel::Point_2(p0.x(), p0.y()), Exact_predicates_kernel::Point_2(p1.x(), p1.y())));
+						if (he->source()->point().x() == mesh.point(CGAL::source(edge, filtered_sm)).x()) {
+							point_map[he->source()] = CGAL::source(edge, filtered_sm);
+							point_map[he->target()] = CGAL::target(edge, filtered_sm);
+						} else {
+							point_map[he->source()] = CGAL::target(edge, filtered_sm);
+							point_map[he->target()] = CGAL::source(edge, filtered_sm);
+						}
 					}
 				}
 
@@ -124,17 +131,9 @@ std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_
 				{ // Arrangement
 					Surface_mesh skeleton;
 
-					Surface_mesh filtered_mesh;
-  					CGAL::copy_face_graph(filtered_sm, filtered_mesh);
-					AABB_tree tree;
-					PMP::build_AABB_tree(filtered_mesh, tree);
-
 					std::map<Arrangement_2::Vertex_handle, Surface_mesh::vertex_index> v_map;
 					for (auto v = arr.vertices_begin(); v != arr.vertices_end(); v++) {
-						auto p = v->point();						
-						auto location = PMP::locate_with_AABB_tree(K::Point_3(p.x(), p.y(), 0), tree, filtered_mesh);
-						auto point = PMP::construct_point(location, mesh);
-						v_map[v] = skeleton.add_vertex(point);
+						v_map[v] = skeleton.add_vertex(mesh.point(point_map[v]));
 					}
 
 					for (auto he = arr.edges_begin(); he != arr.edges_end(); ++he ) {
@@ -208,8 +207,10 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_ax
 				std::map<int, Surface_mesh::vertex_index> v_map;
 				for (auto v = iss->vertices_begin(); v != iss->vertices_end(); v++) {
 					auto p = v->point();
-					auto location = PMP::locate_with_AABB_tree(K::Point_3(p.x(), p.y(), 0), tree, filtered_mesh);
-					auto point = PMP::construct_point(location, mesh);
+					auto location = PMP::locate_with_AABB_tree(K::Ray_3(K::Point_3(p.x(), p.y(), 0), K::Direction_3(0, 0, 1)), tree, filtered_mesh);
+					if (location.first == filtered_mesh.null_face()) location = PMP::locate_with_AABB_tree(K::Ray_3(K::Point_3(p.x(), p.y(), 0), K::Direction_3(0, 0, -1)), tree, filtered_mesh);
+					if (location.first == filtered_mesh.null_face()) location = PMP::locate_with_AABB_tree(K::Point_3(p.x(), p.y(), 0), tree, filtered_mesh);
+					auto point = PMP::construct_point(location, filtered_mesh);
 					v_map[v->id()] = skeleton.add_vertex(point);
 				}
 
@@ -239,9 +240,11 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_ax
 				for (auto v = iss->vertices_begin(); v != iss->vertices_end(); v++) {
 					if (v->is_skeleton()) {
 						auto p = v->point();
-					auto location = PMP::locate_with_AABB_tree(K::Point_3(p.x(), p.y(), 0), tree, filtered_mesh);
-					auto point = PMP::construct_point(location, mesh);
-					v_map[v->id()] = skeleton.add_vertex(point);
+						auto location = PMP::locate_with_AABB_tree(K::Ray_3(K::Point_3(p.x(), p.y(), 0), K::Direction_3(0, 0, 1)), tree, filtered_mesh);
+						if (location.first == filtered_mesh.null_face()) location = PMP::locate_with_AABB_tree(K::Ray_3(K::Point_3(p.x(), p.y(), 0), K::Direction_3(0, 0, -1)), tree, filtered_mesh);
+						if (location.first == filtered_mesh.null_face()) location = PMP::locate_with_AABB_tree(K::Point_3(p.x(), p.y(), 0), tree, filtered_mesh);
+						auto point = PMP::construct_point(location, filtered_mesh);
+						v_map[v->id()] = skeleton.add_vertex(point);
 					}
 				}
 
