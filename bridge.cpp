@@ -10,6 +10,7 @@
 #include <CGAL/Side_of_triangle_mesh.h>
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
+#include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Count_stop_predicate.h>
 #include "ceres/ceres.h"
 
 #include <cmath>
@@ -1627,9 +1628,43 @@ Surface_mesh compute_crossing_mesh(Surface_mesh mesh, const pathBridge &bridge, 
 	Extrudor extrudor1 (false, crossing_mesh);
 	Extrudor extrudor2 (true, crossing_mesh);
 	CGAL::Polygon_mesh_processing::extrude_mesh (bridge.crossing_surface, crossing_mesh, extrudor1, extrudor2, CGAL::parameters::all_default(), CGAL::parameters::vertex_point_map(exact_points));
-	assert(!CGAL::Polygon_mesh_processing::does_self_intersect(crossing_mesh, CGAL::parameters::vertex_point_map(exact_points)));
+
+	if (CGAL::Polygon_mesh_processing::does_self_intersect(crossing_mesh)) {
+		Surface_mesh temp;
+		CGAL::copy_face_graph(bridge.crossing_surface, temp);
+		int r = 1;
+
+		while (CGAL::Polygon_mesh_processing::does_self_intersect(crossing_mesh) && r > 0) {
+			std::cerr << "temp.num_edges: " << temp.number_of_edges() << "\n";
+
+			std::cout << "Self_intersecting mesh to be simplified\n";
+			CGAL::Surface_mesh_simplification::Count_stop_predicate<Surface_mesh> stop(temp.number_of_edges());
+			r = CGAL::Surface_mesh_simplification::edge_collapse(temp, stop);
+			std::cerr << "num_edge_removed: " << r << "\n";
+
+			std::cout << "Mesh simplified\n";
+			std::cerr << "temp.num_edges: " << temp.number_of_edges() << "\n";
+
+			crossing_mesh.clear_without_removing_property_maps();
+			Extrudor extrudor1 (false, crossing_mesh);
+			Extrudor extrudor2 (true, crossing_mesh);
+			CGAL::Polygon_mesh_processing::extrude_mesh (temp, crossing_mesh, extrudor1, extrudor2, CGAL::parameters::all_default(), CGAL::parameters::vertex_point_map(exact_points));
+		}
+	}
 
 	{ // output
+		std::stringstream bridge_mesh_name;
+		bridge_mesh_name << "crossing_surface_" << ((int) bridge.label) << "_" << bridge.link.first.path << "_" << bridge.link.second.path << "_" << bridge.link.first.point << "_" << bridge.link.second.point << ".ply";
+		std::ofstream mesh_ofile (bridge_mesh_name.str().c_str());
+		CGAL::IO::write_PLY (mesh_ofile, bridge.crossing_surface);
+		mesh_ofile.close();
+	}
+	
+	{ // output
+		CGAL::Cartesian_converter<CGAL::Exact_predicates_exact_constructions_kernel, Surface_mesh::Point::R> from_exact;
+		for (auto vertex : crossing_mesh.vertices()) {
+			crossing_mesh.point(vertex) = from_exact(exact_points[vertex]);
+		}
 		std::stringstream bridge_mesh_name;
 		bridge_mesh_name << "crossing_mesh_" << ((int) bridge.label) << "_" << bridge.link.first.path << "_" << bridge.link.second.path << "_" << bridge.link.first.point << "_" << bridge.link.second.point << ".ply";
 		mesh_info.save_mesh(crossing_mesh, bridge_mesh_name.str().c_str());
@@ -1686,46 +1721,50 @@ void add_bridge_to_mesh(Surface_mesh &mesh, const std::vector<pathBridge> &bridg
 			boost::tie(vpm3, has_exact_points) = mesh_crossing.property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>("v:exact_point");
 			assert(has_exact_points);
 
-			// Crossing relabling
+			if (!CGAL::Polygon_mesh_processing::does_self_intersect(mesh_crossing)) {
 
-			CGAL::Polygon_mesh_processing::corefine(r_b, mesh_crossing, CGAL::parameters::vertex_point_map(vpm1).visitor(CorefinementVisitor(nullptr)), CGAL::parameters::vertex_point_map(vpm3).do_not_modify(true));
+				// Crossing relabling
 
-			CGAL::Polygon_mesh_processing::corefine(s_b, mesh_crossing, CGAL::parameters::vertex_point_map(vpm2).visitor(CorefinementVisitor(nullptr)), CGAL::parameters::vertex_point_map(vpm3).do_not_modify(true));
+				CGAL::Polygon_mesh_processing::corefine(r_b, mesh_crossing, CGAL::parameters::vertex_point_map(vpm1).visitor(CorefinementVisitor(nullptr)), CGAL::parameters::vertex_point_map(vpm3).do_not_modify(true));
 
-			CGAL::Side_of_triangle_mesh<Surface_mesh, CGAL::Exact_predicates_exact_constructions_kernel, Surface_mesh::Property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>> inside(mesh_crossing, vpm3);
+				CGAL::Polygon_mesh_processing::corefine(s_b, mesh_crossing, CGAL::parameters::vertex_point_map(vpm2).visitor(CorefinementVisitor(nullptr)), CGAL::parameters::vertex_point_map(vpm3).do_not_modify(true));
 
-			bool has_label;
+				CGAL::Side_of_triangle_mesh<Surface_mesh, CGAL::Exact_predicates_exact_constructions_kernel, Surface_mesh::Property_map<Surface_mesh::Vertex_index, CGAL::Exact_predicates_exact_constructions_kernel::Point_3>> inside(mesh_crossing, vpm3);
 
-			Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label_r_b;
-			boost::tie(label_r_b, has_label) = r_b.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
-			assert(has_label);
+				bool has_label;
 
-			for (auto face: r_b.faces()) {
-				if (label_r_b[face] == bridge.label) {
-					auto p1 = vpm1[CGAL::source(CGAL::halfedge(face, r_b), r_b)];
-					auto p2 = vpm1[CGAL::target(CGAL::halfedge(face, r_b), r_b)];
-					auto p3 = vpm1[CGAL::target(CGAL::next(CGAL::halfedge(face, r_b), r_b), r_b)];
+				Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label_r_b;
+				boost::tie(label_r_b, has_label) = r_b.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
+				assert(has_label);
 
-					if (inside(CGAL::centroid(p1, p2, p3)) == CGAL::ON_BOUNDED_SIDE) {
-						label_r_b[face] = 11;
+				for (auto face: r_b.faces()) {
+					if (label_r_b[face] == bridge.label) {
+						auto p1 = vpm1[CGAL::source(CGAL::halfedge(face, r_b), r_b)];
+						auto p2 = vpm1[CGAL::target(CGAL::halfedge(face, r_b), r_b)];
+						auto p3 = vpm1[CGAL::target(CGAL::next(CGAL::halfedge(face, r_b), r_b), r_b)];
+
+						if (inside(CGAL::centroid(p1, p2, p3)) == CGAL::ON_BOUNDED_SIDE) {
+							label_r_b[face] = 11;
+						}
 					}
 				}
-			}
 
-			Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label_s_b;
-			boost::tie(label_s_b, has_label) = s_b.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
-			assert(has_label);
+				Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label_s_b;
+				boost::tie(label_s_b, has_label) = s_b.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
+				assert(has_label);
 
-			for (auto face: s_b.faces()) {
-				if (label_s_b[face] == bridge.label) {
-					auto p1 = vpm2[CGAL::source(CGAL::halfedge(face, s_b), s_b)];
-					auto p2 = vpm2[CGAL::target(CGAL::halfedge(face, s_b), s_b)];
-					auto p3 = vpm2[CGAL::target(CGAL::next(CGAL::halfedge(face, s_b), s_b), s_b)];
+				for (auto face: s_b.faces()) {
+					if (label_s_b[face] == bridge.label) {
+						auto p1 = vpm2[CGAL::source(CGAL::halfedge(face, s_b), s_b)];
+						auto p2 = vpm2[CGAL::target(CGAL::halfedge(face, s_b), s_b)];
+						auto p3 = vpm2[CGAL::target(CGAL::next(CGAL::halfedge(face, s_b), s_b), s_b)];
 
-					if (inside(CGAL::centroid(p1, p2, p3)) == CGAL::ON_BOUNDED_SIDE) {
-						label_s_b[face] = 11;
+						if (inside(CGAL::centroid(p1, p2, p3)) == CGAL::ON_BOUNDED_SIDE) {
+							label_s_b[face] = 11;
+						}
 					}
 				}
+
 			}
 
 			std::cout << "Remove bridge: " << CGAL::Polygon_mesh_processing::corefine_and_compute_difference(mesh, r_b, mesh, CGAL::parameters::vertex_point_map(exact_points).visitor(CorefinementVisitor(&mesh)), CGAL::parameters::vertex_point_map(vpm1), CGAL::parameters::vertex_point_map(exact_points)) << "\n";
