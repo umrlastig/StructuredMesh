@@ -51,6 +51,8 @@ class Raster {
 			return ret;
 		}
 
+		void fill_holes();
+
 		Raster(char *dsm_path, char *dtm_path, char *land_cover_path);
 };
 
