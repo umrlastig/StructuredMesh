@@ -9,7 +9,7 @@ set (CMAKE_CXX_STANDARD 17)
 
 #add_compile_options(-O0)
 
-if(NOT CMAKE_BUILD_TYPE MATCHES "Release")
+if(CMAKE_BUILD_TYPE MATCHES "Debug")
   add_compile_options(-fsanitize=address)
   add_link_options(-fsanitize=address)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")
