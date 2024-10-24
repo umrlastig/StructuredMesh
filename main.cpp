@@ -379,7 +379,7 @@ int main(int argc, char **argv) {
 		std::cout << "\rBridge " << i++ << "/" << links.size() << "               ";
 		std::cout.flush();
 		pathBridge bridge_result = bridge(link, mesh, tree, mesh_info);
-		if (bridge_result.cost < 50) {
+		if (bridge_result.cost < 10) {
 			bridges_to_add.push_back(bridge_result);
 		}
 	}
