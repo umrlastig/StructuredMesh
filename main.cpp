@@ -13,6 +13,8 @@ void add_label(const Raster &raster, Surface_mesh &mesh);
 
 void change_vertical_faces(Surface_mesh &mesh, const Raster &raster);
 
+void compute_normal_angle_coef(Surface_mesh &mesh);
+
 std::vector<std::list<Surface_mesh::Face_index>> compute_path(Surface_mesh &mesh);
 
 std::map<int, CGAL::Polygon_with_holes_2<Exact_predicates_kernel>> compute_path_polygon(const Surface_mesh &mesh, const std::vector<std::list<Surface_mesh::Face_index>> &paths, const Surface_mesh_info &mesh_info);
@@ -344,9 +346,13 @@ int main(int argc, char **argv) {
 		std::cout << "Mesh and terrain mesh load" << std::endl;
 	}
 
-	/*change_vertical_faces(mesh, raster);*/ // Need label information from point cloud
+	/*change_vertical_faces(mesh, raster); // Need label information from point cloud
 	mesh_info.save_mesh(mesh, "final-mesh-without-facade.ply");
-	std::cout << "Label set for vertical face" << std::endl;
+	std::cout << "Label set for vertical face" << std::endl;*/
+
+	compute_normal_angle_coef(mesh);
+	mesh_info.save_mesh(mesh, "final-mesh-with-normal-angle-ceof.ply");
+	std::cout << "Normal angle coef computed" << std::endl;
 
 	std::vector<std::list<Surface_mesh::Face_index>> paths = compute_path(mesh);
 	mesh_info.save_mesh(mesh, "final-mesh-with-path.ply");

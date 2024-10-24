@@ -148,3 +148,20 @@ void change_vertical_faces(Surface_mesh &mesh, const Raster &raster) {
 	}
 
 }
+
+void compute_normal_angle_coef(Surface_mesh &mesh) {
+	Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> normal_angle_coef;
+	bool created_normal_angle_coef;
+	boost::tie(normal_angle_coef, created_normal_angle_coef) = mesh.add_property_map<Surface_mesh::Face_index, K::FT>("f:n_a_coef", 1);
+	assert(created_normal_angle_coef);
+
+	for (auto face : mesh.faces()) {
+		CGAL::Vertex_around_face_iterator<Surface_mesh> vbegin, vend;
+		boost::tie(vbegin, vend) = vertices_around_face(mesh.halfedge(face), mesh);
+		auto p0 = mesh.point(*(vbegin++));
+		auto p1 = mesh.point(*(vbegin++));
+		auto p2 = mesh.point(*(vbegin++));
+		auto n = CGAL::orthogonal_vector (p0, p1, p2);
+		normal_angle_coef[face] = sin(-CGAL::approximate_angle(n, K::Vector_3(0,0,1)) * M_PI / 180) + 1;
+	}
+}

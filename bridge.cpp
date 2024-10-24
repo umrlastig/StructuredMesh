@@ -581,6 +581,7 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 		const Surface_mesh &mesh;
 		const AABB_tree &tree;
 		Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_labels;
+		Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> normal_angle_coef;
 
 		double cost_at_point(const double j, const double* const z, double *grad) const {
 			double local_cost = 0;
@@ -601,11 +602,11 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 					// point is above the surface
 					auto l = mesh_labels[location_bottom.first];
 					auto point_bottom = PMP::construct_point(location_bottom, mesh);
-					local_cost = abs(z[0] - ((double) point_bottom.z()));
+					local_cost = abs(z[0] - ((double) point_bottom.z())) * normal_angle_coef[location_bottom.first];
 					if (grad != nullptr) *grad = (z[0] > point_bottom.z()) ? 1 : -1;
 					if (l != 0 && l != label) {
 						if ((l != 8 && l != 9) || (label != 8 && label != 9)) {
-							local_cost += cost;
+							local_cost += cost * normal_angle_coef[location_bottom.first];
 						}
 					}
 				} else {
@@ -617,17 +618,17 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 						// the point is above the surface
 						auto l = mesh_labels[location_bottom.first];
 						auto point_bottom = PMP::construct_point(location_bottom, mesh);
-						local_cost = abs(z[0] - ((double) point_bottom.z()));
+						local_cost = abs(z[0] - ((double) point_bottom.z())) * normal_angle_coef[location_bottom.first];
 						if (grad != nullptr) *grad = (z[0] > point_bottom.z()) ? 1 : -1;
 						if (l != 0 && l != label) {
 							if ((l != 8 && l != 9) || (label != 8 && label != 9)) {
-								local_cost += cost;
+								local_cost += cost * normal_angle_coef[location_bottom.first];
 							}
 						}
 
 						auto point_top = PMP::construct_point(location_top, mesh);
 						if (point_top.z() - z[0] < tunnel_height) {
-							local_cost += (tunnel_height - (point_top.z() - z[0])) / 2;
+							local_cost += ((tunnel_height - (point_top.z() - z[0])) / 2) * normal_angle_coef[location_top.first];
 							if (grad != nullptr) *grad += 1/2;
 						}
 					} else {
@@ -635,15 +636,15 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 						auto point_top = PMP::construct_point(location_top, mesh);
 						if (point_top.z() - z[0] < tunnel_height/2) {
 							auto l = mesh_labels[location_top.first];
-							local_cost = ((double) point_top.z()) - z[0];
+							local_cost = (((double) point_top.z()) - z[0]) * normal_angle_coef[location_top.first];
 							if (grad != nullptr) *grad = -1;
 							if (l != 0 && l != label) {
 								if ((l != 8 && l != 9) || (label != 8 && label != 9)) {
-									local_cost += cost;
+									local_cost += cost * normal_angle_coef[location_top.first];
 								}
 							}
 						} else if (point_top.z() - z[0] < tunnel_height) {
-							local_cost = z[0] + tunnel_height - point_top.z();
+							local_cost = (z[0] + tunnel_height - point_top.z()) * normal_angle_coef[location_top.first];
 							if (grad != nullptr) *grad = 1;
 						} else {
 							local_cost = 0;
@@ -677,6 +678,11 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 			bool has_label;
 			boost::tie(mesh_labels, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 			assert(has_label);
+
+			// Get normal_angle_coef property
+			bool has_normal_angle_coef;
+			boost::tie(normal_angle_coef, has_normal_angle_coef) = mesh.property_map<Surface_mesh::Face_index, K::FT>("f:n_a_coef");
+			assert(has_normal_angle_coef);
 		}
 
 		bool Evaluate(double const* const* parameters, double* residual, double** jacobians) const {
@@ -836,6 +842,11 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 	bool has_label;
 	boost::tie(label, has_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
 	assert(has_label);
+
+	Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> normal_angle_coef;
+	bool has_normal_angle_coef;
+	boost::tie(normal_angle_coef, has_normal_angle_coef) = mesh.property_map<Surface_mesh::Face_index, K::FT>("f:n_a_coef");
+	assert(has_normal_angle_coef);
 
 	typedef CGAL::Face_filtered_graph<Surface_mesh> Filtered_graph;
 	Filtered_graph filtered_sm1(mesh, link.first.path, path);
@@ -1083,10 +1094,10 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 					// point is above the surface
 					auto l = label[location_bottom.first];
 					auto point_bottom = PMP::construct_point(location_bottom, mesh);
-					point_cost = abs(bridge.z_segment[i] - point_bottom.z());
+					point_cost = abs(bridge.z_segment[i] - point_bottom.z()) * normal_angle_coef[location_bottom.first];
 					if (l != 0 && l != bridge.label) {
 						if ((l != 8 && l != 9) || (bridge.label != 8 && bridge.label != 9)) {
-							point_cost += theta;
+							point_cost += theta * normal_angle_coef[location_bottom.first];
 						} else {
 							bridge_crossing.insert(location_bottom.first);
 						}
@@ -1100,10 +1111,10 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 						// the point is above the surface
 						auto l = label[location_bottom.first];
 						auto point_bottom = PMP::construct_point(location_bottom, mesh);
-						point_cost = abs(bridge.z_segment[i] - point_bottom.z());
+						point_cost = abs(bridge.z_segment[i] - point_bottom.z()) * normal_angle_coef[location_bottom.first];
 						if (l != 0 && l != bridge.label) {
 							if ((l != 8 && l != 9) || (bridge.label != 8 && bridge.label != 9)) {
-								point_cost += theta;
+								point_cost += theta * normal_angle_coef[location_bottom.first];
 							} else {
 								bridge_crossing.insert(location_bottom.first);
 							}
@@ -1111,23 +1122,23 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 
 						auto point_top = PMP::construct_point(location_top, mesh);
 						if (point_top.z() - bridge.z_segment[i] < tunnel_height) {
-							point_cost += abs(tunnel_height - (point_top.z() - bridge.z_segment[i])) / 2;
+							point_cost += (abs(tunnel_height - (point_top.z() - bridge.z_segment[i])) / 2) * normal_angle_coef[location_top.first];
 						}
 					} else {
 						// the point is under the surface
 						auto point_top = PMP::construct_point(location_top, mesh);
 						if (point_top.z() - bridge.z_segment[i] < tunnel_height/2) {
 							auto l = label[location_top.first];
-							point_cost = abs(bridge.z_segment[i] - ((double) point_top.z()));
+							point_cost = abs(bridge.z_segment[i] - ((double) point_top.z())) * normal_angle_coef[location_top.first];
 							if (l != 0 && l != bridge.label) {
 								if ((l != 8 && l != 9) || (bridge.label != 8 && bridge.label != 9)) {
-									point_cost += theta;
+									point_cost += theta * normal_angle_coef[location_top.first];
 								} else {
 									bridge_crossing.insert(location_top.first);
 								}
 							}
 						} else if (point_top.z() - bridge.z_segment[i] < tunnel_height) {
-							point_cost = abs(tunnel_height - (point_top.z() - bridge.z_segment[i]));
+							point_cost = abs(tunnel_height - (point_top.z() - bridge.z_segment[i])) * normal_angle_coef[location_top.first];
 						}
 					}
 				}
