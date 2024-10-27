@@ -34,7 +34,7 @@ void Raster::align_land_cover_and_dsm() {
                     }
                 }
             }
-            if (pow(square_moy/n - pow(moy/n, 2), 0.5) > 0.2) {
+            if (pow(square_moy/n - pow(moy/n, 2), 0.5) > 1) {
                 new_land_cover[L][P] = std::max_element(neighboors_count, neighboors_count + LABELS.size()) - neighboors_count;
             } else {
                 new_land_cover[L][P] = land_cover[L][P];
