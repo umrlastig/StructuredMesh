@@ -96,7 +96,7 @@ void Raster::fill_holes() {
         std::list<std::pair<float,std::list<std::pair<int,int>>>> holes;
         for (int L = 1; L < ySize - 1; L++) {
             for (int P = 1; P < xSize -1; P++) {
-                if ((land_cover[L][P] >= 1 && land_cover[L][P] <= 3) || land_cover[L][P] >= 6) {
+                if (land_cover[L][P] == LABEL_RAIL || land_cover[L][P] == LABEL_ROAD || land_cover[L][P] == LABEL_WATER) {
                     if ((dsm[L][P] <= dsm[L+1][P]) && (dsm[L][P] <= dsm[L-1][P]) && (dsm[L][P] <= dsm[L][P+1]) && (dsm[L][P] <= dsm[L][P-1])) {
                         holes.push_back(std::pair<float,std::list<std::pair<int,int>>>(dsm[L][P], {std::pair<int,int>(P,L)}));
                     }
@@ -192,7 +192,7 @@ void Raster::fill_holes() {
         std::list<std::pair<float,std::list<std::pair<int,int>>>> holes;
         for (int L = 1; L < ySize - 1; L++) {
             for (int P = 1; P < xSize -1; P++) {
-                if ((land_cover[L][P] >= 1 && land_cover[L][P] <= 3) || land_cover[L][P] >= 6) {
+                if (land_cover[L][P] == LABEL_RAIL || land_cover[L][P] == LABEL_ROAD || land_cover[L][P] == LABEL_WATER) {
                     if ((dsm[L][P] >= dsm[L+1][P]) && (dsm[L][P] >= dsm[L-1][P]) && (dsm[L][P] >= dsm[L][P+1]) && (dsm[L][P] >= dsm[L][P-1])) {
                         holes.push_back(std::pair<float,std::list<std::pair<int,int>>>(dsm[L][P], {std::pair<int,int>(P,L)}));
                     }

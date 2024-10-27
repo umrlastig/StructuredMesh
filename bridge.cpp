@@ -128,7 +128,7 @@ std::set<pathLink> link_paths(const Surface_mesh &mesh, const std::vector<std::l
 
 	std::set<pathLink> result;
 
-	for (int selected_label:  {3, 8, 9}) {
+	for (int selected_label:  {LABEL_WATER, LABEL_RAIL, LABEL_ROAD}) {
 		// List path with selected label
 		std::list<int> same_label_paths;
 		for (std::size_t i = 0; i < paths.size(); i++) {
@@ -605,7 +605,7 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 					local_cost = abs(z[0] - ((double) point_bottom.z())) * normal_angle_coef[location_bottom.first];
 					if (grad != nullptr) *grad = (z[0] > point_bottom.z()) ? 1 : -1;
 					if (l != 0 && l != label) {
-						if ((l != 8 && l != 9) || (label != 8 && label != 9)) {
+						if ((l != LABEL_RAIL && l != LABEL_ROAD) || (label != LABEL_RAIL && label != LABEL_ROAD)) {
 							local_cost += cost * normal_angle_coef[location_bottom.first];
 						}
 					}
@@ -621,7 +621,7 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 						local_cost = abs(z[0] - ((double) point_bottom.z())) * normal_angle_coef[location_bottom.first];
 						if (grad != nullptr) *grad = (z[0] > point_bottom.z()) ? 1 : -1;
 						if (l != 0 && l != label) {
-							if ((l != 8 && l != 9) || (label != 8 && label != 9)) {
+							if ((l != LABEL_RAIL && l != LABEL_ROAD) || (label != LABEL_RAIL && label != LABEL_ROAD)) {
 								local_cost += cost * normal_angle_coef[location_bottom.first];
 							}
 						}
@@ -639,7 +639,7 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 							local_cost = (((double) point_top.z()) - z[0]) * normal_angle_coef[location_top.first];
 							if (grad != nullptr) *grad = -1;
 							if (l != 0 && l != label) {
-								if ((l != 8 && l != 9) || (label != 8 && label != 9)) {
+								if ((l != LABEL_RAIL && l != LABEL_ROAD) || (label != LABEL_RAIL && label != LABEL_ROAD)) {
 									local_cost += cost * normal_angle_coef[location_top.first];
 								}
 							}
@@ -1096,7 +1096,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 					auto point_bottom = PMP::construct_point(location_bottom, mesh);
 					point_cost = abs(bridge.z_segment[i] - point_bottom.z()) * normal_angle_coef[location_bottom.first];
 					if (l != 0 && l != bridge.label) {
-						if ((l != 8 && l != 9) || (bridge.label != 8 && bridge.label != 9)) {
+						if ((l != LABEL_RAIL && l != LABEL_ROAD) || (bridge.label != LABEL_RAIL && bridge.label != LABEL_ROAD)) {
 							point_cost += theta * normal_angle_coef[location_bottom.first];
 						} else {
 							bridge_crossing.insert(location_bottom.first);
@@ -1113,7 +1113,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 						auto point_bottom = PMP::construct_point(location_bottom, mesh);
 						point_cost = abs(bridge.z_segment[i] - point_bottom.z()) * normal_angle_coef[location_bottom.first];
 						if (l != 0 && l != bridge.label) {
-							if ((l != 8 && l != 9) || (bridge.label != 8 && bridge.label != 9)) {
+							if ((l != LABEL_RAIL && l != LABEL_ROAD) || (bridge.label != LABEL_RAIL && bridge.label != LABEL_ROAD)) {
 								point_cost += theta * normal_angle_coef[location_bottom.first];
 							} else {
 								bridge_crossing.insert(location_bottom.first);
@@ -1131,7 +1131,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 							auto l = label[location_top.first];
 							point_cost = abs(bridge.z_segment[i] - ((double) point_top.z())) * normal_angle_coef[location_top.first];
 							if (l != 0 && l != bridge.label) {
-								if ((l != 8 && l != 9) || (bridge.label != 8 && bridge.label != 9)) {
+								if ((l != LABEL_RAIL && l != LABEL_ROAD) || (bridge.label != LABEL_RAIL && bridge.label != LABEL_ROAD)) {
 									point_cost += theta * normal_angle_coef[location_top.first];
 								} else {
 									bridge_crossing.insert(location_top.first);
