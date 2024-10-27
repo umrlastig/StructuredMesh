@@ -288,8 +288,7 @@ int main(int argc, char **argv) {
 			assert(has_point_int_label);
 			for (auto ph: point_cloud) {
 				int value = int_label[ph];
-				if (value >= LABELS.size()) value = LABEL_OTHER;
-				if (value < 0) value = LABEL_OTHER;
+				if (value < 0 || ((unsigned int) value) >= LABELS.size()) value = LABEL_OTHER;
 				point_cloud_label[ph] = static_cast<unsigned char>(value);
 			}
 			std::cout << "Point cloud label from int_label property" << std::endl;
