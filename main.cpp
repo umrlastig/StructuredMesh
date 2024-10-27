@@ -11,7 +11,7 @@
 
 void add_label(const Raster &raster, Surface_mesh &mesh);
 
-void change_vertical_faces(Surface_mesh &mesh, const Raster &raster);
+void change_vertical_faces(Surface_mesh &mesh);
 
 void compute_normal_angle_coef(Surface_mesh &mesh);
 
@@ -362,9 +362,9 @@ int main(int argc, char **argv) {
 		std::cout << "Mesh and point cloud associate" << std::endl;
 	}
 
-	/*change_vertical_faces(mesh, raster); // Need label information from point cloud
+	change_vertical_faces(mesh);
 	mesh_info.save_mesh(mesh, "final-mesh-without-facade.ply");
-	std::cout << "Label set for vertical face" << std::endl;*/
+	std::cout << "Label set for vertical face" << std::endl;
 
 	compute_normal_angle_coef(mesh);
 	mesh_info.save_mesh(mesh, "final-mesh-with-normal-angle-ceof.ply");
