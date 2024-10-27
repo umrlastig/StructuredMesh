@@ -18,6 +18,7 @@
 #include <CGAL/Polygon_with_holes_2.h>
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Straight_skeleton_2.h>
+#include <CGAL/Point_set_3.h>
 
 #include <ogr_spatialref.h>
 
@@ -30,6 +31,9 @@ typedef CGAL::Surface_mesh<Point_3>                         Surface_mesh;
 typedef CGAL::Polygon_2<K>                                  Polygon;
 
 typedef CGAL::Exact_predicates_inexact_constructions_kernel Exact_predicates_kernel;
+
+typedef Exact_predicates_kernel Point_set_kernel;
+typedef CGAL::Point_set_3<Point_set_kernel::Point_3> Point_set;
 
 /// A point on a skeleton
 struct skeletonPoint {

@@ -401,10 +401,33 @@ int main(int argc, char **argv) {
 	}
 	std::cout << "\rBridges computed               " << std::endl;
 
-	add_bridge_to_mesh(mesh, bridges_to_add, path_polygon, mesh_info);
+	Surface_mesh::Property_map<Surface_mesh::Edge_index, bool> edge_blocked;
+	bool created_edge_blocked;
+	boost::tie(edge_blocked, created_edge_blocked) = mesh.add_property_map<Surface_mesh::Edge_index, bool>("e:blocked", true);
+	assert(created_edge_blocked);
+
+	add_bridge_to_mesh(mesh, point_cloud, bridges_to_add, path_polygon, mesh_info);
 
 	mesh_info.save_mesh(mesh, "final-closed-mesh-with-path-and-bridges.ply");
 	std::cout << "Bridges added to mesh" << std::endl;
+
+	float alpha = 2, beta = 1, gamma = 0.01;
+	K::FT mean_point_per_area = get_mean_point_per_area(mesh, point_cloud);
+	K::FT min_point_per_area = mean_point_per_area / 2;
+	Ablation_study ablation (false);
+
+	Cost_stop_predicate stop(5);
+	//SMS::Count_stop_predicate<Surface_mesh> stop(50);
+	const LindstromTurk_param params (10,1,10,1,0.000001,1,0.01);
+	Custom_placement pf(params, mesh, point_cloud);
+	Custom_cost cf(params, alpha, beta, gamma, 0.01, min_point_per_area, mesh, point_cloud);
+	My_visitor mv (params, alpha, beta, gamma, min_point_per_area, mesh, mesh_info, point_cloud, ablation);
+	SMS::Bounded_normal_change_filter<> filter;
+	SMS::edge_collapse(mesh, stop, CGAL::parameters::get_cost(cf).filter(filter).get_placement(pf).visitor(mv).edge_is_constrained_map(edge_blocked));
+
+	mesh_info.save_mesh(mesh, "final-closed-mesh-with-path-and-bridges-simplified.ply");
+
+	std::cout << "Mesh simplified" << std::endl;
 
 	return EXIT_SUCCESS;
 }

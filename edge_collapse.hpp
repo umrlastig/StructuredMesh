@@ -8,13 +8,8 @@
 #include <vector>
 #include <set>
 
-#include <CGAL/Point_set_3.h>
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
 #include <CGAL/Surface_mesh_simplification/Edge_collapse_visitor_base.h>
-
-typedef Exact_predicates_kernel Point_set_kernel;
-
-typedef CGAL::Point_set_3<Point_set_kernel::Point_3> Point_set;
 
 namespace SMS = CGAL::Surface_mesh_simplification;
 
