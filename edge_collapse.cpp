@@ -1816,7 +1816,6 @@ void My_visitor::OnStarted (Surface_mesh&) {
 		// Add label to face
 		bool created_label;
 		boost::tie(mesh_label, created_label) = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("f:label", LABEL_OTHER);
-		assert(created_label);
 	}
 
 	if (beta > 0 || gamma > 0 || params.label_preservation > 0 || params.semantic_border_optimization > 0) {
