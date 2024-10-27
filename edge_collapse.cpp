@@ -2540,3 +2540,45 @@ void My_visitor::OnCollapsed (const SMS::Edge_profile<Surface_mesh>& prof, const
 
 // total_cost += c_cost;
 }
+
+Point_set compute_point_cloud (Surface_mesh& mesh) {
+	std::list<K::Point_3> out;
+	PMP::sample_triangle_mesh(mesh, std::back_inserter(out), CGAL::parameters::use_grid_sampling(true).do_sample_edges(false).do_sample_vertices(false));
+
+	CGAL::Cartesian_converter<K, Point_set_kernel> type_converter;
+
+	Point_set point_cloud;
+	for (const auto& p: out) {
+		point_cloud.insert(type_converter(p));
+	}
+
+	return point_cloud;
+}
+
+void associate_mesh_point_cloud (Surface_mesh& mesh, Point_set& point_cloud) {
+	Point_set::Property_map<unsigned char> point_cloud_label;
+	bool created_point_label;
+	boost::tie (point_cloud_label, created_point_label) = point_cloud.add_property_map<unsigned char>("p:label", LABEL_OTHER);
+
+	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_label;
+	bool has_mesh_label;
+	boost::tie(mesh_label, has_mesh_label) = mesh.property_map<Surface_mesh::Face_index, unsigned char>("f:label");
+	assert(has_mesh_label);
+
+	Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
+	bool created_point_in_face;
+	boost::tie(point_in_face, created_point_in_face) = mesh.add_property_map<Surface_mesh::Face_index, std::list<Point_set::Index>>("f:points", std::list<Point_set::Index>());
+	assert(created_point_in_face);
+
+	AABB_tree mesh_tree;
+	PMP::build_AABB_tree(mesh, mesh_tree);
+
+	CGAL::Cartesian_converter<Point_set_kernel, K> type_converter;
+
+	for (auto &ph: point_cloud) {
+		auto p = type_converter(point_cloud.point(ph));
+		auto location = PMP::locate_with_AABB_tree(p, mesh_tree, mesh);
+		if (created_point_label) point_cloud_label[ph] = mesh_label[location.first];
+		point_in_face[location.first].push_back(ph);
+	}
+}

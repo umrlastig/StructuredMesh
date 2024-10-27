@@ -146,4 +146,8 @@ struct My_visitor : SMS::Edge_collapse_visitor_base<Surface_mesh> {
 		void OnCollapsed (const SMS::Edge_profile<Surface_mesh>&, const Surface_mesh::Vertex_index vd);
 };
 
+Point_set compute_point_cloud (Surface_mesh& mesh);
+
+void associate_mesh_point_cloud (Surface_mesh& mesh, Point_set& point_cloud);
+
 #endif  /* !EDGE_COLLAPSE_H_ */

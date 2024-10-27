@@ -80,7 +80,7 @@ void Surface_mesh_info::save_mesh(const Surface_mesh &mesh, const char *filename
 	mesh_ofile.close();
 }
 
-std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, const Surface_mesh_info &mesh_info) {
+std::tuple<Surface_mesh, std::tuple<Surface_mesh, Point_set>> compute_meshes(const Raster &raster, const Surface_mesh_info &mesh_info) {
 
 	std::cout << "Terrain mesh" << std::endl;
 	Surface_mesh terrain_mesh;
@@ -226,7 +226,7 @@ std::tuple<Surface_mesh, Surface_mesh> compute_meshes(const Raster &raster, cons
 
 	mesh_info.save_mesh(mesh, "final-mesh.ply");
 
-	return std::make_tuple(terrain_mesh, mesh);
+	return std::make_tuple(terrain_mesh, std::make_tuple(mesh, point_cloud));
 }
 
 int main(int argc, char **argv) {
@@ -239,7 +239,7 @@ int main(int argc, char **argv) {
 		{"LOD0", required_argument, NULL, '0'},
 		{"orthophoto", required_argument, NULL, 'i'},
 		{"mesh", required_argument, NULL, 'M'},
-		{"terrain_mesh", required_argument, NULL, 'T'},
+		{"point_cloud", required_argument, NULL, 'P'},
 		{NULL, 0, 0, '\0'}
 	};
 
@@ -249,9 +249,9 @@ int main(int argc, char **argv) {
 	char *LOD0 = NULL;
 	char *orthophoto = NULL;
 	char *MESH = NULL;
-	char *TERRAIN_MESH = NULL;
+	char *POINT_CLOUD = NULL;
 
-	while ((opt = getopt_long(argc, argv, "hs:t:l:0:i:M:T:", options, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "hs:t:l:0:i:M:P:", options, NULL)) != -1) {
 		switch(opt) {
 			case 'h':
 				std::cout << "Usage: " << argv[0] << " [OPTIONS] -s DSM -t DTM -l land_use_map" << std::endl;
@@ -264,7 +264,7 @@ int main(int argc, char **argv) {
 				std::cout << " -0, --LOD0=/file/path.shp          LOD0 as Shapefile." << std::endl << std::endl;
 				std::cout << " -i, --orthophoto=/file/path.tiff   RGB orthophoto as TIFF file." << std::endl;
 				std::cout << " -M, --mesh=/file/path.ply          mesh as PLY file." << std::endl;
-				std::cout << " -T, --terrain_mesh=/file/path.ply  terrain mesh as PLY file." << std::endl;
+				std::cout << " -P, --point_cloud=/file/path.ply   point cloud as PLY file." << std::endl;
 				return EXIT_SUCCESS;
 				break;
 			case 's':
@@ -285,8 +285,8 @@ int main(int argc, char **argv) {
 			case 'M':
 				MESH = optarg;
 				break;
-			case 'T':
-				TERRAIN_MESH = optarg;
+			case 'P':
+				POINT_CLOUD = optarg;
 				break;
 		}
 	}
@@ -318,12 +318,19 @@ int main(int argc, char **argv) {
 	Surface_mesh_info mesh_info(raster.get_crs(), min_x, min_y);
 
 	Surface_mesh terrain_mesh, mesh;
-	if (MESH == NULL || TERRAIN_MESH == NULL) {
-		std::tie(terrain_mesh, mesh) = compute_meshes(raster, mesh_info);
+	Point_set point_cloud;
+	if (MESH == NULL) {
+		std::tuple<Surface_mesh&, Point_set&> nested = std::tie(mesh, point_cloud);
+		std::tie(terrain_mesh, nested) = compute_meshes(raster, mesh_info);
 
 		std::ofstream mesh_ofile ("save_mesh.ply", std::ios_base::binary);
 		CGAL::IO::set_binary_mode (mesh_ofile);
 		CGAL::IO::write_PLY (mesh_ofile, mesh);
+		mesh_ofile.close();
+
+		mesh_ofile = std::ofstream("save_pointcloud.ply", std::ios_base::binary);
+		CGAL::IO::set_binary_mode (mesh_ofile);
+		CGAL::IO::write_PLY (mesh_ofile, point_cloud);
 		mesh_ofile.close();
 
 		mesh_ofile = std::ofstream("save_terrain_mesh.ply", std::ios_base::binary);
@@ -338,12 +345,21 @@ int main(int argc, char **argv) {
 		CGAL::IO::set_binary_mode (mesh_ifile);
 		CGAL::IO::read_PLY (mesh_ifile, mesh);
 		mesh_ifile.close();
+		std::cout << "Mesh load" << std::endl;
 
-		mesh_ifile = std::ifstream(TERRAIN_MESH, std::ios_base::binary);
-		CGAL::IO::set_binary_mode (mesh_ifile);
-		CGAL::IO::read_PLY (mesh_ifile, terrain_mesh);
-		mesh_ifile.close();
-		std::cout << "Mesh and terrain mesh load" << std::endl;
+		if (POINT_CLOUD != NULL) {
+			std::ifstream mesh_ifile (POINT_CLOUD, std::ios_base::binary);
+			CGAL::IO::set_binary_mode (mesh_ifile);
+			CGAL::IO::read_PLY (mesh_ifile, point_cloud);
+			mesh_ifile.close();
+			std::cout << "Point_cloud load" << std::endl;
+		} else {
+			point_cloud = compute_point_cloud(mesh);
+			std::cout << "Point_cloud compute" << std::endl;
+		}
+
+		associate_mesh_point_cloud(mesh, point_cloud);
+		std::cout << "Mesh and point cloud associate" << std::endl;
 	}
 
 	/*change_vertical_faces(mesh, raster); // Need label information from point cloud
