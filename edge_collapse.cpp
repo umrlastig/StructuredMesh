@@ -1541,6 +1541,15 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 
 			if (new_faces.size() == 0) return result_type();
 
+			//Check for angle between faces lower than 135°
+			for (std::size_t face_id = 0; face_id < new_faces.size(); face_id++) {
+				if (new_faces[face_id].vertex(1) == new_faces[(face_id + 1) % new_faces.size()].vertex(0)) {
+					if (CGAL::approximate_angle(CGAL::orthogonal_vector(new_faces[face_id].vertex(0), new_faces[face_id].vertex(1), new_faces[face_id].vertex(2)), CGAL::orthogonal_vector(new_faces[(face_id + 1) % new_faces.size()].vertex(0), new_faces[(face_id + 1) % new_faces.size()].vertex(1), new_faces[(face_id + 1) % new_faces.size()].vertex(2))) > 135) {
+						return result_type();
+					}
+				}
+			}
+
 			std::vector<K::FT> new_face_cost (new_faces.size(), 0);
 
 			// geometric error
