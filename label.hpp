@@ -15,7 +15,7 @@ struct Label {
     Label(unsigned char value, std::string label, unsigned char red, unsigned char green, unsigned char blue): value(value), label(label), red(red), green(green), blue(blue) {}
 };
 
-static std::array<Label, 45> LABELS {
+static std::array<Label, 46> LABELS {
     Label(0, "other", 255, 255, 255),
     Label(1, "construction_site", 140, 90, 100),
     Label(2, "bare_ground", 71, 58, 17),
@@ -60,13 +60,15 @@ static std::array<Label, 45> LABELS {
     Label(41, "building", 240, 0, 0),
     Label(42, "high_building", 127, 1, 0),
     Label(43, "pipeline", 35, 85, 85),
-    Label(44, "unknown", 250, 250, 150)
+    Label(44, "level_crossing", 108, 56, 171),
+    Label(45, "unknown", 250, 250, 150)
 };
 
-const unsigned char LABEL_OTHER = 44;
+const unsigned char LABEL_OTHER = 45;
 
 const unsigned char LABEL_RAIL = 27;
 const unsigned char LABEL_WATER = 21;
 const unsigned char LABEL_ROAD = 28;
+const unsigned char LABEL_LEVEL_CROSSING = 44;
 
 #endif  /* !LABEL_H_ */

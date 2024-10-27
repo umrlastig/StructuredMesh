@@ -1822,7 +1822,7 @@ void add_bridge_to_mesh(Surface_mesh &mesh, Point_set &point_cloud, const std::v
 				auto location_top = PMP::locate_with_AABB_tree(ray_top, mesh_tree, r_b);
 				auto location_bottom = PMP::locate_with_AABB_tree(ray_bottom, mesh_tree, r_b);
 
-				if (location_top.first != r_b.null_face() || location_bottom.first != r_b.null_face()) point_cloud_label[ph] = 11;
+				if (location_top.first != r_b.null_face() || location_bottom.first != r_b.null_face()) point_cloud_label[ph] = LABEL_LEVEL_CROSSING;
 			}
 		}
 
@@ -1918,7 +1918,7 @@ void add_bridge_to_mesh(Surface_mesh &mesh, Point_set &point_cloud, const std::v
 						if (location.first != support_meshes[i].null_face()) {
 							auto m_p = PMP::construct_point(location, support_meshes[i]);
 							if (CGAL::squared_distance(p.second, m_p) - 1 < 1) {
-								point_cloud_label[p.first] = 11;
+								point_cloud_label[p.first] = LABEL_LEVEL_CROSSING;
 							}
 						}
 					}
@@ -1943,7 +1943,7 @@ void add_bridge_to_mesh(Surface_mesh &mesh, Point_set &point_cloud, const std::v
 					if ((mesh_copy_label[location.first] == LABEL_RAIL || mesh_copy_label[location.first] == LABEL_ROAD) && mesh_copy_label[location.first] != point_cloud_label[p.first]) {
 						auto m_p = PMP::construct_point(location, mesh_copy);
 						if (CGAL::squared_distance(p.second, m_p) - 1 < 1) {
-							point_cloud_label[p.first] = 11;
+							point_cloud_label[p.first] = LABEL_LEVEL_CROSSING;
 						}
 					}
 				}
