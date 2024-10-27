@@ -2154,49 +2154,49 @@ void My_visitor::OnFinished (Surface_mesh &mesh) {
 	boost::tie(collapse_datas, has_collapse_datas) = mesh.property_map<Surface_mesh::Edge_index, CollapseData>("e:c_datas");
 	assert(has_collapse_datas);
 
-	// { //output edge cost
+	/*{ //output edge cost
 
-	// 	Point_set output_point_cloud;
+		Point_set output_point_cloud;
 
-	// 	bool created;
-	// 	Point_set::Property_map<unsigned char> red;
-	// 	Point_set::Property_map<unsigned char> green;
-	// 	Point_set::Property_map<unsigned char> blue;
-	// 	Point_set::Property_map<float> quality;
-	// 	boost::tie(red, created) = output_point_cloud.add_property_map<unsigned char>("red",0);
-	// 	assert(created);
-	// 	boost::tie(green, created) = output_point_cloud.add_property_map<unsigned char>("green",0);
-	// 	assert(created);
-	// 	boost::tie(blue, created) = output_point_cloud.add_property_map<unsigned char>("blue",0);
-	// 	assert(created);
-	// 	boost::tie(quality, created) = output_point_cloud.add_property_map<float>("quality",0);
-	// 	assert(created);
+		bool created;
+		Point_set::Property_map<unsigned char> red;
+		Point_set::Property_map<unsigned char> green;
+		Point_set::Property_map<unsigned char> blue;
+		Point_set::Property_map<float> quality;
+		boost::tie(red, created) = output_point_cloud.add_property_map<unsigned char>("red",0);
+		assert(created);
+		boost::tie(green, created) = output_point_cloud.add_property_map<unsigned char>("green",0);
+		assert(created);
+		boost::tie(blue, created) = output_point_cloud.add_property_map<unsigned char>("blue",0);
+		assert(created);
+		boost::tie(quality, created) = output_point_cloud.add_property_map<float>("quality",0);
+		assert(created);
 
-	// 	CGAL::Cartesian_converter<K, Point_set_kernel> type_converter;
+		CGAL::Cartesian_converter<K, Point_set_kernel> type_converter;
 
-	// 	for (const auto &edge: mesh.edges()) {
-	// 		K:FT cost = collapse_datas[edge].cost;
+		for (const auto &edge: mesh.edges()) {
+			K:FT cost = collapse_datas[edge].cost;
 
-	// 		auto point = output_point_cloud.insert(type_converter(CGAL::midpoint(mesh.point(mesh.source(mesh.halfedge(edge))), mesh.point(mesh.target(mesh.halfedge(edge))))));
+			auto point = output_point_cloud.insert(type_converter(CGAL::midpoint(mesh.point(mesh.source(mesh.halfedge(edge))), mesh.point(mesh.target(mesh.halfedge(edge))))));
 
-	// 		if (cost < 0) {
-	// 			red[*point] = 255;
-	// 			green[*point] = 200 - int(std::min(- cost / 10 * 200, (float) 200));
-	// 			blue[*point] = 200 - int(std::min(- cost / 10 * 200, (float) 200));
-	// 		} else {
-	// 			red[*point] = 255 - int(std::min(cost / 50 * 255, (float) 255));
-	// 			green[*point] = 255 - int(std::min(cost / 50 * 255, (float) 255));
-	// 			blue[*point] = 255;
-	// 		}
+			if (cost < 0) {
+				red[*point] = 255;
+				green[*point] = 200 - int(std::min(- cost / 10 * 200, (float) 200));
+				blue[*point] = 200 - int(std::min(- cost / 10 * 200, (float) 200));
+			} else {
+				red[*point] = 255 - int(std::min(cost / 50 * 255, (float) 255));
+				green[*point] = 255 - int(std::min(cost / 50 * 255, (float) 255));
+				blue[*point] = 255;
+			}
 
-	// 		quality[*point] = cost;
-	// 	}
+			quality[*point] = cost;
+		}
 
-	// 	std::ofstream mesh_ofile ("halfedge_collapsing_cost.ply");
-	// 	CGAL::IO::write_PLY (mesh_ofile, output_point_cloud);
-	// 	mesh_ofile.close();
+		std::ofstream mesh_ofile ("halfedge_collapsing_cost.ply");
+		CGAL::IO::write_PLY (mesh_ofile, output_point_cloud);
+		mesh_ofile.close();
 
-	// }
+	}*/
 
 	/*std::cerr << "Total cost\t" << total_cost << "\n";
 
