@@ -586,11 +586,11 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 		Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_labels;
 		Surface_mesh::Property_map<Surface_mesh::Face_index, K::FT> normal_angle_coef;
 
-		double cost_at_point(const double j, const double* const z, double *grad) const {
+		double cost_at_point(const double j, const double z, double *grad) const {
 			double local_cost = 0;
 
 			auto p2d = start + j * ortho_vect;
-			auto p3d = K::Point_3(p2d.x(), p2d.y(), z[0]);
+			auto p3d = K::Point_3(p2d.x(), p2d.y(), z);
 
 			const K::Ray_3 ray_top(p3d, K::Direction_3(0, 0, 1));
 			const K::Ray_3 ray_bottom(p3d, K::Direction_3(0, 0, -1));
@@ -605,8 +605,8 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 					// point is above the surface
 					auto l = mesh_labels[location_bottom.first];
 					auto point_bottom = PMP::construct_point(location_bottom, mesh);
-					local_cost = abs(z[0] - ((double) point_bottom.z())) * normal_angle_coef[location_bottom.first];
-					if (grad != nullptr) *grad = (z[0] > point_bottom.z()) ? 1 : -1;
+					local_cost = (z - ((double) point_bottom.z())) * normal_angle_coef[location_bottom.first];
+					if (grad != nullptr) *grad = normal_angle_coef[location_bottom.first];
 					if (l != LABEL_OTHER && l != LABEL_UNKNOWN && l != label) {
 						if ((l != LABEL_RAIL && l != LABEL_ROAD) || (label != LABEL_RAIL && label != LABEL_ROAD)) {
 							local_cost += cost * normal_angle_coef[location_bottom.first];
@@ -621,8 +621,8 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 						// the point is above the surface
 						auto l = mesh_labels[location_bottom.first];
 						auto point_bottom = PMP::construct_point(location_bottom, mesh);
-						local_cost = abs(z[0] - ((double) point_bottom.z())) * normal_angle_coef[location_bottom.first];
-						if (grad != nullptr) *grad = (z[0] > point_bottom.z()) ? 1 : -1;
+						local_cost = (z - ((double) point_bottom.z())) * normal_angle_coef[location_bottom.first];
+						if (grad != nullptr) *grad = normal_angle_coef[location_bottom.first];
 						if (l != LABEL_OTHER && l != LABEL_UNKNOWN && l != label) {
 							if ((l != LABEL_RAIL && l != LABEL_ROAD) || (label != LABEL_RAIL && label != LABEL_ROAD)) {
 								local_cost += cost * normal_angle_coef[location_bottom.first];
@@ -630,25 +630,25 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 						}
 
 						auto point_top = PMP::construct_point(location_top, mesh);
-						if (point_top.z() - z[0] < tunnel_height) {
-							local_cost += ((tunnel_height - (point_top.z() - z[0])) / 2) * normal_angle_coef[location_top.first];
-							if (grad != nullptr) *grad += 1/2;
+						if (point_top.z() - z < tunnel_height) {
+							local_cost += ((tunnel_height - (point_top.z() - z)) / 2) * normal_angle_coef[location_top.first];
+							if (grad != nullptr) *grad += normal_angle_coef[location_top.first] / 2;
 						}
 					} else {
 						// the point is under the surface
 						auto point_top = PMP::construct_point(location_top, mesh);
-						if (point_top.z() - z[0] < tunnel_height/2) {
+						if (point_top.z() - z < tunnel_height/2) {
 							auto l = mesh_labels[location_top.first];
-							local_cost = (((double) point_top.z()) - z[0]) * normal_angle_coef[location_top.first];
-							if (grad != nullptr) *grad = -1;
+							local_cost = (((double) point_top.z()) - z) * normal_angle_coef[location_top.first];
+							if (grad != nullptr) *grad = -normal_angle_coef[location_top.first];
 							if (l != LABEL_OTHER && l != LABEL_UNKNOWN && l != label) {
 								if ((l != LABEL_RAIL && l != LABEL_ROAD) || (label != LABEL_RAIL && label != LABEL_ROAD)) {
 									local_cost += cost * normal_angle_coef[location_top.first];
 								}
 							}
-						} else if (point_top.z() - z[0] < tunnel_height) {
-							local_cost = (z[0] + tunnel_height - point_top.z()) * normal_angle_coef[location_top.first];
-							if (grad != nullptr) *grad = 1;
+						} else if (point_top.z() - z < tunnel_height) {
+							local_cost = (z + tunnel_height - point_top.z()) * normal_angle_coef[location_top.first];
+							if (grad != nullptr) *grad = normal_angle_coef[location_top.first];
 						} else {
 							local_cost = 0;
 							if (grad != nullptr) *grad = 0;
@@ -714,17 +714,17 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 			if (jacobians != nullptr) {
 				double grad;
 
-				double left_cost = cost_at_point(-xl[0], z, &grad);
+				double left_cost = cost_at_point(-xl[0], z[0], &grad);
 				residual[0] = left_cost * step / 2;
 				jacobians[0][0] = coef * left_cost;
 				jacobians[2][0] = grad * step / 2;
 
 				for (int i = 1; i < num_step; i++) {
-					residual[0] += cost_at_point(i * (xl[0] + xr[0]) / num_step - xl[0], z, &grad) * step;
+					residual[0] += cost_at_point(i * (xl[0] + xr[0]) / num_step - xl[0], z[0], &grad) * step;
 					jacobians[2][0] += grad * step;
 				}
 
-				double right_cost = cost_at_point(xr[0], z, &grad);
+				double right_cost = cost_at_point(xr[0], z[0], &grad);
 				residual[0] += right_cost * step / 2;
 				jacobians[1][0] = coef * right_cost ;
 				jacobians[2][0] += grad * step / 2;
@@ -732,14 +732,14 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 				jacobians[2][0] *= coef;
 			} else {
 
-				residual[0] = cost_at_point(-xl[0], z, nullptr);
+				residual[0] = cost_at_point(-xl[0], z[0], nullptr);
 				residual[0] *= step / 2;
 
 				for (int i = 1; i < num_step; i++) {
-					residual[0] += cost_at_point(i * (xl[0] + xr[0]) / num_step - xl[0], z, nullptr) * step;
+					residual[0] += cost_at_point(i * (xl[0] + xr[0]) / num_step - xl[0], z[0], nullptr) * step;
 				}
 
-				double right_cost = cost_at_point(xr[0], z, nullptr);
+				double right_cost = cost_at_point(xr[0], z[0], nullptr);
 				residual[0] += right_cost * step / 2;
 			}
 
