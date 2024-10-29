@@ -277,7 +277,7 @@ int main(int argc, char **argv) {
 	// Get or create created_point_label
 	bool created_point_label;
 	Point_set::Property_map<unsigned char> point_cloud_label;
-	boost::tie (point_cloud_label, created_point_label) = point_cloud.add_property_map<unsigned char>("p:label", LABEL_OTHER);
+	boost::tie (point_cloud_label, created_point_label) = point_cloud.add_property_map<unsigned char>("p:label", LABEL_UNKNOWN);
 	if (created_point_label) {
 		std::cout << "Point cloud has no label" << std::endl;
 
@@ -288,7 +288,7 @@ int main(int argc, char **argv) {
 			assert(has_point_int_label);
 			for (auto ph: point_cloud) {
 				int value = int_label[ph];
-				if (value < 0 || ((unsigned int) value) >= LABELS.size()) value = LABEL_OTHER;
+				if (value < 0 || ((unsigned int) value) >= LABELS.size()) value = LABEL_UNKNOWN;
 				point_cloud_label[ph] = static_cast<unsigned char>(value);
 			}
 			std::cout << "Point cloud label from int_label property" << std::endl;

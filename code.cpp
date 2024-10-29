@@ -55,7 +55,7 @@ std::list<Polygon> get_LOD0_from_shapefile(char *path) {
 void add_label(const Raster &raster, Surface_mesh &mesh) {
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool created;
-	boost::tie(label, created) = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("f:label",0);
+	boost::tie(label, created) = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("f:label", LABEL_UNKNOWN);
 	assert(created);
 
 	for (auto face : mesh.faces()) {
@@ -91,7 +91,7 @@ void change_vertical_faces(Surface_mesh &mesh) {
 
 			auto n = CGAL::orthogonal_vector(p0, p1, p2);
 			if (CGAL::scalar_product(n, K::Vector_3(0,0,1)) / CGAL::sqrt(n.squared_length()) < 0.98) {
-				label[face] = LABEL_OTHER;
+				label[face] = LABEL_UNKNOWN;
 			}
 		} else if (label[face] == LABEL_ROAD) {
 
@@ -103,7 +103,7 @@ void change_vertical_faces(Surface_mesh &mesh) {
 
 			auto n = CGAL::orthogonal_vector(p0, p1, p2);
 			if (CGAL::scalar_product(n, K::Vector_3(0,0,1)) / CGAL::sqrt(n.squared_length()) < 0.95) {
-				label[face] = LABEL_OTHER;
+				label[face] = LABEL_UNKNOWN;
 			}
 		}
 	}

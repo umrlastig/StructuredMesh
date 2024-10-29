@@ -141,7 +141,7 @@ std::tuple<Surface_mesh, std::tuple<Surface_mesh, Point_set>> compute_meshes(con
 	Point_set point_cloud;
 	bool created_point_label;
 	Point_set::Property_map<unsigned char> point_cloud_label;
-	boost::tie (point_cloud_label, created_point_label) = point_cloud.add_property_map<unsigned char>("p:label", LABEL_OTHER);
+	boost::tie (point_cloud_label, created_point_label) = point_cloud.add_property_map<unsigned char>("p:label", LABEL_UNKNOWN);
 	assert(created_point_label);
 
 	// Add points

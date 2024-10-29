@@ -606,7 +606,7 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 					auto point_bottom = PMP::construct_point(location_bottom, mesh);
 					local_cost = abs(z[0] - ((double) point_bottom.z())) * normal_angle_coef[location_bottom.first];
 					if (grad != nullptr) *grad = (z[0] > point_bottom.z()) ? 1 : -1;
-					if (l != 0 && l != label) {
+					if (l != LABEL_OTHER && l != LABEL_UNKNOWN && l != label) {
 						if ((l != LABEL_RAIL && l != LABEL_ROAD) || (label != LABEL_RAIL && label != LABEL_ROAD)) {
 							local_cost += cost * normal_angle_coef[location_bottom.first];
 						}
@@ -622,7 +622,7 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 						auto point_bottom = PMP::construct_point(location_bottom, mesh);
 						local_cost = abs(z[0] - ((double) point_bottom.z())) * normal_angle_coef[location_bottom.first];
 						if (grad != nullptr) *grad = (z[0] > point_bottom.z()) ? 1 : -1;
-						if (l != 0 && l != label) {
+						if (l != LABEL_OTHER && l != LABEL_UNKNOWN && l != label) {
 							if ((l != LABEL_RAIL && l != LABEL_ROAD) || (label != LABEL_RAIL && label != LABEL_ROAD)) {
 								local_cost += cost * normal_angle_coef[location_bottom.first];
 							}
@@ -640,7 +640,7 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 							auto l = mesh_labels[location_top.first];
 							local_cost = (((double) point_top.z()) - z[0]) * normal_angle_coef[location_top.first];
 							if (grad != nullptr) *grad = -1;
-							if (l != 0 && l != label) {
+							if (l != LABEL_OTHER && l != LABEL_UNKNOWN && l != label) {
 								if ((l != LABEL_RAIL && l != LABEL_ROAD) || (label != LABEL_RAIL && label != LABEL_ROAD)) {
 									local_cost += cost * normal_angle_coef[location_top.first];
 								}
@@ -1096,7 +1096,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 					auto l = label[location_bottom.first];
 					auto point_bottom = PMP::construct_point(location_bottom, mesh);
 					point_cost = abs(bridge.z_segment[i] - point_bottom.z()) * normal_angle_coef[location_bottom.first];
-					if (l != 0 && l != bridge.label) {
+					if (l != LABEL_OTHER && l != LABEL_UNKNOWN && l != bridge.label) {
 						if ((l != LABEL_RAIL && l != LABEL_ROAD) || (bridge.label != LABEL_RAIL && bridge.label != LABEL_ROAD)) {
 							point_cost += theta * normal_angle_coef[location_bottom.first];
 						}
@@ -1112,7 +1112,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 						auto l = label[location_bottom.first];
 						auto point_bottom = PMP::construct_point(location_bottom, mesh);
 						point_cost = abs(bridge.z_segment[i] - point_bottom.z()) * normal_angle_coef[location_bottom.first];
-						if (l != 0 && l != bridge.label) {
+						if (l != LABEL_OTHER && l != LABEL_UNKNOWN && l != bridge.label) {
 							if ((l != LABEL_RAIL && l != LABEL_ROAD) || (bridge.label != LABEL_RAIL && bridge.label != LABEL_ROAD)) {
 								point_cost += theta * normal_angle_coef[location_bottom.first];
 							}
@@ -1129,7 +1129,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 						if (point_top.z() - bridge.z_segment[i] < tunnel_height/2) {
 							auto l = label[location_top.first];
 							point_cost = abs(bridge.z_segment[i] - ((double) point_top.z())) * normal_angle_coef[location_top.first];
-							if (l != 0 && l != bridge.label) {
+							if (l != LABEL_OTHER && l != LABEL_UNKNOWN && l != bridge.label) {
 								if ((l != LABEL_RAIL && l != LABEL_ROAD) || (bridge.label != LABEL_RAIL && bridge.label != LABEL_ROAD)) {
 									point_cost += theta * normal_angle_coef[location_top.first];
 								}
@@ -1498,7 +1498,7 @@ Surface_mesh compute_remove_mesh(const pathBridge &bridge, const Surface_mesh_in
 	// Label
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool created_label;
-	boost::tie(label, created_label) = bridge_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("f:label", 0);
+	boost::tie(label, created_label) = bridge_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("f:label", LABEL_UNKNOWN);
 	assert(created_label);
 
 	// Add faces
@@ -1573,7 +1573,7 @@ Surface_mesh compute_support_mesh(const pathBridge &bridge, const Surface_mesh_i
 	// Label
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> label;
 	bool created_label;
-	boost::tie(label, created_label) = bridge_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("f:label", 0);
+	boost::tie(label, created_label) = bridge_mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("f:label", LABEL_UNKNOWN);
 	assert(created_label);
 
 	// Add faces
@@ -1803,7 +1803,7 @@ void add_bridge_to_mesh(Surface_mesh &mesh, Point_set &point_cloud, const std::v
 
 		for (auto &ph: point_to_checks[i]) {
 
-			if (point_cloud_label[ph] == 0 || point_cloud_label[ph] == LABEL_OTHER) {
+			if (point_cloud_label[ph] == LABEL_OTHER || point_cloud_label[ph] == LABEL_UNKNOWN) {
 				auto p = type_converter(point_cloud.point(ph));
 
 				const K::Ray_3 ray_top(p, K::Direction_3(0, 0, 1));

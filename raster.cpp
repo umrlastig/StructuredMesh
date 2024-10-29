@@ -15,7 +15,7 @@ std::pair<int,int> Raster::grid_conversion(int P, int L, double grid_to_crs[6], 
 }
 
 void Raster::align_land_cover_and_dsm() {
-    std::vector<std::vector<unsigned char>> new_land_cover = std::vector<std::vector<unsigned char>>(ySize, std::vector<unsigned char>(xSize, LABEL_OTHER));
+    std::vector<std::vector<unsigned char>> new_land_cover = std::vector<std::vector<unsigned char>>(ySize, std::vector<unsigned char>(xSize, LABEL_UNKNOWN));
     for (int L = 0; L < ySize; L++) {
         for (int P = 0; P < xSize; P++) {
             float neighboors_count[LABELS.size()] = {0};
@@ -334,7 +334,7 @@ Raster::Raster(char *dsm_path, char *dtm_path, char *land_cover_path) {
     std::cout << "DTM load" << std::endl;
 
     // Get land cover informations and CRS transform
-    land_cover = std::vector<std::vector<unsigned char>>(ySize, std::vector<unsigned char>(xSize, LABEL_OTHER));
+    land_cover = std::vector<std::vector<unsigned char>>(ySize, std::vector<unsigned char>(xSize, LABEL_UNKNOWN));
     GDALDataset *land_cover_dataset = (GDALDataset *) GDALOpen( land_cover_path, GA_ReadOnly );
     if( dsm_dataset == NULL ) {
         throw std::invalid_argument(std::string("Unable to open ") + land_cover_path + ".");
@@ -358,7 +358,7 @@ Raster::Raster(char *dsm_path, char *dtm_path, char *land_cover_path) {
                 if (land_cover_dataset->GetRasterBand(1)->RasterIO(GF_Read, new_coord.first, new_coord.second, 1, 1, &value, 1, 1, GDT_Byte, 0, 0) >= CE_Failure) {
                     throw std::invalid_argument(std::string(land_cover_path) + " can't be read.");
                 }
-                if (value >= LABELS.size()) value = LABEL_OTHER;
+                if (value >= LABELS.size()) value = LABEL_UNKNOWN;
                 land_cover[L][P] = value;
             }
         }

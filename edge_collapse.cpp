@@ -89,7 +89,7 @@ void compute_stat(Surface_mesh &mesh, const Ablation_study &ablation, TimerUtils
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_label;
 	Surface_mesh::Property_map<Surface_mesh::Face_index, std::list<Point_set::Index>> point_in_face;
 	bool created_mesh_label, created_point_in_face;
-	boost::tie(mesh_label, created_mesh_label) = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("f:label", LABEL_OTHER);
+	boost::tie(mesh_label, created_mesh_label) = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("f:label", LABEL_UNKNOWN);
 
 	Point_set::Property_map<unsigned char> ground_truth_point_cloud_label;
 	bool has_ground_truth_point_cloud_label;
@@ -215,13 +215,13 @@ void add_label(Surface_mesh &mesh, const Point_set &point_cloud, const K::FT min
 				mesh_label[face] = argmax - face_label;
 
 			} else { // We don't have information about this face.
-				mesh_label[face] = LABEL_OTHER;
+				mesh_label[face] = LABEL_UNKNOWN;
 			}
 		} else {
 			if (min_point <= 1) { // It's probable that there is no point
 				faces_with_no_label.insert(face);
 			} else { // We don't have information about this face.
-				mesh_label[face] = LABEL_OTHER;
+				mesh_label[face] = LABEL_UNKNOWN;
 			}
 		}
 	}
@@ -239,7 +239,7 @@ void add_label(Surface_mesh &mesh, const Point_set &point_cloud, const K::FT min
 				}
 			}
 			if (no_neighbor) {
-				mesh_label[face] = LABEL_OTHER;
+				mesh_label[face] = LABEL_UNKNOWN;
 				face_to_be_removed.push_back(face);
 			} else {
 				auto argmax = std::max_element(face_label, face_label+LABELS.size());
@@ -254,7 +254,7 @@ void add_label(Surface_mesh &mesh, const Point_set &point_cloud, const K::FT min
 		}
 		if (face_to_be_removed.size() == 0) {
 			for (const auto &face_id: faces_with_no_label) {
-				mesh_label[face_id] = LABEL_OTHER;
+				mesh_label[face_id] = LABEL_UNKNOWN;
 			}
 			break;
 		} else {
@@ -1585,7 +1585,7 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 				boost::tie(point_cloud_label, has_label) = point_cloud.property_map<unsigned char>("p:label");
 				assert(has_label);
 
-				std::vector<unsigned char> new_face_label(new_faces.size(), LABEL_OTHER);
+				std::vector<unsigned char> new_face_label(new_faces.size(), LABEL_UNKNOWN);
 
 				// label new face and semantic error
 				std::set<std::size_t> faces_with_no_label;
@@ -1611,7 +1611,7 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 							new_face_label[face_id] = argmax - face_label;
 
 						} else { // We don't have information about this face.
-							new_face_label[face_id] = LABEL_OTHER;
+							new_face_label[face_id] = LABEL_UNKNOWN;
 							count_semantic_error += points_in_new_face[face_id].size();
 							new_face_cost[face_id] += beta * points_in_new_face[face_id].size();
 // if (profile.v0_v1().idx() == 1710) std::cerr << "face_id: " << face_id << " (" << profile.surface_mesh().face(new_faces_border_halfedge[face_id]) << ") (beta2 x nb_error): " << beta * points_in_new_face[face_id].size() << "\n";
@@ -1620,7 +1620,7 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 						if (min_point <= 1) { // It's probable that there is no point
 							faces_with_no_label.insert(face_id);
 						} else { // We don't have information about this face.
-							new_face_label[face_id] = LABEL_OTHER;
+							new_face_label[face_id] = LABEL_UNKNOWN;
 						}
 					}
 				}
@@ -1649,7 +1649,7 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 							}
 						}
 						if (no_neighbor) {
-							new_face_label[face_id] = LABEL_OTHER;
+							new_face_label[face_id] = LABEL_UNKNOWN;
 							face_to_be_removed.push_back(face_id);
 						} else {
 							auto argmax = std::max_element(face_label, face_label+LABELS.size());
@@ -1664,7 +1664,7 @@ boost::optional<SMS::Edge_profile<Surface_mesh>::FT> Custom_cost::operator()(con
 					}
 					if (face_to_be_removed.size() == 0) {
 						for (const auto &face_id: faces_with_no_label) {
-							new_face_label[face_id] = LABEL_OTHER;
+							new_face_label[face_id] = LABEL_UNKNOWN;
 						}
 						break;
 					} else {
@@ -1815,7 +1815,7 @@ void My_visitor::OnStarted (Surface_mesh&) {
 	if (beta > 0 || gamma > 0 || params.semantic_border_optimization > 0) {
 		// Add label to face
 		bool created_label;
-		boost::tie(mesh_label, created_label) = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("f:label", LABEL_OTHER);
+		boost::tie(mesh_label, created_label) = mesh.add_property_map<Surface_mesh::Face_index, unsigned char>("f:label", LABEL_UNKNOWN);
 	}
 
 	if (beta > 0 || gamma > 0 || params.label_preservation > 0 || params.semantic_border_optimization > 0) {
@@ -2049,14 +2049,14 @@ void My_visitor::OnStarted (Surface_mesh&) {
 										mesh_label[face] = argmax - face_label;
 
 									} else { // We don't have information about this face.
-										mesh_label[face] = LABEL_OTHER;
+										mesh_label[face] = LABEL_UNKNOWN;
 										face_costs[face] += beta * point_in_face[face].size();
 									}
 								} else {
 									if (min_point <= 1) { // It's probable that there is no point
 										faces_with_no_label.insert(face);
 									} else { // We don't have information about this face.
-										mesh_label[face] = LABEL_OTHER;
+										mesh_label[face] = LABEL_UNKNOWN;
 									}
 								}
 							}
@@ -2074,7 +2074,7 @@ void My_visitor::OnStarted (Surface_mesh&) {
 										}
 									}
 									if (no_neighbor) {
-										mesh_label[face] = LABEL_OTHER;
+										mesh_label[face] = LABEL_UNKNOWN;
 										face_to_be_removed.push_back(face);
 									} else {
 										auto argmax = std::max_element(face_label, face_label+LABELS.size());
@@ -2089,7 +2089,7 @@ void My_visitor::OnStarted (Surface_mesh&) {
 								}
 								if (face_to_be_removed.size() == 0) {
 									for (const auto &face_id: faces_with_no_label) {
-										mesh_label[face_id] = LABEL_OTHER;
+										mesh_label[face_id] = LABEL_UNKNOWN;
 									}
 									break;
 								} else {
@@ -2566,7 +2566,7 @@ Point_set compute_point_cloud (Surface_mesh& mesh) {
 void associate_mesh_point_cloud (Surface_mesh& mesh, Point_set& point_cloud) {
 	Point_set::Property_map<unsigned char> point_cloud_label;
 	bool created_point_label;
-	boost::tie (point_cloud_label, created_point_label) = point_cloud.add_property_map<unsigned char>("p:label", LABEL_OTHER);
+	boost::tie (point_cloud_label, created_point_label) = point_cloud.add_property_map<unsigned char>("p:label", LABEL_UNKNOWN);
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> mesh_label;
 	bool has_mesh_label;
