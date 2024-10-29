@@ -18,7 +18,7 @@ if(CMAKE_BUILD_TYPE MATCHES "Debug")
 endif()
 
 # CGAL and its components
-find_package( CGAL 5.4.1 QUIET COMPONENTS  )
+find_package( CGAL 5.4.5 QUIET COMPONENTS  )
 
 if ( NOT CGAL_FOUND )
 

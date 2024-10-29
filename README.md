@@ -2,7 +2,7 @@
 Create LOD2 model from DSM, DTM, land use map, LOD0 building footprint and orthophoto.
 
 # Requirements (test version)
-- CGAL (5.4.1)
+- CGAL (5.4.5)
 - GDAL (3.5.0)
 - Eigen (3.4.0)
 - Ceres (2.1.0)
