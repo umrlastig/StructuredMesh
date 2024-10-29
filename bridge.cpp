@@ -10,6 +10,7 @@
 #include <CGAL/Polygon_mesh_processing/distance.h>
 #include <CGAL/Polygon_mesh_processing/triangulate_faces.h>
 #include <CGAL/Side_of_triangle_mesh.h>
+#include <CGAL/bounding_box.h>
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Count_stop_predicate.h>
@@ -1262,35 +1263,44 @@ void close_surface_mesh(Surface_mesh &mesh) {
 	boost::tie(true_face, created) = mesh.add_property_map<Surface_mesh::Face_index, bool>("true_face", true);
 	assert(created);
 
-	// Minimal elevation
-	float min_h = 50;
-	for (auto point: mesh.points()) {
-		if (point.z() < min_h) {
-			min_h = point.z();
-		}
-	}
-	min_h -= 50;
+	K::Iso_cuboid_3 bb = CGAL::bounding_box(mesh.points().begin(), mesh.points().end());
 
 	std::vector<Surface_mesh::Halfedge_index> borders_edge;
 	CGAL::Polygon_mesh_processing::extract_boundary_cycles (mesh, std::back_inserter(borders_edge));
 	assert(borders_edge.size() == 1);
 	auto border_edge = borders_edge[0];
 
-	std::vector<Point_3> points_bottom;
 	std::vector<Point_3> points_top;
+	std::vector<Point_3> points_bottom;
+	std::vector<Surface_mesh::Halfedge_index> halfedges_border;
+	std::vector<Surface_mesh::Vertex_index> vertices_top;
 	std::vector<Surface_mesh::Vertex_index> vertices_bottom;
+	
+	Point_2 center ((bb.xmin() + bb.xmax()) / 2, (bb.ymin() + bb.ymax()) / 2);
 
 	auto halfedge = border_edge;
+
+	K::Vector_2 vec (1, 0);
+	K::Direction_2 start = vec.direction();
+
 	do {
-		auto vt = CGAL::target(halfedge, mesh);
-		auto pt = mesh.point(vt);
-		auto vb = mesh.add_vertex(Point_3(pt.x(), pt.y(), min_h));
-		vertices_bottom.push_back(vb);
-		points_top.push_back(pt);
-		points_bottom.push_back(Point_3(pt.x(), pt.y(), min_h));
+		auto pt = mesh.point(mesh.target(halfedge));
+		K::Vector_2 vec1 (center, Point_2(pt.x(), pt.y()));
+		if (vec1.direction() != start && (vec1.direction().counterclockwise_in_between(start, vec.direction()) || (vec.direction().dx() > 0 && vec1.direction().dx() > 0 && vec.direction().dy() > 0 && vec1.direction().dy() < 0))) {
+			auto p0 = K::Point_2(pt.x(), pt.y()) + vec1 / CGAL::sqrt(vec1.squared_length()) * 20;
+			auto va = mesh.add_vertex(Point_3(p0.x(), p0.y(), bb.zmin()));
+			auto vb = mesh.add_vertex(Point_3(p0.x(), p0.y(), bb.zmin() - 1));
+			halfedges_border.push_back(halfedge);
+			vertices_top.push_back(va);
+			vertices_bottom.push_back(vb);
+			points_top.push_back(mesh.point(va));
+			points_bottom.push_back(mesh.point(vb));
+			vec = vec1;
+		}
 		halfedge = CGAL::next(halfedge, mesh);
 	} while (halfedge != border_edge);
 
+	//bottom
 	std::vector<CGAL::Triple<int, int, int>> patch;
 	patch.reserve(points_bottom.size() -2);
 	CGAL::Polygon_mesh_processing::triangulate_hole_polyline (points_bottom, points_top, std::back_inserter(patch));
@@ -1300,22 +1310,71 @@ void close_surface_mesh(Surface_mesh &mesh) {
 		true_face[f] = false;
 	}
 
-	auto v0 = CGAL::target(halfedge, mesh);
-	auto v1 = CGAL::target(CGAL::next(halfedge, mesh), mesh);
+	//border
+	for (std::size_t i = 0; i < vertices_top.size(); i++) {
+		auto f = mesh.add_face(vertices_top[i], vertices_top[(i+1) % vertices_top.size()], vertices_bottom[(i+1) % vertices_top.size()]);
+		true_face[f] = false;
+		f = mesh.add_face(vertices_top[i], vertices_bottom[(i+1) % vertices_top.size()], vertices_bottom[i]);
+		true_face[f] = false;
+	}
 
-	auto f = mesh.add_face(v0, vertices_bottom.at(1), vertices_bottom.at(0));
-	true_face[f] = false;
-	f = mesh.add_face(v0, v1, vertices_bottom.at(1));
-	true_face[f] = false;
+	//check intersection
+	Surface_mesh new_faces;
+	std::list<Surface_mesh::Halfedge_index> holes;
+	for (std::size_t i = 1; i < vertices_top.size(); i+=50) {
+		/*bool do_intersect;
+		do {
+			i++;
+			new_faces.clear();
+			auto v0 = new_faces.add_vertex(mesh.point(mesh.target(halfedges_border[i-1])));
+			auto v1 = new_faces.add_vertex(mesh.point(mesh.target(mesh.next(halfedges_border[i-1]))));
+			auto v2 = new_faces.add_vertex(points_top[i-1]);
+			auto v3 = new_faces.add_vertex(points_top[i]);
 
-	bool exist;
-	boost::tie(border_edge, exist) = CGAL::halfedge(v0, vertices_bottom.at(0), mesh);
-	assert(exist);
+			std::cerr << "face1: " << mesh.face(mesh.opposite(halfedges_border[i-1])) << "\n";
+			std::cerr << "face2: " << mesh.face(mesh.opposite(mesh.next(halfedges_border[i-1]))) << "\n";
 
-	std::vector<Surface_mesh::Face_index> patch_facets;
-	CGAL::Polygon_mesh_processing::triangulate_hole(mesh, border_edge, std::back_inserter(patch_facets));
-	for (auto face: patch_facets) {
-		true_face[face] = false;
+			new_faces.add_face(v0, v1, v3);
+			new_faces.add_face(v0, v3, v2);
+
+			std::list<std::pair<Surface_mesh::Face_index, Surface_mesh::Face_index>> intersecting_faces;
+			CGAL::Polygon_mesh_processing::internal::compute_face_face_intersection(mesh, new_faces, std::back_inserter(intersecting_faces), CGAL::parameters::all_default(), CGAL::parameters::all_default());
+			do_intersect = false;
+			if (intersecting_faces.size() > 0) {
+				for (auto& info: intersecting_faces) {
+					std::cerr << "f0: " << info.first << ", f1: " << info.second << "\n";
+					if (info.first.idx() != mesh.face(mesh.opposite(halfedges_border[i-1])).idx() && info.first.idx() != mesh.face(mesh.opposite(mesh.next(halfedges_border[i-1]))).idx()) {
+						do_intersect = true;
+						break;
+					}
+				}
+			}
+
+		} while (do_intersect && i + 1 < vertices_top.size());*/
+
+		if (i < vertices_top.size()) {
+			auto f = mesh.add_face(mesh.target(halfedges_border[i-1]), mesh.target(mesh.next(halfedges_border[i-1])), vertices_top.at(i));
+			true_face[f] = false;
+			f = mesh.add_face(mesh.target(halfedges_border[i-1]), vertices_top.at(i), vertices_top.at(i-1));
+			true_face[f] = false;
+
+			bool exist;
+			Surface_mesh::Halfedge_index border;
+			boost::tie(border, exist) = CGAL::halfedge(mesh.target(halfedges_border[i-1]), vertices_top.at(i-1), mesh);
+			assert(exist);
+			if (!mesh.is_border(border)) border = mesh.opposite(border);
+			assert(mesh.is_border(border));
+
+			holes.push_back(border);
+		}
+	}
+
+	for (auto & border: holes) {
+		std::vector<Surface_mesh::Face_index> patch_facets;
+		CGAL::Polygon_mesh_processing::triangulate_hole(mesh, border, std::back_inserter(patch_facets));
+		for (auto face: patch_facets) {
+			true_face[face] = false;
+		}
 	}
 
 	assert(!CGAL::Polygon_mesh_processing::does_self_intersect(mesh));
