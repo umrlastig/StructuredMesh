@@ -1428,6 +1428,7 @@ struct CorefinementVisitor : public CGAL::Polygon_mesh_processing::Corefinement:
 			assert(has_label);
 			label[f_tgt] = bridge_label[f_src];
 			is_new_face[f_tgt] = true;
+			true_face[f_tgt] = true;
 		} else {
 			Surface_mesh::Property_map<Surface_mesh::Face_index, unsigned char> bridge_label1, bridge_label2;
 			bool has_label;

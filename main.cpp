@@ -386,6 +386,11 @@ int main(int argc, char **argv) {
 	mesh_info.save_mesh(mesh, "final-closed-mesh-with-path.ply");
 	std::cout << "Mesh waterthighted" << std::endl;
 
+	Surface_mesh::Property_map<Surface_mesh::Face_index, bool> true_face;
+	bool has_true_face;
+	boost::tie(true_face, has_true_face) = mesh.property_map<Surface_mesh::Face_index, bool>("true_face");
+	assert(has_true_face);
+
 	AABB_tree tree = index_surface_mesh(mesh);
 
 	std::vector<pathBridge> bridges_to_add;
@@ -407,6 +412,13 @@ int main(int argc, char **argv) {
 	assert(created_edge_blocked);
 
 	add_bridge_to_mesh(mesh, point_cloud, bridges_to_add, path_polygon, mesh_info);
+
+	for (auto &face: mesh.faces()) {
+		if (!true_face[face]) {
+			CGAL::Euler::remove_face (mesh.halfedge(face), mesh); 	
+		}
+	}
+	mesh.collect_garbage();
 
 	mesh_info.save_mesh(mesh, "final-closed-mesh-with-path-and-bridges.ply");
 	std::cout << "Bridges added to mesh" << std::endl;
