@@ -1289,7 +1289,7 @@ void close_surface_mesh(Surface_mesh &mesh) {
 		if (vec1.direction() != start && (vec1.direction().counterclockwise_in_between(start, vec.direction()) || (vec.direction().dx() > 0 && vec1.direction().dx() > 0 && vec.direction().dy() > 0 && vec1.direction().dy() < 0))) {
 			auto p0 = K::Point_2(pt.x(), pt.y()) + vec1 / CGAL::sqrt(vec1.squared_length()) * 20;
 			auto va = mesh.add_vertex(Point_3(p0.x(), p0.y(), bb.zmin()));
-			auto vb = mesh.add_vertex(Point_3(p0.x(), p0.y(), bb.zmin() - 1));
+			auto vb = mesh.add_vertex(Point_3(p0.x(), p0.y(), bb.zmin() - 10));
 			halfedges_border.push_back(halfedge);
 			vertices_top.push_back(va);
 			vertices_bottom.push_back(vb);
