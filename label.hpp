@@ -67,7 +67,7 @@ static std::array<Label, 46> LABELS {
 const unsigned char LABEL_OTHER = 0; // use when the label is nothing from the list
 const unsigned char LABEL_UNKNOWN = 45; // use for face without data or not plane road or rails
 const unsigned char LABEL_RAIL = 27;
-const unsigned char LABEL_WATER = 21;
+const unsigned char LABEL_WATER = 23;
 const unsigned char LABEL_ROAD = 28;
 const unsigned char LABEL_LEVEL_CROSSING = 44;
 
