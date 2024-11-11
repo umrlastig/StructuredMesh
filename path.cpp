@@ -186,6 +186,14 @@ std::map<int, boost::shared_ptr<CGAL::Straight_skeleton_2<K>>> compute_medial_ax
 				CGAL::Polyline_simplification_2::Squared_distance_cost(),
 				CGAL::Polyline_simplification_2::Stop_above_cost_threshold(pow(1.5,2))
 			);
+			
+			if (poly.outer_boundary().size() > 50) {
+				poly = CGAL::Polyline_simplification_2::simplify(
+					poly,
+					CGAL::Polyline_simplification_2::Squared_distance_cost(),
+					CGAL::Polyline_simplification_2::Stop_above_cost_threshold(pow(3,2))
+				);
+			}
 
 			auto iss = CGAL::create_interior_straight_skeleton_2(poly, Exact_predicates_kernel());
 			medial_axes[i] = CGAL::convert_straight_skeleton_2<CGAL::Straight_skeleton_2<K>>(*iss);

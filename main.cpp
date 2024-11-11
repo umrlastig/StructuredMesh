@@ -397,6 +397,7 @@ int main(int argc, char **argv) {
 	int i = 0;
 	std::cout << "Computing " << links.size() << " bridges" << std::endl;
 	for (auto link: links) {
+//if (link.first.path != 164 || link.second.path != 309 /*|| abs(link.first.point.x() - 121) > 1 || abs(link.second.point.x() + 110) > 1*/) continue;
 		std::cout << "\rBridge " << i++ << "/" << links.size() << "               ";
 		std::cout.flush();
 		pathBridge bridge_result = bridge(link, mesh, tree, mesh_info);

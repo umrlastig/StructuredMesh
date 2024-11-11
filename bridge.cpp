@@ -707,43 +707,45 @@ class SurfaceCost : public ceres::SizedCostFunction<1, 1, 1, 1> {
 
 			double step = 0.3;
 
-			int num_step = ceil((xl[0] + xr[0]) / step);
-			if (num_step < 1) num_step = 1;
-			step = (xl[0] + xr[0]) / num_step;
+			int num_step = floor((xl[0] + xr[0]) / step);
+			double min_step = ((xl[0] + xr[0]) - num_step * step) / 2;
 
 			if (jacobians != nullptr) {
 				double grad;
 
 				double left_cost = cost_at_point(-xl[0], z[0], &grad);
-				residual[0] = left_cost * step / 2;
-				jacobians[0][0] = coef * left_cost;
-				jacobians[2][0] = grad * step / 2;
 
-				for (int i = 1; i < num_step; i++) {
-					residual[0] += cost_at_point(i * (xl[0] + xr[0]) / num_step - xl[0], z[0], &grad) * step;
+				residual[0] = left_cost * min_step;
+				jacobians[0][0] = left_cost;
+				jacobians[2][0] = grad * min_step;
+
+				for (int i = 0; i < num_step; i++) {
+					residual[0] += cost_at_point(min_step + i * step - xl[0], z[0], &grad) * step;
 					jacobians[2][0] += grad * step;
 				}
 
 				double right_cost = cost_at_point(xr[0], z[0], &grad);
-				residual[0] += right_cost * step / 2;
-				jacobians[1][0] = coef * right_cost ;
-				jacobians[2][0] += grad * step / 2;
 
+				residual[0] += right_cost * min_step;
+				jacobians[1][0] =  right_cost ;
+				jacobians[2][0] += grad * min_step;
+
+				residual[0] *= coef;
+				jacobians[0][0] *= coef;
+				jacobians[1][0] *= coef;
 				jacobians[2][0] *= coef;
 			} else {
 
-				residual[0] = cost_at_point(-xl[0], z[0], nullptr);
-				residual[0] *= step / 2;
+				residual[0] = cost_at_point(-xl[0], z[0], nullptr) * min_step;
 
-				for (int i = 1; i < num_step; i++) {
-					residual[0] += cost_at_point(i * (xl[0] + xr[0]) / num_step - xl[0], z[0], nullptr) * step;
+				for (int i = 0; i < num_step; i++) {
+					residual[0] += cost_at_point(min_step + i * step - xl[0], z[0], nullptr) * step;
 				}
 
-				double right_cost = cost_at_point(xr[0], z[0], nullptr);
-				residual[0] += right_cost * step / 2;
-			}
+				residual[0] += cost_at_point(xr[0], z[0], nullptr) * min_step;
 
-			residual[0] *= coef;
+				residual[0] *= coef;
+			}
 
 			return true;
 
@@ -834,6 +836,32 @@ struct border_constraint {
 	}
 };
 
+class MyCallback : public ceres::IterationCallback {
+ public:
+  explicit MyCallback(const pathBridge &bridge)
+      : bridge(bridge) {}
+
+  ~MyCallback() {}
+
+  ceres::CallbackReturnType operator()(const ceres::IterationSummary& summary) {
+
+	std::cerr << "summary.iteration: " << summary.iteration << "\n";
+	std::cerr << "summary.cost: " << summary.cost << "\n";
+
+	for (int i = 0; i <= bridge.N; i++) {
+		std::cerr << "bridge.xl[" << i << "]: " <<  bridge.xl[i] << "\n";
+		std::cerr << "bridge.xr[" << i << "]: " <<  bridge.xr[i] << "\n";
+		std::cerr << "bridge.z_segment[" << i << "]: " <<  bridge.z_segment[i] << "\n";
+	}
+    
+    return ceres::SOLVER_CONTINUE;
+  }
+
+ private:
+  const pathBridge &bridge;
+};
+
+
 pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tree, const Surface_mesh_info &mesh_info) {
 
 	Surface_mesh::Property_map<Surface_mesh::Face_index, int> path;
@@ -909,7 +937,7 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 	float epsilon = 1; // centering of the surface on the link vertices
 	float zeta = 10; // border elevation
 	float eta = 100; // constraint border inside path
-	float theta = 25; // cost for label error
+	float theta = 15; // cost for label error
 
 	// regularity of the surface
 	for (int i = 0; i < bridge.N; i++) {
@@ -1012,14 +1040,21 @@ pathBridge bridge (pathLink link, const Surface_mesh &mesh, const AABB_tree &tre
 		nullptr,
 		bridge.xr + bridge.N); //x^r_{N}
 
+	bridge.z_segment[((int) ceil(bridge.N / 2))] += 1;
+
 	// solving
 	ceres::Solver::Options options;
 	options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
 	options.use_nonmonotonic_steps = true;
+	/*MyCallback callback(bridge);
+	options.callbacks.push_back(&callback);
+	options.update_state_every_iteration = true;*/
 	options.logging_type = ceres::SILENT;
 	options.minimizer_progress_to_stdout = true;
 	ceres::Solver::Summary summary;
 	Solve(options, &problem, &summary);
+
+	//std::cerr << summary.FullReport() << "\n";
 
 	//Border constraint
 	if (bridge.xl[0] > dl0) bridge.xl[0] = dl0;
@@ -1949,7 +1984,7 @@ void add_bridge_to_mesh(Surface_mesh &mesh, Point_set &point_cloud, const std::v
 		CGAL::Face_filtered_graph<Surface_mesh> filtered_sm(mesh, true, to_be_sampled);
 
 		std::list<K::Point_3> out;
-		PMP::sample_triangle_mesh(filtered_sm, std::back_inserter(out), CGAL::parameters::use_random_uniform_sampling(true).do_sample_edges(false).do_sample_vertices(false).number_of_points_per_area_unit(1));
+		PMP::sample_triangle_mesh(filtered_sm, std::back_inserter(out), CGAL::parameters::use_random_uniform_sampling(true).do_sample_edges(false).do_sample_vertices(false).number_of_points_per_area_unit(10));
 
 		mesh.remove_property_map<Surface_mesh::Face_index, bool>(to_be_sampled);
 

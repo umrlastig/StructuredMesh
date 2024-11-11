@@ -2275,7 +2275,8 @@ void My_visitor::OnSelected (const SMS::Edge_profile<Surface_mesh>&, boost::opti
 			total_timer.pause();
 			collapsing_timer.pause();
 			compute_stat(mesh, ablation, total_timer, *cost);
-			last_size = ((int) ((current_edge_count) / 1000)) * 1000;
+			int step = ceil(initial_edge_count/100);
+			last_size = floor(current_edge_count / step) * step;
 			total_timer.resume();
 			collapsing_timer.resume();
 		}
