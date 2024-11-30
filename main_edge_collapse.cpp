@@ -176,8 +176,8 @@ int main(int argc, char **argv) {
 				}
 				break;
 			case 'h':
-				std::cout << "Usage: " << argv[0] << " [OPTIONS] -m mesh" << std::endl;
-				std::cout << "Simplify mesh." << std::endl;
+				std::cout << "Usage: " << argv[0] << " [OPTIONS] -m MESH -p POINT_CLOUD" << std::endl;
+				std::cout << "Create a Structured mesh from a mesh and a labeled point cloud." << std::endl;
 				std::cout << "OPTIONS:" << std::endl;
 				std::cout << " -h, --help                         Print this help anq quit." << std::endl;
 				std::cout << " -m, --mesh=/file/path.ply          mesh as PLY file." << std::endl;
