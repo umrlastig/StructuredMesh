@@ -1,11 +1,10 @@
 # Compute LOD2
-Create LOD2 model from DSM, DTM, land use map, LOD0 building footprint and orthophoto.
+Create a Structured mesh from a mesh and a labeled point cloud.
 
 # Requirements (test version)
 - CGAL (5.4.5)
 - GDAL (3.5.0)
 - Eigen (3.4.0)
-- Ceres (2.1.0)
 
 # Compilation
 ```bash
@@ -16,12 +15,11 @@ $ make
 ```
 
 # Usage
-Usage: `./compute-LOD2` [OPTIONS] -s DSM -t DTM -l land_use_map
+Usage: `./structured-mesh` [OPTIONS] -m MESH -p POINT_CLOUD
 
 OPTIONS:
 - `-h`, `--help`: Print this help anq quit.
-- `-s`, `--DSM=/file/path.tiff`: DSM as TIFF file.
-- `-t`, `--DTM=/file/path.tiff`: DTM as TIFF file.
-- `-l`, `--land_use_map=/file/path.tiff`: land use map as TIFF file.
-- `-0`, `--LOD0=/file/path.shp`: LOD0 as Shapefile.
-- `-i`, `--orthophoto=/file/path.tiff`: RGB orthophoto as TIFF file.
+- `-m`, `--mesh=/file/path.ply`: mesh as PLY file.
+- `-p`, `--point_cloud=/file/path.ply`: point cloud as PLY file.
+
+See main_edge_collapse.cpp for other options.

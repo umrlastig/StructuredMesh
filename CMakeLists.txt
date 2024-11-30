@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.1...3.15)
 
-project( compute-LOD2 )
+project( structred-mesh )
 
 set (CMAKE_CXX_STANDARD 17)
 
@@ -40,16 +40,7 @@ if ( NOT GDAL_FOUND )
 endif()
 
 
-# Ceres and its components
 find_package(Ceres 2.1.0 REQUIRED)
-
-if ( NOT Ceres_FOUND )
-
-  message(STATUS "This project requires the Ceres library, and will not be compiled.")
-
-  return()  
-
-endif()
 
 
 # Eigen3 and its components
@@ -71,26 +62,14 @@ endif()
 add_library (EdgeCollapse edge_collapse.cpp)
 target_link_libraries(EdgeCollapse PRIVATE CGAL::CGAL Eigen3::Eigen)
 
-# Creating entries for target: compute-LOD2
+# Creating entries for target: structured-mesh
 # ############################
 
-add_executable( compute-LOD2  main.cpp raster.cpp code.cpp path.cpp bridge.cpp)
+add_executable( structured-mesh  main_edge_collapse.cpp raster.cpp code.cpp)
 
-target_compile_options(compute-LOD2 PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_options(structured-mesh PRIVATE -Wall -Wextra -Wpedantic)
 
-add_to_cached_list( CGAL_EXECUTABLE_TARGETS compute-LOD2 )
-
-# Link the executable to CGAL and third-party libraries
-target_link_libraries(compute-LOD2 PRIVATE CGAL::CGAL GDAL::GDAL Ceres::ceres Eigen3::Eigen EdgeCollapse)
-
-# Creating entries for target: do-edge-collapse
-# ############################
-
-add_executable( do-edge-collapse  main_edge_collapse.cpp)
-
-target_compile_options(do-edge-collapse PRIVATE -Wall -Wextra -Wpedantic)
-
-add_to_cached_list( CGAL_EXECUTABLE_TARGETS do-edge-collapse )
+add_to_cached_list( CGAL_EXECUTABLE_TARGETS structured-mesh )
 
 # Link the executable to CGAL and third-party libraries
-target_link_libraries(do-edge-collapse PRIVATE CGAL::CGAL GDAL::GDAL Eigen3::Eigen EdgeCollapse)
+target_link_libraries(structured-mesh PRIVATE CGAL::CGAL GDAL::GDAL Eigen3::Eigen EdgeCollapse)
